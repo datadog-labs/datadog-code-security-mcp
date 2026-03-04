@@ -1,4 +1,4 @@
-# Datadog Code Security MCP 
+# Datadog Code Security MCP Server
 
 Local code security scanning for AI coding assistants via Model Context Protocol (MCP).
 
