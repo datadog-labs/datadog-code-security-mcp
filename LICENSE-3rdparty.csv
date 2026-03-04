@@ -1,0 +1,20 @@
+Component,Origin,License,Copyright
+core,github.com/bahlo/generic-list-go,BSD-3-Clause,Copyright (c) 2009 The Go Authors. All rights reserved
+core,github.com/buger/jsonparser,MIT,Copyright (c) 2016 Leonid Bugaev
+core,github.com/google/uuid,BSD-3-Clause,"Copyright (c) 2009,2014 Google Inc. All rights reserved | Paul Borman <borman@google.com> | bmatsuo | cd1 | dansouza | dsymonds | jboverfelt | shawnps | theory | wallclockbuilder"
+core,github.com/inconshreveable/mousetrap,Apache-2.0,Copyright 2022 Alan Shreve (@inconshreveable)
+core,github.com/invopop/jsonschema,MIT,Copyright (C) 2014 Alec Thomas
+core,github.com/mailru/easyjson/buffer,MIT,Copyright (c) 2016 Mail.Ru Group
+core,github.com/mailru/easyjson/jwriter,MIT,Copyright (c) 2016 Mail.Ru Group
+core,github.com/mark3labs/mcp-go/mcp,MIT,"Copyright (c) 2024 Anthropic, PBC"
+core,github.com/mark3labs/mcp-go/server,MIT,"Copyright (c) 2024 Anthropic, PBC"
+core,github.com/mark3labs/mcp-go/util,MIT,"Copyright (c) 2024 Anthropic, PBC"
+core,github.com/owenrumney/go-sarif/v2/sarif,Unlicense,"copyright interest in the | copyright law | copyright laws, the author or authors"
+core,github.com/spf13/cast,MIT,Copyright (c) 2014 Steve Francia
+core,github.com/spf13/cast/internal,MIT,Copyright (c) 2014 Steve Francia
+core,github.com/spf13/cobra,Apache-2.0,Copyright © 2013 Steve Francia <spf@spf13.com>.
+core,github.com/spf13/pflag,BSD-3-Clause,Copyright (c) 2012 Alex Ogier. All rights reserved | Copyright (c) 2012 The Go Authors. All rights reserved
+core,github.com/wk8/go-ordered-map/v2,Apache-2.0,Copyright 2023 Jean Rougé <wk8.github@gmail.com>
+core,github.com/yosida95/uritemplate/v3,BSD-3-Clause,"Copyright (C) 2016, Kohei YOSHIDA <https://yosida95.com/>. All rights reserved"
+core,golang/go,BSD-3-Clause,Copyright (c) 2009 The Go Authors. All rights reserved.
+core,gopkg.in/yaml.v3,MIT,Copyright (c) 2006-2010 Kirill Simonov | Copyright 2011-2016 Canonical Ltd

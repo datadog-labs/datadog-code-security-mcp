@@ -1,0 +1,211 @@
+name: E2E Tests
+
+on:
+  pull_request:
+    branches: [ main ]
+  push:
+    branches: [ main ]
+  workflow_dispatch:  # Allow manual triggering
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: E2E Tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false  # Continue testing other OS even if one fails
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        go-version: ['1.22']
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: ${{ matrix.go-version }}
+          cache: true
+
+      - name: Install dependencies (apt)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq unzip curl
+
+      - name: Install dependencies (brew)
+        if: runner.os == 'macOS'
+        run: |
+          # jq is typically pre-installed on GitHub runners
+          brew list jq &>/dev/null || brew install jq
+          # Install coreutils for timeout command
+          brew list coreutils &>/dev/null || brew install coreutils
+          # Add coreutils to PATH for timeout
+          echo "$(brew --prefix)/opt/coreutils/libexec/gnubin" >> $GITHUB_PATH
+
+      - name: Install datadog-static-analyzer (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          echo "==> Detecting architecture..."
+          ARCH="x86_64"
+          if [[ "$(uname -m)" == "arm64" ]]; then
+            ARCH="aarch64"
+          fi
+          echo "Architecture: ${ARCH}"
+
+          echo "==> Creating install directory..."
+          mkdir -p ~/.local/bin
+
+          echo "==> Downloading datadog-static-analyzer..."
+          DOWNLOAD_URL="https://github.com/DataDog/datadog-static-analyzer/releases/latest/download/datadog-static-analyzer-${ARCH}-apple-darwin.zip"
+          echo "URL: ${DOWNLOAD_URL}"
+
+          curl -L "${DOWNLOAD_URL}" -o /tmp/analyzer.zip
+
+          echo "==> Extracting archive..."
+          unzip -q /tmp/analyzer.zip -d /tmp
+
+          echo "==> Installing binary..."
+          mv /tmp/datadog-static-analyzer ~/.local/bin/
+          chmod +x ~/.local/bin/datadog-static-analyzer
+
+          echo "==> Adding to PATH..."
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+          echo "==> Verifying installation..."
+          ~/.local/bin/datadog-static-analyzer --version
+
+      - name: Install datadog-static-analyzer (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          echo "==> Detecting architecture..."
+          ARCH="x86_64"
+          if [[ "$(uname -m)" == "aarch64" ]]; then
+            ARCH="aarch64"
+          fi
+          echo "Architecture: ${ARCH}"
+
+          echo "==> Creating install directory..."
+          mkdir -p ~/.local/bin
+
+          echo "==> Downloading datadog-static-analyzer..."
+          DOWNLOAD_URL="https://github.com/DataDog/datadog-static-analyzer/releases/latest/download/datadog-static-analyzer-${ARCH}-unknown-linux-gnu.zip"
+          echo "URL: ${DOWNLOAD_URL}"
+
+          curl -L "${DOWNLOAD_URL}" -o /tmp/analyzer.zip
+
+          echo "==> Extracting archive..."
+          unzip -q /tmp/analyzer.zip -d /tmp
+
+          echo "==> Installing binary..."
+          mv /tmp/datadog-static-analyzer ~/.local/bin/
+          chmod +x ~/.local/bin/datadog-static-analyzer
+
+          echo "==> Adding to PATH..."
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+          echo "==> Verifying installation..."
+          ~/.local/bin/datadog-static-analyzer --version
+
+      - name: Verify Go environment
+        run: |
+          go version
+          go env
+
+      - name: Build MCP server
+        run: |
+          echo "==> Building MCP server..."
+          make clean
+          make build
+
+          echo "==> Verifying build..."
+          ls -lh bin/datadog-code-security-mcp
+          ./bin/datadog-code-security-mcp version
+
+      - name: Run E2E tests
+        run: |
+          echo "==> Running E2E tests in CI mode..."
+          ./scripts/test-e2e.sh --ci
+        env:
+          # Authentication (optional for SAST/Secrets)
+          # If not provided, scanners may have limited functionality
+          DD_AUTH_DOMAIN: ${{ secrets.DD_AUTH_DOMAIN || 'app.datadoghq.com' }}
+          DD_API_KEY: ${{ secrets.DD_API_KEY || '' }}
+          DD_APP_KEY: ${{ secrets.DD_APP_KEY || '' }}
+          DD_SITE: ${{ secrets.DD_SITE || 'datadoghq.com' }}
+          # Test output directory
+          TEST_OUTPUT_DIR: /tmp
+
+      - name: Display test outputs (on failure)
+        if: failure()
+        run: |
+          echo "==> Displaying test outputs for debugging..."
+          echo ""
+          echo "=== MCP Initialize ==="
+          cat /tmp/mcp-init.json || echo "File not found"
+          echo ""
+          echo "=== MCP Tools ==="
+          cat /tmp/mcp-tools.json || echo "File not found"
+          echo ""
+          echo "=== SAST Output ==="
+          cat /tmp/sast-output.json || echo "File not found"
+          echo ""
+          echo "=== Secrets Output ==="
+          cat /tmp/secrets-output.json || echo "File not found"
+          echo ""
+          echo "=== Clean Code Output ==="
+          cat /tmp/clean-output.json || echo "File not found"
+
+      - name: Upload test outputs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: e2e-test-outputs-${{ matrix.os }}-go${{ matrix.go-version }}
+          path: |
+            /tmp/mcp-init.json
+            /tmp/mcp-tools.json
+            /tmp/sast-output.json
+            /tmp/secrets-output.json
+            /tmp/clean-output.json
+          retention-days: 7
+          if-no-files-found: warn
+
+  e2e-summary:
+    name: E2E Test Summary
+    runs-on: ubuntu-latest
+    needs: e2e
+    if: always()
+
+    steps:
+      - name: Check E2E results
+        run: |
+          echo "==> E2E Test Results Summary"
+          echo ""
+
+          if [[ "${{ needs.e2e.result }}" == "success" ]]; then
+            echo "✅ All E2E tests passed across all platforms!"
+            echo ""
+            echo "Tested platforms:"
+            echo "  - Ubuntu (latest)"
+            echo "  - macOS (latest)"
+            echo ""
+            echo "Test coverage:"
+            echo "  ✓ MCP protocol (STDIO)"
+            echo "  ✓ SAST scanner"
+            echo "  ✓ Secrets scanner"
+            echo "  ✓ Negative tests (clean code)"
+            exit 0
+          else
+            echo "❌ E2E tests failed on one or more platforms"
+            echo ""
+            echo "Result: ${{ needs.e2e.result }}"
+            echo ""
+            echo "Please review:"
+            echo "  1. Job logs above for detailed error messages"
+            echo "  2. Uploaded test output artifacts"
+            echo "  3. Test fixture expectations in testdata/README.md (Expected Results section)"
+            exit 1
+          fi

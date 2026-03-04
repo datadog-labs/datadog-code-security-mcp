@@ -1,0 +1,111 @@
+version: 2
+
+project_name: datadog-code-security-mcp
+
+before:
+  hooks:
+    - go mod tidy
+    - go mod verify
+
+builds:
+  - id: datadog-code-security-mcp
+    main: ./cmd/datadog-code-security-mcp
+    binary: datadog-code-security-mcp
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    # Exclude windows/arm64 (not in the existing build matrix)
+    ignore:
+      - goos: windows
+        goarch: arm64
+    env:
+      - CGO_ENABLED=0
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.buildTime={{.Date}}
+
+archives:
+  - id: default
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    name_template: "{{ .ProjectName }}-{{ .Os }}-{{ .Arch }}"
+    files:
+      - none*
+
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+release:
+  draft: false
+  prerelease: auto
+  footer: |
+    ## Installation
+
+    Download the binary for your platform:
+    - **Linux (amd64)**: `datadog-code-security-mcp-linux-amd64.tar.gz`
+    - **Linux (arm64)**: `datadog-code-security-mcp-linux-arm64.tar.gz`
+    - **macOS (Intel)**: `datadog-code-security-mcp-darwin-amd64.tar.gz`
+    - **macOS (Apple Silicon)**: `datadog-code-security-mcp-darwin-arm64.tar.gz`
+    - **Windows**: `datadog-code-security-mcp-windows-amd64.zip`
+
+    ### Quick Install
+
+    **macOS/Linux:**
+    ```bash
+    curl -L https://github.com/datadog-labs/datadog-code-security-mcp/releases/download/{{ .Tag }}/datadog-code-security-mcp-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m).tar.gz | tar xz
+    sudo mv datadog-code-security-mcp /usr/local/bin/
+    chmod +x /usr/local/bin/datadog-code-security-mcp
+    ```
+
+    **Homebrew:**
+    ```bash
+    brew update
+    brew install --cask datadog-labs/pack/datadog-code-security-mcp
+    ```
+
+    ## Prerequisites
+
+    Install `datadog-static-analyzer`:
+    ```bash
+    curl -L https://github.com/DataDog/datadog-static-analyzer/releases/latest/download/datadog-static-analyzer-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m).zip -o /tmp/dsa.zip
+    unzip -o /tmp/dsa.zip -d /tmp/
+    mkdir -p ~/.local/bin
+    mv /tmp/datadog-static-analyzer ~/.local/bin/
+    chmod +x ~/.local/bin/datadog-static-analyzer
+    export PATH="$HOME/.local/bin:$PATH"
+    ```
+
+    ## Usage
+
+    ```bash
+    # Check version
+    datadog-code-security-mcp version
+
+    # Scan your code
+    datadog-code-security-mcp scan all ./
+    datadog-code-security-mcp scan sast ./src
+    datadog-code-security-mcp scan secrets ./config
+    ```
+
+    See the [README](https://github.com/datadog-labs/datadog-code-security-mcp#readme) for full documentation.
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - "Merge pull request"
+      - "Merge branch"

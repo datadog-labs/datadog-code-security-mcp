@@ -1,0 +1,5 @@
+# Owners of the whole repo
+* @Datadog/infrastructure-as-code @DataDog/k9-vm-sca @DataDog/k9-vm-ast
+
+# Owners of the documentation
+/documentation/rules/**/*.md @DataDog/documentation
