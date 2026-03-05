@@ -35,7 +35,7 @@ jobs:
 
       - name: Get Datadog credentials
         id: dd-sts
-        uses: DataDog/dd-sts-action@main
+        uses: DataDog/dd-sts-action@9e149e7fdee1bd9da67e8ed18110a7285cfc3fb2 # main
         with:
           policy: public-datadog-code-security-mcp
 
