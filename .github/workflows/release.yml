@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  id-token: write
 
 jobs:
   release:
@@ -31,3 +32,27 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Get Datadog credentials
+        id: dd-sts
+        uses: DataDog/dd-sts-action@main
+        with:
+          policy: public-datadog-code-security-mcp
+
+      - name: Trigger Datadog workflow
+        env:
+          DD_API_KEY: ${{ steps.dd-sts.outputs.api_key }}
+          DD_APP_KEY: ${{ steps.dd-sts.outputs.app_key }}
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME}"
+          SHA256_MACOS_ARM64="$(grep 'datadog-code-security-mcp-darwin-arm64.tar.gz' dist/checksums.txt | awk '{print $1}')"
+          SHA256_MACOS_X86_64="$(grep 'datadog-code-security-mcp-darwin-amd64.tar.gz' dist/checksums.txt | awk '{print $1}')"
+          SHA256_LINUX_ARM64="$(grep 'datadog-code-security-mcp-linux-arm64.tar.gz' dist/checksums.txt | awk '{print $1}')"
+          SHA256_LINUX_X86_64="$(grep 'datadog-code-security-mcp-linux-amd64.tar.gz' dist/checksums.txt | awk '{print $1}')"
+          curl -fsS -X POST \
+            -H "Content-Type: application/json" \
+            -H "DD-API-KEY: ${DD_API_KEY}" \
+            -H "DD-APPLICATION-KEY: ${DD_APP_KEY}" \
+            -d "{\"meta\":{\"payload\":{\"version\":\"${VERSION}\",\"sha256_macos_arm64\":\"${SHA256_MACOS_ARM64}\",\"sha256_macos_x86_64\":\"${SHA256_MACOS_X86_64}\",\"sha256_linux_arm64\":\"${SHA256_LINUX_ARM64}\",\"sha256_linux_x86_64\":\"${SHA256_LINUX_X86_64}\"}}}" \
+            https://api.datadoghq.com/api/v2/workflows/b146b702-a937-4083-a80a-181994134c9d/instances
