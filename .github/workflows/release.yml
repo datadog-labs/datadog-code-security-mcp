@@ -50,7 +50,7 @@ jobs:
           SHA256_MACOS_X86_64="$(grep 'datadog-code-security-mcp-darwin-amd64.tar.gz' dist/checksums.txt | awk '{print $1}')"
           SHA256_LINUX_ARM64="$(grep 'datadog-code-security-mcp-linux-arm64.tar.gz' dist/checksums.txt | awk '{print $1}')"
           SHA256_LINUX_X86_64="$(grep 'datadog-code-security-mcp-linux-amd64.tar.gz' dist/checksums.txt | awk '{print $1}')"
-          curl -fsS -X POST \
+          curl -sS -X POST \
             -H "Content-Type: application/json" \
             -H "DD-API-KEY: ${DD_API_KEY}" \
             -H "DD-APPLICATION-KEY: ${DD_APP_KEY}" \
