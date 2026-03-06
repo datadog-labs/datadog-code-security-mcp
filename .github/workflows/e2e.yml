@@ -112,6 +112,8 @@ jobs:
 
       - name: Install datadog-iac-scanner (macOS)
         if: runner.os == 'macOS'
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           echo "==> Detecting architecture..."
           ARCH="arm64"
@@ -120,15 +122,18 @@ jobs:
           fi
           echo "Architecture: ${ARCH}"
 
-          echo "==> Downloading datadog-iac-scanner..."
-          DOWNLOAD_URL="https://github.com/DataDog/datadog-iac-scanner/releases/latest/download/datadog-iac-scanner_darwin_${ARCH}.tar.gz"
-          echo "URL: ${DOWNLOAD_URL}"
+          echo "==> Fetching latest release version..."
+          VERSION=$(gh release view --repo DataDog/datadog-iac-scanner --json tagName -q '.tagName' | sed 's/^v//')
+          echo "Version: ${VERSION}"
 
-          curl -L "${DOWNLOAD_URL}" -o /tmp/iac-scanner.tar.gz
+          echo "==> Downloading datadog-iac-scanner..."
+          ASSET_NAME="datadog-iac-scanner_${VERSION}_darwin_${ARCH}.tar.gz"
+          echo "Asset: ${ASSET_NAME}"
+          gh release download --repo DataDog/datadog-iac-scanner --pattern "${ASSET_NAME}" --dir /tmp
 
           echo "==> Extracting archive..."
           mkdir -p ~/.local/bin
-          tar xzf /tmp/iac-scanner.tar.gz -C /tmp
+          tar xzf "/tmp/${ASSET_NAME}" -C /tmp
           mv /tmp/datadog-iac-scanner ~/.local/bin/
           chmod +x ~/.local/bin/datadog-iac-scanner
 
@@ -136,10 +141,12 @@ jobs:
           echo "$HOME/.local/bin" >> $GITHUB_PATH
 
           echo "==> Verifying installation..."
-          ~/.local/bin/datadog-iac-scanner version || true
+          ~/.local/bin/datadog-iac-scanner --help | head -5 || true
 
       - name: Install datadog-iac-scanner (Linux)
         if: runner.os == 'Linux'
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           echo "==> Detecting architecture..."
           ARCH="amd64"
@@ -148,15 +155,18 @@ jobs:
           fi
           echo "Architecture: ${ARCH}"
 
-          echo "==> Downloading datadog-iac-scanner..."
-          DOWNLOAD_URL="https://github.com/DataDog/datadog-iac-scanner/releases/latest/download/datadog-iac-scanner_linux_${ARCH}.tar.gz"
-          echo "URL: ${DOWNLOAD_URL}"
+          echo "==> Fetching latest release version..."
+          VERSION=$(gh release view --repo DataDog/datadog-iac-scanner --json tagName -q '.tagName' | sed 's/^v//')
+          echo "Version: ${VERSION}"
 
-          curl -L "${DOWNLOAD_URL}" -o /tmp/iac-scanner.tar.gz
+          echo "==> Downloading datadog-iac-scanner..."
+          ASSET_NAME="datadog-iac-scanner_${VERSION}_linux_${ARCH}.tar.gz"
+          echo "Asset: ${ASSET_NAME}"
+          gh release download --repo DataDog/datadog-iac-scanner --pattern "${ASSET_NAME}" --dir /tmp
 
           echo "==> Extracting archive..."
           mkdir -p ~/.local/bin
-          tar xzf /tmp/iac-scanner.tar.gz -C /tmp
+          tar xzf "/tmp/${ASSET_NAME}" -C /tmp
           mv /tmp/datadog-iac-scanner ~/.local/bin/
           chmod +x ~/.local/bin/datadog-iac-scanner
 
@@ -164,7 +174,7 @@ jobs:
           echo "$HOME/.local/bin" >> $GITHUB_PATH
 
           echo "==> Verifying installation..."
-          ~/.local/bin/datadog-iac-scanner version || true
+          ~/.local/bin/datadog-iac-scanner --help | head -5 || true
 
       - name: Verify Go environment
         run: |

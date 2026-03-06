@@ -420,7 +420,7 @@ echo -e "${BLUE}==> Test 8/8: Testing IaC scanner...${NC}"
 # Check if datadog-iac-scanner is installed
 if command -v datadog-iac-scanner &> /dev/null; then
   IAC_SCANNER_PATH=$(which datadog-iac-scanner)
-  IAC_SCANNER_VERSION=$(datadog-iac-scanner version 2>&1 | head -n 1 || echo "unknown")
+  IAC_SCANNER_VERSION=$(datadog-iac-scanner --help 2>&1 | head -n 1 || echo "unknown")
   echo -e "${GREEN}✓ datadog-iac-scanner found: ${IAC_SCANNER_PATH}${NC}"
   echo "  Version: ${IAC_SCANNER_VERSION}"
 
