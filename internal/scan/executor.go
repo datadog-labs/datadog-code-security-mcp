@@ -99,6 +99,9 @@ func getScannerFor(scanType string, binMgr *binary.BinaryManager) Scanner {
 		// SCA uses different binary (datadog-security-cli)
 		scaBinMgr := binary.NewManager(binary.BinaryTypeSecurity)
 		return NewSCAScanner(scaBinMgr)
+	case "iac":
+		iacBinMgr := binary.NewManager(binary.BinaryTypeIaC)
+		return NewIaCScanner(iacBinMgr)
 	default:
 		return nil
 	}

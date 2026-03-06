@@ -1,6 +1,6 @@
 #!/bin/bash
 # E2E Test Script for datadog-code-security-mcp
-# Tests SAST and Secrets scanners with test fixtures
+# Tests SAST, Secrets, IaC scanners and SBOM generation with test fixtures
 #
 # Usage:
 #   ./scripts/test-e2e.sh           # CI mode (default, headless)
@@ -35,9 +35,9 @@ elif [[ -n "$1" ]]; then
 fi
 
 if [[ "$MODE" == "ci" ]]; then
-  echo -e "${BLUE}==> Running E2E tests in CI mode (7 tests, Claude Desktop skipped)${NC}"
+  echo -e "${BLUE}==> Running E2E tests in CI mode (8 tests, Claude Desktop skipped)${NC}"
 else
-  echo -e "${BLUE}==> Running E2E tests in FULL mode (8 tests, including Claude Desktop)${NC}"
+  echo -e "${BLUE}==> Running E2E tests in FULL mode (9 tests, including Claude Desktop)${NC}"
 fi
 echo ""
 
@@ -57,7 +57,7 @@ echo ""
 # =============================================================================
 # Test 1: BUILD - Build local MCP server
 # =============================================================================
-echo -e "${BLUE}==> Test 1/7: Building MCP server...${NC}"
+echo -e "${BLUE}==> Test 1/8: Building MCP server...${NC}"
 if make clean && make build; then
   if [[ -f "bin/datadog-code-security-mcp" ]]; then
     echo -e "${GREEN}✓ Build successful${NC}"
@@ -78,7 +78,7 @@ echo ""
 # =============================================================================
 # Test 2: CHECK BINARIES - Verify required binaries exist
 # =============================================================================
-echo -e "${BLUE}==> Test 2/7: Checking for required binaries...${NC}"
+echo -e "${BLUE}==> Test 2/8: Checking for required binaries...${NC}"
 
 BINARIES_OK=true
 
@@ -121,7 +121,7 @@ echo ""
 # =============================================================================
 # Test 3: TEST MCP PROTOCOL - Test STDIO directly (no Claude Desktop)
 # =============================================================================
-echo -e "${BLUE}==> Test 3/7: Testing MCP protocol (STDIO)...${NC}"
+echo -e "${BLUE}==> Test 3/8: Testing MCP protocol (STDIO)...${NC}"
 
 # Test initialize method
 echo -e "${BLUE}  Testing MCP initialize...${NC}"
@@ -160,11 +160,11 @@ if echo "${TOOLS_REQUEST}" | timeout 10 ./bin/datadog-code-security-mcp start > 
     # Extract just the JSON response (last line) - MCP server logs to stderr which gets mixed with stdout
     JSON_RESPONSE=$(tail -1 "${TEST_OUTPUT_DIR}/mcp-tools.json")
     TOOL_COUNT=$(echo "${JSON_RESPONSE}" | jq -r '.result.tools | length' 2>/dev/null || echo "0")
-    if [[ $TOOL_COUNT -ge 5 ]]; then
+    if [[ $TOOL_COUNT -ge 6 ]]; then
       echo -e "${GREEN}✓ MCP tools registered: ${TOOL_COUNT} tools found${NC}"
       TESTS_PASSED=$((TESTS_PASSED + 1))
     else
-      echo -e "${RED}❌ ERROR: Expected at least 5 tools, found ${TOOL_COUNT}${NC}"
+      echo -e "${RED}❌ ERROR: Expected at least 6 tools, found ${TOOL_COUNT}${NC}"
       echo "JSON Response:"
       echo "${JSON_RESPONSE}" | jq . || echo "${JSON_RESPONSE}"
       TESTS_FAILED=$((TESTS_FAILED + 1))
@@ -183,7 +183,7 @@ echo ""
 # =============================================================================
 # Test 4: TEST SAST SCANNER
 # =============================================================================
-echo -e "${BLUE}==> Test 4/7: Testing SAST scanner...${NC}"
+echo -e "${BLUE}==> Test 4/8: Testing SAST scanner...${NC}"
 
 SAST_EXIT_CODE=0
 ./bin/datadog-code-security-mcp scan sast ./testdata/vulnerabilities/sast \
@@ -251,7 +251,7 @@ echo ""
 # =============================================================================
 # Test 5: TEST SECRETS SCANNER
 # =============================================================================
-echo -e "${BLUE}==> Test 5/7: Testing Secrets scanner...${NC}"
+echo -e "${BLUE}==> Test 5/8: Testing Secrets scanner...${NC}"
 
 SECRETS_EXIT_CODE=0
 ./bin/datadog-code-security-mcp scan secrets ./testdata/vulnerabilities/secrets \
@@ -319,7 +319,7 @@ echo ""
 # =============================================================================
 # Test 6: TEST NEGATIVE CASE (Clean Code)
 # =============================================================================
-echo -e "${BLUE}==> Test 6/7: Testing negative case (clean code)...${NC}"
+echo -e "${BLUE}==> Test 6/8: Testing negative case (clean code)...${NC}"
 
 CLEAN_EXIT_CODE=0
 ./bin/datadog-code-security-mcp scan sast ./testdata/vulnerabilities/clean \
@@ -355,7 +355,7 @@ echo ""
 # =============================================================================
 # Test 7: TEST SBOM GENERATION
 # =============================================================================
-echo -e "${BLUE}==> Test 7/7: Testing SBOM generation...${NC}"
+echo -e "${BLUE}==> Test 7/8: Testing SBOM generation...${NC}"
 
 # Check if datadog-sbom-generator is installed
 if command -v datadog-sbom-generator &> /dev/null; then
@@ -413,10 +413,123 @@ fi
 echo ""
 
 # =============================================================================
-# Test 8: FULL MODE - Claude Desktop integration (optional, --full mode only)
+# Test 8: TEST IAC SCANNER
+# =============================================================================
+echo -e "${BLUE}==> Test 8/8: Testing IaC scanner...${NC}"
+
+# Check if datadog-iac-scanner is installed
+if command -v datadog-iac-scanner &> /dev/null; then
+  IAC_SCANNER_PATH=$(which datadog-iac-scanner)
+  IAC_SCANNER_VERSION=$(datadog-iac-scanner version 2>&1 | head -n 1 || echo "unknown")
+  echo -e "${GREEN}✓ datadog-iac-scanner found: ${IAC_SCANNER_PATH}${NC}"
+  echo "  Version: ${IAC_SCANNER_VERSION}"
+
+  IAC_EXIT_CODE=0
+  ./bin/datadog-code-security-mcp scan iac ./testdata/vulnerabilities/iac \
+    --json > "${TEST_OUTPUT_DIR}/iac-output.json" 2>&1 || IAC_EXIT_CODE=$?
+
+  # IaC scanner returns non-zero exit code when findings exist (expected)
+  if [[ -f "${TEST_OUTPUT_DIR}/iac-output.json" ]]; then
+    # Check if IaC misconfigurations were detected
+    FOUND_S3=false
+    FOUND_SECURITY_GROUP=false
+    FOUND_IAM=false
+    FOUND_K8S=false
+    FOUND_DOCKER=false
+
+    if grep -qi "s3\|bucket\|public.*access\|public.*read" "${TEST_OUTPUT_DIR}/iac-output.json"; then
+      FOUND_S3=true
+    fi
+
+    if grep -qi "security.*group\|ssh\|0\.0\.0\.0/0\|ingress\|rdp" "${TEST_OUTPUT_DIR}/iac-output.json"; then
+      FOUND_SECURITY_GROUP=true
+    fi
+
+    if grep -qi "iam\|wildcard\|privilege.*escalation\|admin" "${TEST_OUTPUT_DIR}/iac-output.json"; then
+      FOUND_IAM=true
+    fi
+
+    if grep -qi "kubernetes\|k8s\|privileged\|hostNetwork\|runAsRoot\|cluster-admin\|container" "${TEST_OUTPUT_DIR}/iac-output.json"; then
+      FOUND_K8S=true
+    fi
+
+    if grep -qi "docker\|dockerfile\|FROM.*latest\|USER\|root" "${TEST_OUTPUT_DIR}/iac-output.json"; then
+      FOUND_DOCKER=true
+    fi
+
+    # Report findings
+    if [[ "$FOUND_S3" == "true" ]]; then
+      echo -e "${GREEN}✓ IaC detected S3 bucket misconfigurations${NC}"
+    else
+      echo -e "${YELLOW}⚠ IaC: S3 misconfigurations not detected${NC}"
+      TESTS_WARNED=$((TESTS_WARNED + 1))
+    fi
+
+    if [[ "$FOUND_SECURITY_GROUP" == "true" ]]; then
+      echo -e "${GREEN}✓ IaC detected security group issues${NC}"
+    else
+      echo -e "${YELLOW}⚠ IaC: Security group issues not detected${NC}"
+      TESTS_WARNED=$((TESTS_WARNED + 1))
+    fi
+
+    if [[ "$FOUND_IAM" == "true" ]]; then
+      echo -e "${GREEN}✓ IaC detected IAM policy issues${NC}"
+    else
+      echo -e "${YELLOW}⚠ IaC: IAM policy issues not detected${NC}"
+      TESTS_WARNED=$((TESTS_WARNED + 1))
+    fi
+
+    if [[ "$FOUND_K8S" == "true" ]]; then
+      echo -e "${GREEN}✓ IaC detected Kubernetes misconfigurations${NC}"
+    else
+      echo -e "${YELLOW}⚠ IaC: Kubernetes misconfigurations not detected${NC}"
+      TESTS_WARNED=$((TESTS_WARNED + 1))
+    fi
+
+    if [[ "$FOUND_DOCKER" == "true" ]]; then
+      echo -e "${GREEN}✓ IaC detected Dockerfile issues${NC}"
+    else
+      echo -e "${YELLOW}⚠ IaC: Dockerfile issues not detected${NC}"
+      TESTS_WARNED=$((TESTS_WARNED + 1))
+    fi
+
+    # Overall IaC test result
+    if [[ "$FOUND_S3" == "true" ]] || [[ "$FOUND_SECURITY_GROUP" == "true" ]] || [[ "$FOUND_IAM" == "true" ]] || [[ "$FOUND_K8S" == "true" ]] || [[ "$FOUND_DOCKER" == "true" ]]; then
+      echo -e "${GREEN}✓ IaC scanner operational (at least 1 misconfiguration type detected)${NC}"
+      TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+      echo -e "${YELLOW}⚠ IaC scanner may not be fully operational (no misconfigurations detected)${NC}"
+      echo "  This could mean:"
+      echo "  - Scanner needs authentication to fetch rules"
+      echo "  - Scanner version doesn't include these rules"
+      echo "  - Test fixtures don't match current rule patterns"
+      TESTS_WARNED=$((TESTS_WARNED + 1))
+    fi
+  else
+    echo -e "${RED}❌ IaC output file not created${NC}"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+  fi
+else
+  echo -e "${YELLOW}⚠ datadog-iac-scanner not installed (skipping IaC test)${NC}"
+  echo "  Install with:"
+  echo "    # Download from: https://github.com/DataDog/datadog-iac-scanner/releases"
+  if [[ "$OSTYPE" == "darwin"* ]]; then
+    echo "    curl -L https://github.com/DataDog/datadog-iac-scanner/releases/latest/download/datadog-iac-scanner_darwin_arm64.tar.gz -o /tmp/iac.tar.gz"
+    echo "    tar xzf /tmp/iac.tar.gz -C ~/.local/bin"
+  elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+    echo "    curl -L https://github.com/DataDog/datadog-iac-scanner/releases/latest/download/datadog-iac-scanner_linux_amd64.tar.gz -o /tmp/iac.tar.gz"
+    echo "    tar xzf /tmp/iac.tar.gz -C ~/.local/bin"
+  fi
+  echo "  Or see: https://github.com/DataDog/datadog-iac-scanner"
+  TESTS_WARNED=$((TESTS_WARNED + 1))
+fi
+echo ""
+
+# =============================================================================
+# Test 9: FULL MODE - Claude Desktop integration (optional, --full mode only)
 # =============================================================================
 if [[ "$MODE" == "full" ]]; then
-  echo -e "${BLUE}==> Test 8/8: Configuring Claude Desktop...${NC}"
+  echo -e "${BLUE}==> Test 9/9: Configuring Claude Desktop...${NC}"
 
   # Check if claude CLI is available
   if ! command -v claude &> /dev/null; then
@@ -466,7 +579,7 @@ if [[ "$MODE" == "full" ]]; then
   echo ""
 fi
 
-# In CI mode, we skip Test 8 entirely (no Claude CLI available in CI environment)
+# In CI mode, we skip Test 9 entirely (no Claude CLI available in CI environment)
 
 # =============================================================================
 # SUMMARY
@@ -474,9 +587,9 @@ fi
 echo ""
 echo "=========================================="
 if [[ "$MODE" == "ci" ]]; then
-  echo "E2E Test Summary (CI Mode - 7 tests)"
+  echo "E2E Test Summary (CI Mode - 8 tests)"
 else
-  echo "E2E Test Summary (Full Mode - 8 tests)"
+  echo "E2E Test Summary (Full Mode - 9 tests)"
 fi
 echo "=========================================="
 echo ""
@@ -485,7 +598,7 @@ echo -e "Tests failed:  ${RED}${TESTS_FAILED}${NC}"
 echo -e "Tests warned:  ${YELLOW}${TESTS_WARNED}${NC}"
 echo ""
 if [[ "$MODE" == "ci" ]]; then
-  echo "Note: Claude Desktop integration (Test 8) skipped in CI mode"
+  echo "Note: Claude Desktop integration (Test 9) skipped in CI mode"
   echo ""
 fi
 echo "Test outputs saved to:"
@@ -495,6 +608,7 @@ echo "  ${TEST_OUTPUT_DIR}/sast-output.json"
 echo "  ${TEST_OUTPUT_DIR}/secrets-output.json"
 echo "  ${TEST_OUTPUT_DIR}/clean-output.json"
 echo "  ${TEST_OUTPUT_DIR}/sbom-output.json"
+echo "  ${TEST_OUTPUT_DIR}/iac-output.json"
 echo ""
 
 if [[ $TESTS_FAILED -gt 0 ]]; then

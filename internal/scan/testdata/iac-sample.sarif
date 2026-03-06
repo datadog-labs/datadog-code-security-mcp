@@ -1,0 +1,134 @@
+{
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "datadog-iac-scanner",
+          "version": "0.1.0",
+          "rules": [
+            {
+              "id": "aws-s3-public-access",
+              "shortDescription": {
+                "text": "S3 bucket allows public access"
+              },
+              "helpUri": "https://docs.datadoghq.com/security/iac/rules/aws-s3-public-access",
+              "defaultConfiguration": {
+                "level": "error"
+              }
+            },
+            {
+              "id": "aws-security-group-open-ssh",
+              "shortDescription": {
+                "text": "Security group allows SSH from 0.0.0.0/0"
+              },
+              "helpUri": "https://docs.datadoghq.com/security/iac/rules/aws-security-group-open-ssh",
+              "defaultConfiguration": {
+                "level": "error"
+              }
+            },
+            {
+              "id": "k8s-privileged-container",
+              "shortDescription": {
+                "text": "Container running in privileged mode"
+              },
+              "helpUri": "https://docs.datadoghq.com/security/iac/rules/k8s-privileged-container",
+              "defaultConfiguration": {
+                "level": "warning"
+              }
+            },
+            {
+              "id": "docker-run-as-root",
+              "shortDescription": {
+                "text": "Dockerfile does not specify a non-root USER"
+              },
+              "helpUri": "https://docs.datadoghq.com/security/iac/rules/docker-run-as-root",
+              "defaultConfiguration": {
+                "level": "warning"
+              }
+            }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "aws-s3-public-access",
+          "level": "error",
+          "message": {
+            "text": "S3 bucket 'my-public-data-bucket' has public access enabled via ACL 'public-read'. This allows anyone on the internet to read objects in the bucket."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "testdata/vulnerabilities/iac/insecure-s3.tf"
+                },
+                "region": {
+                  "startLine": 17
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "aws-security-group-open-ssh",
+          "level": "error",
+          "message": {
+            "text": "Security group 'allow_ssh_from_anywhere' allows SSH (port 22) from 0.0.0.0/0. Restrict SSH access to specific IP ranges."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "testdata/vulnerabilities/iac/insecure-security-group.tf"
+                },
+                "region": {
+                  "startLine": 13
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "k8s-privileged-container",
+          "level": "warning",
+          "message": {
+            "text": "Container 'app' is running in privileged mode. This gives the container full access to the host."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "testdata/vulnerabilities/iac/insecure-k8s.yaml"
+                },
+                "region": {
+                  "startLine": 16
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "docker-run-as-root",
+          "level": "warning",
+          "message": {
+            "text": "Dockerfile does not contain a USER instruction. The container will run as root by default."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "testdata/vulnerabilities/iac/Dockerfile"
+                },
+                "region": {
+                  "startLine": 5
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

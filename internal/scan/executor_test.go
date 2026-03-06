@@ -80,6 +80,7 @@ func TestGetScannerFor_KnownTypes(t *testing.T) {
 		{"sast", true},
 		{"secrets", true},
 		{"sca", true},
+		{"iac", true},
 	}
 
 	for _, tt := range tests {
