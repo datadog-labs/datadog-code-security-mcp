@@ -50,6 +50,10 @@ jobs:
           SHA256_MACOS_X86_64="$(grep 'datadog-code-security-mcp-darwin-amd64.tar.gz' dist/checksums.txt | awk '{print $1}')"
           SHA256_LINUX_ARM64="$(grep 'datadog-code-security-mcp-linux-arm64.tar.gz' dist/checksums.txt | awk '{print $1}')"
           SHA256_LINUX_X86_64="$(grep 'datadog-code-security-mcp-linux-amd64.tar.gz' dist/checksums.txt | awk '{print $1}')"
+          # Wait for the short-lived credentials from dd-sts-action to fully propagate in Datadog's
+          # backend before triggering the workflow. Without this delay, the API call may return 403
+          # even though the app key has the correct permissions.
+          sleep 60
           curl -fsS -X POST \
             -H "Content-Type: application/json" \
             -H "DD-API-KEY: ${DD_API_KEY}" \
