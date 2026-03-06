@@ -27,10 +27,11 @@ func newScanCmd() *cobra.Command {
 This is useful for quick scans, CI/CD integration, or testing.
 
 Available scan types:
-  all     - Run all scans (SAST + Secrets)
+  all     - Run all scans (SAST + Secrets + SCA + IaC)
   sast    - Static Application Security Testing only
   secrets - Hardcoded secrets detection only
   sca     - Software Composition Analysis (vulnerability scanning)
+  iac     - Infrastructure-as-Code scanning
 
 The scan will analyze the specified files or directories and output results
 in human-readable format (default) or JSON format (with --json flag).
@@ -105,15 +106,17 @@ func runDirectScan(scanType string, paths []string, workingDir string, outputJSO
 	// Set scan types based on command
 	switch scanType {
 	case "all":
-		scanArgs.ScanTypes = []string{string(types.DetectionTypeSAST), string(types.DetectionTypeSecrets), string(types.DetectionTypeSCA)}
+		scanArgs.ScanTypes = []string{string(types.DetectionTypeSAST), string(types.DetectionTypeSecrets), string(types.DetectionTypeSCA), string(types.DetectionTypeIaC)}
 	case "sast":
 		scanArgs.ScanTypes = []string{string(types.DetectionTypeSAST)}
 	case "secrets":
 		scanArgs.ScanTypes = []string{string(types.DetectionTypeSecrets)}
 	case "sca":
 		scanArgs.ScanTypes = []string{string(types.DetectionTypeSCA)}
+	case "iac":
+		scanArgs.ScanTypes = []string{string(types.DetectionTypeIaC)}
 	default:
-		return fmt.Errorf("invalid scan type: %s (valid options: all, sast, secrets, sca)", scanType)
+		return fmt.Errorf("invalid scan type: %s (valid options: all, sast, secrets, sca, iac)", scanType)
 	}
 
 	// Execute scan

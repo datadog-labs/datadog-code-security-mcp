@@ -25,12 +25,13 @@ standard input/output. It's designed to be used with AI coding assistants like:
 - Zed
 - Any MCP-compatible AI assistant
 
-The server provides five security scanning tools:
-1. datadog_code_security_scan - Run comprehensive security scan (SAST + Secrets + SCA)
+The server provides six security scanning tools:
+1. datadog_code_security_scan - Run comprehensive security scan (SAST + Secrets + SCA + IaC)
 2. datadog_sast_scan - Run SAST (Static Application Security Testing) only
 3. datadog_secrets_scan - Run Secrets detection only
 4. datadog_generate_sbom - Generate Software Bill of Materials (SBOM)
 5. datadog_sca_scan - Run Software Composition Analysis (dependency vulnerability scanning)
+6. datadog_iac_scan - Run Infrastructure-as-Code security scanning
 
 Configuration:
 Add to your Claude Desktop config (~/.claude/config.json):
@@ -96,7 +97,7 @@ func registerSecurityTools(s *server.MCPServer) {
 	s.AddTool(
 		mcp.Tool{
 			Name:        "datadog_code_security_scan",
-			Description: "Run comprehensive code security scan (SAST + Secrets detection + SCA vulnerability scanning) - scans in parallel for maximum performance",
+			Description: "Run comprehensive code security scan (SAST + Secrets detection + SCA vulnerability scanning + IaC scanning) - scans in parallel for maximum performance",
 			InputSchema: mcp.ToolInputSchema{
 				Type: "object",
 				Properties: map[string]any{
@@ -236,9 +237,7 @@ The tool automatically:
 1. Generates SBOM from specified directories
 2. Converts to CycloneDX format
 3. Scans SBOM for known vulnerabilities using Datadog's vulnerability database
-4. Returns comprehensive vulnerability report
-
-Works just like SAST/Secrets - same interface, runs in parallel with other scans.`,
+4. Returns comprehensive vulnerability report`,
 			InputSchema: mcp.ToolInputSchema{
 				Type: "object",
 				Properties: map[string]any{
@@ -256,5 +255,37 @@ Works just like SAST/Secrets - same interface, runs in parallel with other scans
 			},
 		},
 		handleSCAScan,
+	)
+
+	// Tool 6: IaC (Infrastructure-as-Code) scanning
+	s.AddTool(
+		mcp.Tool{
+			Name: "datadog_iac_scan",
+			Description: `Run Infrastructure-as-Code (IaC) security scan to detect misconfigurations, compliance issues, and security vulnerabilities in IaC files.
+
+Supports: Terraform, CloudFormation, Kubernetes manifests, Dockerfiles, Github actions and other IaC formats and platforms.
+
+Parameters:
+• file_paths (array, required) - Directories containing IaC files to scan
+• working_dir (string, optional) - Base directory for resolving relative paths
+
+Output: Returns security findings with severity, rule, file location, and remediation guidance`,
+			InputSchema: mcp.ToolInputSchema{
+				Type: "object",
+				Properties: map[string]any{
+					"file_paths": map[string]any{
+						"type":        "array",
+						"items":       map[string]string{"type": "string"},
+						"description": "Array of file paths or directories to scan",
+					},
+					"working_dir": map[string]any{
+						"type":        "string",
+						"description": "Base directory for resolving relative paths",
+					},
+				},
+				Required: []string{"file_paths"},
+			},
+		},
+		handleIaCScan,
 	)
 }

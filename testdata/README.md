@@ -20,6 +20,12 @@ testdata/
 │   │   ├── aws-keys.py            # AWS credentials
 │   │   ├── github-token.js        # GitHub Personal Access Tokens
 │   │   └── api-key.env            # Generic API keys and credentials
+│   ├── iac/                       # Infrastructure-as-Code samples
+│   │   ├── insecure-s3.tf         # Insecure S3 bucket (public access, no encryption)
+│   │   ├── insecure-security-group.tf # Open security groups (SSH/RDP/all to 0.0.0.0/0)
+│   │   ├── insecure-iam.tf        # Overly permissive IAM policies (wildcard actions)
+│   │   ├── insecure-k8s.yaml      # Kubernetes misconfigurations (privileged, root, hostNetwork)
+│   │   └── Dockerfile             # Insecure Dockerfile (root, latest tag, secrets in ENV)
 │   └── clean/                     # Safe code (negative tests)
 │       └── safe-code.go           # Secure coding patterns (no vulnerabilities)
 ├── sbom-test/                     # SBOM generation test fixtures
@@ -57,6 +63,23 @@ testdata/
 - Database credentials in connection strings
 - API keys and OAuth secrets
 - JWT and encryption keys
+
+### IaC (Infrastructure-as-Code)
+
+| File | Format | Misconfiguration Type | Severity | Description |
+|------|--------|-----------------------|----------|-------------|
+| `iac/insecure-s3.tf` | Terraform | S3 public access, no encryption | High | Public S3 bucket with no server-side encryption |
+| `iac/insecure-security-group.tf` | Terraform | Open network ports | High | Security groups with SSH/RDP/all ports open to 0.0.0.0/0 |
+| `iac/insecure-iam.tf` | Terraform | IAM privilege escalation | High | Wildcard actions/resources, overly permissive assume role |
+| `iac/insecure-k8s.yaml` | Kubernetes | Container security | Medium-High | Privileged containers, hostNetwork, root user, cluster-admin |
+| `iac/Dockerfile` | Docker | Container hardening | Medium | Running as root, latest tag, secrets in ENV, ADD from URL |
+
+**Expected Detections:**
+- S3 bucket public access and missing encryption
+- Security groups open to 0.0.0.0/0 (SSH, RDP, database ports)
+- IAM policies with wildcard permissions
+- Kubernetes privileged containers and host namespace access
+- Dockerfile running as root, hardcoded secrets in ENV
 
 ### Clean Code (Negative Tests)
 
@@ -98,6 +121,11 @@ testdata/
 
 # Expected output: AWS keys, GitHub tokens, API keys
 
+# Test IaC scanner
+./bin/datadog-code-security-mcp scan iac ./testdata/vulnerabilities/iac
+
+# Expected output: S3 misconfigurations, open security groups, IAM issues, K8s misconfigs
+
 # Test with JSON output
 ./bin/datadog-code-security-mcp scan sast ./testdata/vulnerabilities/sast --json
 
@@ -136,6 +164,18 @@ Use these validation criteria to verify scanners are working correctly:
 | `sbom-test/` | Go modules | ~22 components |
 
 **Validation:** Run SBOM generation and verify at least 20 Go module components found.
+
+### IaC Expected Detections
+
+| Test File | Expected Findings | Severity | Count |
+|-----------|------------------|----------|-------|
+| `insecure-s3.tf` | S3 public access, missing encryption | High | 3-5 |
+| `insecure-security-group.tf` | Open SSH/RDP/all ports | High | 4-8 |
+| `insecure-iam.tf` | Wildcard permissions, escalation | High | 3-5 |
+| `insecure-k8s.yaml` | Privileged containers, root, hostNetwork | Medium-High | 5-10 |
+| `Dockerfile` | Root user, latest tag, secrets in ENV | Medium | 3-6 |
+
+**Validation:** Run IaC scanner and verify at least 1 misconfiguration type detected.
 
 ### Clean Code (Negative Test)
 
@@ -195,6 +235,13 @@ Prompts to try:
 - ✅ At least 5 AWS-related secrets in `aws-keys.py`
 - ✅ At least 6 GitHub token patterns in `github-token.js`
 - ✅ At least 15 different secret types in `api-key.env`
+
+### IaC Tests Should Detect:
+- ✅ S3 bucket public access or missing encryption in `insecure-s3.tf`
+- ✅ Open security group rules (SSH/RDP to 0.0.0.0/0) in `insecure-security-group.tf`
+- ✅ Overly permissive IAM policies in `insecure-iam.tf`
+- ✅ Kubernetes privileged containers or host access in `insecure-k8s.yaml`
+- ✅ Dockerfile running as root or hardcoded secrets in `Dockerfile`
 
 ## Important Notes
 

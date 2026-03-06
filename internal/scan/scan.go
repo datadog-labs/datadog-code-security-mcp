@@ -54,6 +54,7 @@ func ExecuteScan(ctx context.Context, args ScanArgs) (*ScanResult, error) {
 			string(types.DetectionTypeSAST),
 			string(types.DetectionTypeSecrets),
 			string(types.DetectionTypeSCA),
+			string(types.DetectionTypeIaC),
 		}
 	}
 
@@ -130,10 +131,10 @@ func parseScanTypes(scanTypes []string) ([]string, error) {
 		st = strings.ToLower(strings.TrimSpace(st))
 
 		switch st {
-		case "sast", "secrets", "sca":
+		case "sast", "secrets", "sca", "iac":
 			// valid
 		default:
-			return nil, fmt.Errorf("invalid scan_type: %s (valid options: sast, secrets, sca)", st)
+			return nil, fmt.Errorf("invalid scan_type: %s (valid options: sast, secrets, sca, iac)", st)
 		}
 
 		if !seen[st] {

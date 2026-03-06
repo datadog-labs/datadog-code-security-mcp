@@ -1,0 +1,91 @@
+# Kubernetes manifests with security misconfigurations
+# This file demonstrates common Kubernetes security issues for E2E testing
+
+---
+# VULNERABLE: Pod running as root with privileged container
+apiVersion: v1
+kind: Pod
+metadata:
+  name: privileged-pod
+  namespace: default
+spec:
+  containers:
+    - name: app
+      image: nginx:latest
+      # VULNERABLE: Running as root
+      securityContext:
+        runAsUser: 0
+        privileged: true
+        allowPrivilegeEscalation: true
+      # VULNERABLE: No resource limits
+      ports:
+        - containerPort: 80
+
+---
+# VULNERABLE: Deployment with hostNetwork and hostPID
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: insecure-deployment
+  namespace: default
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: insecure-app
+  template:
+    metadata:
+      labels:
+        app: insecure-app
+    spec:
+      # VULNERABLE: Using host network namespace
+      hostNetwork: true
+      # VULNERABLE: Using host PID namespace
+      hostPID: true
+      containers:
+        - name: app
+          image: myapp:latest
+          securityContext:
+            # VULNERABLE: Running as root
+            runAsNonRoot: false
+            # VULNERABLE: Writable root filesystem
+            readOnlyRootFilesystem: false
+            capabilities:
+              add:
+                # VULNERABLE: Adding dangerous capabilities
+                - NET_ADMIN
+                - SYS_ADMIN
+                - SYS_PTRACE
+          # VULNERABLE: No resource limits defined
+          env:
+            # VULNERABLE: Secrets in environment variables (should use Secrets resource)
+            - name: DB_PASSWORD
+              value: "super-secret-password-123"
+            - name: API_KEY
+              value: "ak_live_1234567890abcdef"
+
+---
+# VULNERABLE: Service account with automounted token
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: insecure-sa
+  namespace: default
+# VULNERABLE: Token is auto-mounted by default
+automountServiceAccountToken: true
+
+---
+# VULNERABLE: ClusterRoleBinding giving cluster-admin to a service account
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: insecure-admin-binding
+subjects:
+  - kind: ServiceAccount
+    name: insecure-sa
+    namespace: default
+roleRef:
+  kind: ClusterRole
+  # VULNERABLE: Binding to cluster-admin role
+  name: cluster-admin
+  apiGroup: rbac.authorization.k8s.io

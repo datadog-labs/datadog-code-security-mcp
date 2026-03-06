@@ -1,17 +1,17 @@
 # Datadog Code Security MCP
 
-Local code security scanning for AI coding assistants via Model Context Protocol (MCP).
-
-## Overview
-
 Datadog Code Security MCP provides all Code Security scan tools to AI coding assistants like Claude Desktop, Cursor, etc - Can also be used as a CLI tool.
 
+> **Note:** The Datadog Code Security MCP server is currently in Preview
+
 ### Available MCP Tools
-1. **`datadog_code_security_scan`** - SAST + Secrets + SCA in parallel
+
+1. **`datadog_code_security_scan`** - SAST + Secrets + SCA + IAC in parallel
 2. **`datadog_sast_scan`** - Static Application Security Testing only
 3. **`datadog_secrets_scan`** - Secrets detection only
 4. **`datadog_sca_scan`** - Software Composition Analysis (dependency vulnerabilities)
-5. **`datadog_generate_sbom`** - Generate Software Bill of Materials (SBOM)
+5. **`datadog_iac_scan`** - Infrastructure as code scanning
+6. **`datadog_generate_sbom`** - Generate Software Bill of Materials (SBOM)
 
 ## Quick Start
 
@@ -37,15 +37,18 @@ sudo install -m 755 datadog-code-security-mcp /usr/local/bin/
 ```bash
 datadog-code-security-mcp version
 ```
+
 **⚠️ Requirements:**
 
 The MCP server requires external Datadog security binaries to perform scans.
 
 **Note:** If a required binary is missing, the MCP server will detect this and provide platform-specific installation instructions.
 
-## Claude Desktop Configuration
+## Integrations
 
-The scanner requires Datadog API credentials to fetch security rules for SAST and Secrets scanning. SBOM generation works without authentication.
+The MCP Server requires [Datadog API key and application](https://docs.datadoghq.com/es/account_management/api-app-keys/) key as DD_API_KEY and DD_APP_KEY
+
+### Claude Configuration
 
 ```bash
 # Configure with API keys
@@ -115,7 +118,7 @@ Once configured, ask your AI assistant to scan your code:
 - "Generate an SBOM for this project"
 - "What dependencies does this project have?"
 
-## Direct Scanning (No AI Required)
+## Direct Scanning with CLI
 
 ```bash
 # Comprehensive scan (SAST + Secrets + SCA in parallel)
@@ -134,6 +137,7 @@ datadog-code-security-mcp scan all ./src --json
 datadog-code-security-mcp scan sast ./app --json
 datadog-code-security-mcp generate-sbom . --json
 ```
+
 #### Manual Installation Instructions for Requirements (Optional)
 
 **datadog-static-analyzer** (SAST + Secrets)
@@ -161,11 +165,13 @@ brew install --cask datadog-security-cli
 ## For Developers
 
 **Quick References:**
+
 - [CLAUDE.md](CLAUDE.md) - Developer guide for Claude Code
 - [AGENTS.md](AGENTS.md) - Quick reference for AI coding assistants
 - [docs/RELEASE.md](docs/RELEASE.md) - Release process
 
 **Key Commands:**
+
 ```bash
 make build          # Build binary
 make test           # Run tests with race detector

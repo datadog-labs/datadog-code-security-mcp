@@ -43,6 +43,15 @@ func ValidateScanBinaries(ctx context.Context, scanTypes []string) error {
 				manager:   NewManager(BinaryTypeSBOMGenerator),
 				scanTypes: []string{"sca"},
 			}
+
+		case "iac":
+			binaryChecks[BinaryTypeIaC] = struct {
+				manager   *BinaryManager
+				scanTypes []string
+			}{
+				manager:   NewManager(BinaryTypeIaC),
+				scanTypes: []string{"iac"},
+			}
 		}
 	}
 
