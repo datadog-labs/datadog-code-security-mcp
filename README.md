@@ -20,8 +20,9 @@ Datadog Code Security MCP provides all Code Security scan tools to AI coding ass
 **Homebrew (Recommended):**
 
 ```bash
+brew tap datadog-labs/pack
 brew update
-brew install --cask datadog-labs/pack/datadog-code-security-mcp
+brew install datadog-labs/pack/datadog-code-security-mcp
 ```
 
 **Alternative: Download from GitHub Releases**
