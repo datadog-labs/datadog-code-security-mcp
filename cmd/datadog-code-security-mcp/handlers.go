@@ -51,7 +51,7 @@ func handleAuthenticatedScan(ctx context.Context, request mcp.CallToolRequest, s
 }
 
 func handleCodeSecurityScan(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	return handleAuthenticatedScan(ctx, request, []string{string(types.DetectionTypeSAST), string(types.DetectionTypeSecrets), string(types.DetectionTypeSCA)})
+	return handleAuthenticatedScan(ctx, request, []string{string(types.DetectionTypeSAST), string(types.DetectionTypeSecrets), string(types.DetectionTypeSCA), string(types.DetectionTypeIaC)})
 }
 
 func handleSASTScan(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -86,6 +86,11 @@ func handleGenerateSBOM(ctx context.Context, request mcp.CallToolRequest) (*mcp.
 // Redesigned to follow modular pattern: takes directories as input (like SAST/Secrets)
 func handleSCAScan(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	return handleAuthenticatedScan(ctx, request, []string{string(types.DetectionTypeSCA)})
+}
+
+// handleIaCScan handles Infrastructure-as-Code scan requests
+func handleIaCScan(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return handleAuthenticatedScan(ctx, request, []string{string(types.DetectionTypeIaC)})
 }
 
 // parseScanArgs extracts scan arguments from MCP request

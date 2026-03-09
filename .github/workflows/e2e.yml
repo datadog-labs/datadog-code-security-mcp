@@ -110,6 +110,72 @@ jobs:
           echo "==> Verifying installation..."
           ~/.local/bin/datadog-static-analyzer --version
 
+      - name: Install datadog-iac-scanner (macOS)
+        if: runner.os == 'macOS'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "==> Detecting architecture..."
+          ARCH="arm64"
+          if [[ "$(uname -m)" == "x86_64" ]]; then
+            ARCH="amd64"
+          fi
+          echo "Architecture: ${ARCH}"
+
+          echo "==> Fetching latest release version..."
+          VERSION=$(gh release view --repo DataDog/datadog-iac-scanner --json tagName -q '.tagName' | sed 's/^v//')
+          echo "Version: ${VERSION}"
+
+          echo "==> Downloading datadog-iac-scanner..."
+          ASSET_NAME="datadog-iac-scanner_${VERSION}_darwin_${ARCH}.tar.gz"
+          echo "Asset: ${ASSET_NAME}"
+          gh release download --repo DataDog/datadog-iac-scanner --pattern "${ASSET_NAME}" --dir /tmp
+
+          echo "==> Extracting archive..."
+          mkdir -p ~/.local/bin
+          tar xzf "/tmp/${ASSET_NAME}" -C /tmp
+          mv /tmp/datadog-iac-scanner ~/.local/bin/
+          chmod +x ~/.local/bin/datadog-iac-scanner
+
+          echo "==> Adding to PATH..."
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+          echo "==> Verifying installation..."
+          ~/.local/bin/datadog-iac-scanner --help | head -5 || true
+
+      - name: Install datadog-iac-scanner (Linux)
+        if: runner.os == 'Linux'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "==> Detecting architecture..."
+          ARCH="amd64"
+          if [[ "$(uname -m)" == "aarch64" ]]; then
+            ARCH="arm64"
+          fi
+          echo "Architecture: ${ARCH}"
+
+          echo "==> Fetching latest release version..."
+          VERSION=$(gh release view --repo DataDog/datadog-iac-scanner --json tagName -q '.tagName' | sed 's/^v//')
+          echo "Version: ${VERSION}"
+
+          echo "==> Downloading datadog-iac-scanner..."
+          ASSET_NAME="datadog-iac-scanner_${VERSION}_linux_${ARCH}.tar.gz"
+          echo "Asset: ${ASSET_NAME}"
+          gh release download --repo DataDog/datadog-iac-scanner --pattern "${ASSET_NAME}" --dir /tmp
+
+          echo "==> Extracting archive..."
+          mkdir -p ~/.local/bin
+          tar xzf "/tmp/${ASSET_NAME}" -C /tmp
+          mv /tmp/datadog-iac-scanner ~/.local/bin/
+          chmod +x ~/.local/bin/datadog-iac-scanner
+
+          echo "==> Adding to PATH..."
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+          echo "==> Verifying installation..."
+          ~/.local/bin/datadog-iac-scanner --help | head -5 || true
+
       - name: Verify Go environment
         run: |
           go version
@@ -158,6 +224,9 @@ jobs:
           echo ""
           echo "=== Clean Code Output ==="
           cat /tmp/clean-output.json || echo "File not found"
+          echo ""
+          echo "=== IaC Output ==="
+          cat /tmp/iac-output.json || echo "File not found"
 
       - name: Upload test outputs
         if: always()
@@ -170,6 +239,7 @@ jobs:
             /tmp/sast-output.json
             /tmp/secrets-output.json
             /tmp/clean-output.json
+            /tmp/iac-output.json
           retention-days: 7
           if-no-files-found: warn
 
@@ -197,6 +267,7 @@ jobs:
             echo "  ✓ SAST scanner"
             echo "  ✓ Secrets scanner"
             echo "  ✓ Negative tests (clean code)"
+            echo "  ✓ IaC scanner"
             exit 0
           else
             echo "❌ E2E tests failed on one or more platforms"

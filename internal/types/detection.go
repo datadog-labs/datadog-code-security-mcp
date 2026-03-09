@@ -8,6 +8,7 @@ const (
 	DetectionTypeSecrets DetectionType = "secrets"
 	DetectionTypeSBOM    DetectionType = "sbom"
 	DetectionTypeSCA     DetectionType = "sca"
+	DetectionTypeIaC     DetectionType = "iac"
 )
 
 // AllowedDetectionTypes returns all valid detection types
@@ -17,6 +18,7 @@ func AllowedDetectionTypes() []string {
 		string(DetectionTypeSecrets),
 		string(DetectionTypeSBOM),
 		string(DetectionTypeSCA),
+		string(DetectionTypeIaC),
 	}
 }
 

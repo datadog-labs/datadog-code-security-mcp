@@ -22,12 +22,22 @@ const (
 	NamingConventionSimple     NamingConvention = "simple"      // darwin_arm64
 )
 
+// ArchiveFormat represents the type of archive used for binary distribution
+type ArchiveFormat string
+
+const (
+	ArchiveFormatZip   ArchiveFormat = "zip"
+	ArchiveFormatTarGz ArchiveFormat = "tar.gz"
+)
+
 // BinaryConfig contains the configuration for a specific binary type
 type BinaryConfig struct {
 	BinaryName         string
 	GitHubRepo         string
 	SupportedPlatforms []Platform
 	NamingConvention   NamingConvention
+	ArchiveFormat      ArchiveFormat // defaults to zip if empty
+	VersionedFilename  bool          // if true, release assets embed the version: {name}_{version}_{os}_{arch}.{ext}
 }
 
 // BinaryType represents different types of binaries
@@ -37,6 +47,7 @@ const (
 	BinaryTypeStaticAnalyzer BinaryType = "static-analyzer"
 	BinaryTypeSBOMGenerator  BinaryType = "sbom-generator"
 	BinaryTypeSecurity       BinaryType = "security-cli"
+	BinaryTypeIaC            BinaryType = "iac-scanner"
 )
 
 // BinaryConfigs contains the configuration for all supported binaries
@@ -75,6 +86,19 @@ var BinaryConfigs = map[BinaryType]BinaryConfig{
 			{OS: "darwin", Arch: "arm64"},
 		},
 	},
+	BinaryTypeIaC: {
+		BinaryName:        "datadog-iac-scanner",
+		GitHubRepo:        "DataDog/datadog-iac-scanner",
+		NamingConvention:  NamingConventionSimple,
+		ArchiveFormat:     ArchiveFormatTarGz,
+		VersionedFilename: true, // assets are named {name}_{version}_{os}_{arch}.tar.gz
+		SupportedPlatforms: []Platform{
+			{OS: "darwin", Arch: "arm64"},
+			{OS: "linux", Arch: "amd64"},
+			{OS: "linux", Arch: "arm64"},
+			{OS: "windows", Arch: "amd64"},
+		},
+	},
 }
 
 // BinaryManager manages scanner binaries
@@ -97,6 +121,11 @@ func NewBinaryManager() *BinaryManager {
 // NewSBOMGeneratorManager creates a manager for datadog-sbom-generator
 func NewSBOMGeneratorManager() *BinaryManager {
 	return NewManager(BinaryTypeSBOMGenerator)
+}
+
+// NewIaCScannerManager creates a manager for datadog-iac-scanner
+func NewIaCScannerManager() *BinaryManager {
+	return NewManager(BinaryTypeIaC)
 }
 
 // GetBinaryPath finds the binary in PATH.
@@ -125,6 +154,8 @@ func (bm *BinaryManager) formatMissingBinaryError() error {
 		purpose = "required for SBOM generation"
 	case "datadog-security-cli":
 		purpose = "required for SCA vulnerability scanning"
+	case "datadog-iac-scanner":
+		purpose = "required for Infrastructure-as-Code scanning"
 	default:
 		purpose = "required for security scanning"
 	}
@@ -190,12 +221,31 @@ func (bm *BinaryManager) generateInstallInstructions() string {
 		return bm.generateUnsupportedPlatformMessage(os, archName)
 	}
 
-	// Generate platform-specific binary name
-	var binaryFileName string
+	// Determine archive extension
+	archiveExt := ".zip"
+	if bm.config.ArchiveFormat == ArchiveFormatTarGz {
+		// Windows always uses .zip even for tar.gz binaries
+		if os == "windows" {
+			archiveExt = ".zip"
+		} else {
+			archiveExt = ".tar.gz"
+		}
+	}
 
-	if bm.config.NamingConvention == NamingConventionSimple {
-		// Simple convention: {name}_{os}_{arch}.zip
-		binaryFileName = fmt.Sprintf("%s_%s_%s.zip", bm.config.BinaryName, os, archName)
+	// Generate platform-specific binary name and download URL
+	var binaryFileName, downloadURL string
+
+	if bm.config.VersionedFilename {
+		// Versioned convention: {name}_{version}_{os}_{arch}.{ext}
+		// Use ${VERSION} placeholder — resolved at install time via GitHub API
+		binaryFileName = fmt.Sprintf("%s_${VERSION}_%s_%s%s", bm.config.BinaryName, os, archName, archiveExt)
+		downloadURL = fmt.Sprintf("https://github.com/%s/releases/download/v${VERSION}/%s",
+			bm.config.GitHubRepo, binaryFileName)
+	} else if bm.config.NamingConvention == NamingConventionSimple {
+		// Simple convention: {name}_{os}_{arch}.{ext}
+		binaryFileName = fmt.Sprintf("%s_%s_%s%s", bm.config.BinaryName, os, archName, archiveExt)
+		downloadURL = fmt.Sprintf("https://github.com/%s/releases/latest/download/%s",
+			bm.config.GitHubRepo, binaryFileName)
 	} else {
 		// Rust triple convention: {name}-{arch}-{platform-suffix}.zip
 		switch os {
@@ -209,10 +259,20 @@ func (bm *BinaryManager) generateInstallInstructions() string {
 			return fmt.Sprintf("# Binary not available for %s\n# Please visit: https://github.com/%s/releases",
 				os, bm.config.GitHubRepo)
 		}
+		downloadURL = fmt.Sprintf("https://github.com/%s/releases/latest/download/%s",
+			bm.config.GitHubRepo, binaryFileName)
 	}
 
-	downloadURL := fmt.Sprintf("https://github.com/%s/releases/latest/download/%s",
-		bm.config.GitHubRepo, binaryFileName)
+	// For versioned filenames, prepend a step to resolve the latest version
+	var versionStep string
+	if bm.config.VersionedFilename {
+		versionStep = fmt.Sprintf(
+			`# Fetch latest version from GitHub:
+VERSION=$(curl -s https://api.github.com/repos/%s/releases/latest | grep -o '"tag_name": "v[^"]*"' | head -1 | cut -d'"' -f4 | sed 's/^v//')
+echo "Installing %s version ${VERSION}"
+
+`, bm.config.GitHubRepo, bm.config.BinaryName)
+	}
 
 	// Generate OS-specific instructions
 	switch os {
@@ -221,8 +281,19 @@ func (bm *BinaryManager) generateInstallInstructions() string {
 		if os == "darwin" {
 			shellRC = "~/.zshrc"
 		}
+
+		// Choose extract command based on archive format
+		var extractCmd string
+		if archiveExt == ".tar.gz" {
+			extractCmd = fmt.Sprintf("curl -L \"%s\" -o /tmp/%s.tar.gz && tar xzf /tmp/%s.tar.gz -C /tmp/ && mkdir -p ~/.local/bin && mv /tmp/%s ~/.local/bin/ && chmod +x ~/.local/bin/%s",
+				downloadURL, bm.config.BinaryName, bm.config.BinaryName, bm.config.BinaryName, bm.config.BinaryName)
+		} else {
+			extractCmd = fmt.Sprintf("curl -L \"%s\" -o /tmp/%s.zip && unzip -o /tmp/%s.zip -d /tmp/ && mkdir -p ~/.local/bin && mv /tmp/%s ~/.local/bin/ && chmod +x ~/.local/bin/%s",
+				downloadURL, bm.config.BinaryName, bm.config.BinaryName, bm.config.BinaryName, bm.config.BinaryName)
+		}
+
 		return fmt.Sprintf(`# Install %s to ~/.local/bin (no sudo required):
-curl -L %s -o /tmp/%s.zip && unzip -o /tmp/%s.zip -d /tmp/ && mkdir -p ~/.local/bin && mv /tmp/%s ~/.local/bin/ && chmod +x ~/.local/bin/%s
+%s%s
 
 # Add to PATH (if not already added):
 echo 'export PATH="$HOME/.local/bin:$PATH"' >> %s && source %s
@@ -232,11 +303,8 @@ echo 'export PATH="$HOME/.local/bin:$PATH"' >> %s && source %s
 
 # For more details visit: https://github.com/%s/releases`,
 			bm.config.BinaryName,
-			downloadURL,
-			bm.config.BinaryName,
-			bm.config.BinaryName,
-			bm.config.BinaryName,
-			bm.config.BinaryName,
+			versionStep,
+			extractCmd,
 			shellRC,
 			shellRC,
 			bm.config.BinaryName,
@@ -245,14 +313,15 @@ echo 'export PATH="$HOME/.local/bin:$PATH"' >> %s && source %s
 	case "windows":
 		return fmt.Sprintf(`# Download the latest %s:
 # https://github.com/%s/releases
-# Download URL: %s
+%s# Download URL: %s
 
-# After download, please extract the ZIP file and move the binary to a directory in your PATH
+# After download, please extract the archive and move the binary to a directory in your PATH
 
 # Finally, run the requested scan.
 `,
 			bm.config.BinaryName,
 			bm.config.GitHubRepo,
+			versionStep,
 			downloadURL)
 
 	default:
