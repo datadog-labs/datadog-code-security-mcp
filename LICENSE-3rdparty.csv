@@ -18,3 +18,4 @@ core,github.com/wk8/go-ordered-map/v2,Apache-2.0,Copyright 2023 Jean Rougé <wk8
 core,github.com/yosida95/uritemplate/v3,BSD-3-Clause,"Copyright (C) 2016, Kohei YOSHIDA <https://yosida95.com/>. All rights reserved"
 core,golang/go,BSD-3-Clause,Copyright (c) 2009 The Go Authors. All rights reserved.
 core,gopkg.in/yaml.v3,MIT,Copyright (c) 2006-2010 Kirill Simonov | Copyright 2011-2016 Canonical Ltd
+core,github.com/package-url/packageurl-go,MIT,Copyright (c) the purl authors

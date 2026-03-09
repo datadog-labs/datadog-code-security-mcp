@@ -25,13 +25,14 @@ standard input/output. It's designed to be used with AI coding assistants like:
 - Zed
 - Any MCP-compatible AI assistant
 
-The server provides six security scanning tools:
+The server provides seven security scanning tools:
 1. datadog_code_security_scan - Run comprehensive security scan (SAST + Secrets + SCA + IaC)
 2. datadog_sast_scan - Run SAST (Static Application Security Testing) only
 3. datadog_secrets_scan - Run Secrets detection only
 4. datadog_generate_sbom - Generate Software Bill of Materials (SBOM)
 5. datadog_sca_scan - Run Software Composition Analysis (dependency vulnerability scanning)
 6. datadog_iac_scan - Run Infrastructure-as-Code security scanning
+7. datadog_library_vulnerability_scan - Scan specific libraries by PURL for known CVEs (cloud API)
 
 Configuration:
 Add to your Claude Desktop config (~/.claude/config.json):
@@ -287,5 +288,64 @@ Output: Returns security findings with severity, rule, file location, and remedi
 			},
 		},
 		handleIaCScan,
+	)
+
+	// Tool 7: Library vulnerability scan (cloud API, no local codebase needed)
+	s.AddTool(
+		mcp.Tool{
+			Name: "datadog_library_vulnerability_scan",
+			Description: `Scan one or more specific libraries for known vulnerabilities using Datadog's security intelligence.
+
+Unlike datadog_sca_scan (which scans a local codebase), this tool accepts explicit library package URLs (PURLs) and queries the Datadog cloud API directly. Use it when you know which libraries to check without needing to analyse local files.
+
+Parameters:
+• libraries (array, required) - List of libraries to scan. Each entry requires:
+  - purl (string, required): Package URL, e.g. "pkg:maven/com.cronutils/cron-utils@9.1.2"
+  - is_direct (bool, optional): Whether it is a direct dependency
+  - is_dev (bool, optional): Whether it is a dev-only dependency
+  - package_manager (string, optional): e.g. "MAVEN", "NPM", "GOLANG"
+• working_dir (string, optional) - Working directory for git context detection (defaults to current directory)
+
+Output: Returns vulnerabilities with CVE ID, GHSA ID, severity, CVSS score, affected library, remediation, fix versions, and exploit availability.
+
+Authentication: Requires DD_API_KEY and DD_APP_KEY.`,
+			InputSchema: mcp.ToolInputSchema{
+				Type: "object",
+				Properties: map[string]any{
+					"libraries": map[string]any{
+						"type":        "array",
+						"description": "List of libraries to scan for vulnerabilities",
+						"items": map[string]any{
+							"type": "object",
+							"properties": map[string]any{
+								"purl": map[string]any{
+									"type":        "string",
+									"description": "Package URL, e.g. pkg:maven/com.cronutils/cron-utils@9.1.2",
+								},
+								"is_direct": map[string]any{
+									"type":        "boolean",
+									"description": "Whether this is a direct dependency",
+								},
+								"is_dev": map[string]any{
+									"type":        "boolean",
+									"description": "Whether this is a dev-only dependency",
+								},
+								"package_manager": map[string]any{
+									"type":        "string",
+									"description": "Package manager, e.g. MAVEN, NPM, GOLANG",
+								},
+							},
+							"required": []string{"purl"},
+						},
+					},
+					"working_dir": map[string]any{
+						"type":        "string",
+						"description": "Working directory for git context detection (defaults to current directory)",
+					},
+				},
+				Required: []string{"libraries"},
+			},
+		},
+		handleLibraryVulnerabilityScan,
 	)
 }

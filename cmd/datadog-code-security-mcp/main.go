@@ -28,6 +28,7 @@ Usage Examples:
   datadog-code-security-mcp scan sast ./src
   datadog-code-security-mcp scan secrets ./config
   datadog-code-security-mcp scan all ./
+  datadog-code-security-mcp scan library --purl pkg:golang/github.com/foo/bar@v1.0.0
   datadog-code-security-mcp generate-sbom .
 
 For more information, visit: https://github.com/datadog-labs/datadog-code-security-mcp`,

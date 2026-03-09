@@ -2,9 +2,11 @@ package main
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/mark3labs/mcp-go/mcp"
 
+	"github.com/datadog-labs/datadog-code-security-mcp/internal/libraryscan"
 	"github.com/datadog-labs/datadog-code-security-mcp/internal/scan"
 	"github.com/datadog-labs/datadog-code-security-mcp/internal/types"
 )
@@ -199,4 +201,74 @@ func severityToEmoji(severity string) string {
 // errorResult creates an error result for MCP
 func errorResult(err error) *mcp.CallToolResult {
 	return mcp.NewToolResultError(fmt.Sprintf("Scan failed: %v", err))
+}
+
+// formatLibraryScanResult formats library vulnerability scan results as markdown.
+func formatLibraryScanResult(result *libraryscan.ScanResult) *mcp.CallToolResult {
+	output := "# Library Vulnerability Scan Results\n\n"
+	if len(result.Findings) == 0 {
+		output += "✅ No vulnerabilities found! \n"
+		if result.RawResponse != "" {
+			output += "\n---\n\n## Raw API Response\n\n```json\n" + result.RawResponse + "\n```\n"
+		}
+		return mcp.NewToolResultText(output)
+	}
+
+	// Count by severity
+	counts := map[string]int{}
+	for _, f := range result.Findings {
+		counts[f.Severity]++
+	}
+
+	output += "## Summary\n\n"
+	output += "| Severity | Count |\n|----------|-------|\n"
+	for _, sev := range []string{"Critical", "High", "Medium", "Low"} {
+		if c := counts[sev]; c > 0 {
+			output += fmt.Sprintf("| %s %s | **%d** |\n", severityToEmoji(strings.ToUpper(sev)), sev, c) // ToUpper: severityToEmoji uses uppercase constants
+		}
+	}
+	output += fmt.Sprintf("| **Total** | **%d** |\n\n", len(result.Findings))
+
+	output += fmt.Sprintf("## Vulnerabilities (%d)\n\n", len(result.Findings))
+	for i, f := range result.Findings {
+		// VulnerabilityFinding.Severity is title-case (e.g. "Critical") from the Datadog score
+		// enricher, but severityToEmoji expects uppercase constants (e.g. "CRITICAL").
+		emoji := severityToEmoji(strings.ToUpper(f.Severity))
+		output += fmt.Sprintf("### %s %d. %s\n", emoji, i+1, f.GHSAID)
+		if len(f.CVEAliases) > 0 {
+			output += fmt.Sprintf("- **CVE:** %s\n", strings.Join(f.CVEAliases, ", "))
+		}
+		output += fmt.Sprintf("- **Library:** `%s` @ `%s`\n", f.LibraryName, f.LibraryVersion)
+		output += fmt.Sprintf("- **Severity:** %s", f.Severity)
+		if f.CVSSScore > 0 {
+			output += fmt.Sprintf(" (CVSS: %.1f)", f.CVSSScore)
+		}
+		output += "\n"
+		output += fmt.Sprintf("- **Summary:** %s\n", f.Summary)
+		output += fmt.Sprintf("- **Remediation:** %s\n", f.Remediation)
+		if f.ClosestFixVersion != "" {
+			output += fmt.Sprintf("- **Closest safe version:** `%s`\n", f.ClosestFixVersion)
+		}
+		if f.LatestFixVersion != "" {
+			output += fmt.Sprintf("- **Latest safe version:** `%s`\n", f.LatestFixVersion)
+		}
+		if f.ExploitAvailable {
+			output += "- ⚠️ **Exploit available**\n"
+		}
+		output += "\n"
+	}
+
+	// Raw API response
+	if result.RawResponse != "" {
+		output += "---\n\n## Raw API Response\n\n```json\n" + result.RawResponse + "\n```\n\n"
+	}
+
+	// Actionable next steps
+	output += "---\n\n"
+	output += "## Recommended Next Steps\n\n"
+	output += "🔧 **1) Upgrade affected libraries** — Update to the suggested fix versions shown above\n\n"
+	output += "🔍 **2) Check reachability** — Determine if vulnerable code paths are actually exercised in your application\n\n"
+	output += "🔄 **3) Re-scan after upgrading** — Run this tool again on the fixed library versions to confirm no remaining vulnerabilities\n\n"
+
+	return mcp.NewToolResultText(output)
 }

@@ -127,7 +127,7 @@ jobs:
           echo "Version: ${VERSION}"
 
           echo "==> Downloading datadog-iac-scanner..."
-          ASSET_NAME="datadog-iac-scanner_${VERSION}_darwin_${ARCH}.tar.gz"
+          ASSET_NAME="datadog-iac-scanner_darwin_${ARCH}.tar.gz"
           echo "Asset: ${ASSET_NAME}"
           gh release download --repo DataDog/datadog-iac-scanner --pattern "${ASSET_NAME}" --dir /tmp
 
@@ -160,7 +160,7 @@ jobs:
           echo "Version: ${VERSION}"
 
           echo "==> Downloading datadog-iac-scanner..."
-          ASSET_NAME="datadog-iac-scanner_${VERSION}_linux_${ARCH}.tar.gz"
+          ASSET_NAME="datadog-iac-scanner_linux_${ARCH}.tar.gz"
           echo "Asset: ${ASSET_NAME}"
           gh release download --repo DataDog/datadog-iac-scanner --pattern "${ASSET_NAME}" --dir /tmp
 
