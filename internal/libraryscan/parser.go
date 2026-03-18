@@ -49,11 +49,24 @@ type mcpVulnerabilityDef struct {
 	CWEs     []string `json:"cwes"`
 }
 
+// supportedVersion is the only McpScanResult schema version this client can safely parse.
+// Per the schema contract: if the response version is higher than expected, the consumer
+// must reject structured parsing and degrade gracefully rather than misread unknown fields.
+const supportedVersion = 1
+
 // parseResponse parses the MCP-optimized JSON response from the poll endpoint.
+// If the response carries an unsupported schema version, structured parsing is skipped
+// and only the raw JSON is returned so that agents can still inspect the payload directly.
 func parseResponse(body []byte) (*ScanResult, error) {
 	var raw mcpScanResult
 	if err := json.Unmarshal(body, &raw); err != nil {
 		return nil, fmt.Errorf("failed to parse scan result: %w", err)
+	}
+
+	// Version 0 means the field is absent (legacy/pre-versioned response) — treat as no data.
+	// Any version above what we support must not be structurally parsed.
+	if raw.Version != 0 && raw.Version != supportedVersion {
+		return &ScanResult{RawResponse: string(body), UnsupportedVersion: raw.Version}, nil
 	}
 
 	if len(raw.Libraries) == 0 {

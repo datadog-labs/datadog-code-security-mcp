@@ -291,6 +291,23 @@ func TestParseResponse_RemediationFromVulnRef(t *testing.T) {
 	}
 }
 
+func TestParseResponse_UnsupportedVersion_SkipsParsingAndPreservesRaw(t *testing.T) {
+	body := []byte(`{"version": 99, "libraries": {"pkg:npm/lib@1.0": {"name": "lib", "version": "1.0", "vulnerabilities": [{"advisoryId": "GHSA-xxxx"}]}}, "vulnerabilities": {}}`)
+	result, err := parseResponse(body)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result.Findings) != 0 {
+		t.Errorf("expected 0 findings for unsupported version, got %d", len(result.Findings))
+	}
+	if result.UnsupportedVersion != 99 {
+		t.Errorf("expected UnsupportedVersion 99, got %d", result.UnsupportedVersion)
+	}
+	if result.RawResponse != string(body) {
+		t.Error("expected RawResponse to be preserved for unsupported version")
+	}
+}
+
 func TestParseResponse_LibraryWithNoVulns(t *testing.T) {
 	body := []byte(`{
 		"version": 1,

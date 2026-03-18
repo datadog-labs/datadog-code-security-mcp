@@ -206,6 +206,18 @@ func errorResult(err error) *mcp.CallToolResult {
 // formatLibraryScanResult formats library vulnerability scan results as markdown.
 func formatLibraryScanResult(result *libraryscan.ScanResult) *mcp.CallToolResult {
 	output := "# Library Vulnerability Scan Results\n\n"
+
+	// The API returned a schema version this client does not understand.
+	// Structured parsing was skipped to avoid misreading unknown fields.
+	// Return the raw JSON so that agents can still inspect the payload.
+	if result.UnsupportedVersion != 0 {
+		output += fmt.Sprintf("⚠️ **Unsupported response version %d** (this client supports version 1).\n\n", result.UnsupportedVersion)
+		output += "Structured parsing was skipped to avoid misreading an unknown schema. "
+		output += "Raw API response is provided below for inspection:\n\n"
+		output += "```json\n" + result.RawResponse + "\n```\n"
+		return mcp.NewToolResultText(output)
+	}
+
 	if len(result.Findings) == 0 {
 		output += "✅ No vulnerabilities found! \n"
 		return mcp.NewToolResultText(output)

@@ -143,6 +143,30 @@ func TestFormatLibraryScanResult_NoUnformattedPlaceholders(t *testing.T) {
 	}
 }
 
+func TestFormatLibraryScanResult_UnsupportedVersion_ShowsRaw(t *testing.T) {
+	raw := `{"version": 99, "libraries": {}, "vulnerabilities": {}}`
+	result := &libraryscan.ScanResult{
+		UnsupportedVersion: 99,
+		RawResponse:        raw,
+	}
+
+	toolResult := formatLibraryScanResult(result)
+	if toolResult.IsError {
+		t.Error("expected non-error result")
+	}
+	text := extractResultText(toolResult)
+
+	if !strings.Contains(text, "Unsupported response version 99") {
+		t.Error("expected unsupported version warning in output")
+	}
+	if !strings.Contains(text, raw) {
+		t.Error("expected raw JSON to be included in output")
+	}
+	if strings.Contains(text, "No vulnerabilities found") {
+		t.Error("should not show clean-scan message for unsupported version")
+	}
+}
+
 func TestFormatLibraryScanResult_ExploitPoCShown(t *testing.T) {
 	exploitTrue := true
 	result := &libraryscan.ScanResult{

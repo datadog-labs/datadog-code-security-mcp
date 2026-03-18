@@ -57,8 +57,9 @@ type VulnerabilityFinding struct {
 
 // ScanResult holds the result of a library vulnerability scan.
 type ScanResult struct {
-	Findings    []VulnerabilityFinding
-	RawResponse string // raw JSON body as received from the API
+	Findings           []VulnerabilityFinding
+	RawResponse        string // raw JSON body as received from the API
+	UnsupportedVersion int    // non-zero when the response version is newer than this client supports
 }
 
 // ValidatePURL returns an error if purl is not a valid Package URL per the PURL spec.
