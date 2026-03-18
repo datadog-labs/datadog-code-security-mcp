@@ -306,6 +306,9 @@ func formatLibraryScanResult(result *libraryscan.ScanResult) *mcp.CallToolResult
 				output += fmt.Sprintf(" — sources: %s", strings.Join(f.ExploitSources, ", "))
 			}
 			output += "\n"
+			for _, u := range f.ExploitURLs {
+				output += fmt.Sprintf("  - %s\n", u)
+			}
 		}
 		if f.CISAAdded != nil {
 			output += fmt.Sprintf("- 🏛️ **CISA KEV:** added %s\n", *f.CISAAdded)

@@ -451,6 +451,9 @@ func outputLibraryScanHuman(result *libraryscan.ScanResult) error {
 				exploit += " — sources: " + strings.Join(f.ExploitSources, ", ")
 			}
 			fmt.Println(exploit)
+			for _, u := range f.ExploitURLs {
+				fmt.Printf("      %s\n", u)
+			}
 		}
 		if f.CISAAdded != nil {
 			fmt.Printf("   🏛️  CISA KEV: added %s\n", *f.CISAAdded)
