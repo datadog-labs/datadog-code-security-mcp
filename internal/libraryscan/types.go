@@ -27,19 +27,29 @@ type ScanRequest struct {
 // combining data from the library result, vulnerability reference, and vulnerability definition.
 type VulnerabilityFinding struct {
 	// Advisory/vulnerability info (from vulnerability definition)
-	GHSAID    string
-	CVE       string
-	Summary   string
-	Severity  string // Title-case: "Critical", "High", "Medium", "Low"
-	CVSSScore float64
-	CWEs      []string
+	GHSAID         string
+	CVE            string
+	Summary        string
+	Severity       string // Title-case: "Critical", "High", "Medium", "Low"
+	CVSSScore      float64
+	CVSSVector     string
+	CWEs           []string
+	EPSSScore      *float64
+	EPSSPercentile *float64
+	ExploitSources []string
+	ExploitURLs    []string
+	CISAAdded      *string
 
 	// Library info
 	LibraryPURL    string
 	LibraryName    string
 	LibraryVersion string
 	Ecosystem      string
-	Relation       string // "direct" or "transitive"
+	LicenseID      string
+	LatestVersion  string
+	EolDate        *string
+	Relation       string  // "direct" or "transitive"
+	RootParent     *string // PURL of the root dependency that pulled this in
 
 	// Risk info from vulnerability reference
 	DatadogScore     float64

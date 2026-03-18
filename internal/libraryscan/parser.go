@@ -18,7 +18,11 @@ type mcpLibraryResult struct {
 	Name            string       `json:"name"`
 	Version         string       `json:"version"`
 	Ecosystem       string       `json:"ecosystem"`
+	LicenseID       string       `json:"licenseId"`
+	LatestVersion   string       `json:"latestVersion"`
+	EolDate         *string      `json:"eolDate"`
 	Relation        string       `json:"relation"`
+	RootParent      *string      `json:"rootParent"`
 	Vulnerabilities []mcpVulnRef `json:"vulnerabilities"`
 }
 
@@ -41,12 +45,18 @@ type mcpRemediation struct {
 }
 
 type mcpVulnerabilityDef struct {
-	ID       string   `json:"id"`
-	CVE      string   `json:"cve"`
-	Summary  string   `json:"summary"`
-	Severity string   `json:"severity"`
-	CVSSScore float64 `json:"cvssScore"`
-	CWEs     []string `json:"cwes"`
+	ID             string   `json:"id"`
+	CVE            string   `json:"cve"`
+	Summary        string   `json:"summary"`
+	Severity       string   `json:"severity"`
+	CVSSScore      float64  `json:"cvssScore"`
+	CVSSVector     string   `json:"cvssVector"`
+	CWEs           []string `json:"cwes"`
+	EPSSScore      *float64 `json:"epssScore"`
+	EPSSPercentile *float64 `json:"epssPercentile"`
+	ExploitSources []string `json:"exploitSources"`
+	ExploitURLs    []string `json:"exploitUrls"`
+	CISAAdded      *string  `json:"cisaAdded"`
 }
 
 // supportedVersion is the only McpScanResult schema version this client can safely parse.
@@ -82,7 +92,11 @@ func parseResponse(body []byte) (*ScanResult, error) {
 				LibraryName:      lib.Name,
 				LibraryVersion:   lib.Version,
 				Ecosystem:        lib.Ecosystem,
+				LicenseID:        lib.LicenseID,
+				LatestVersion:    lib.LatestVersion,
+				EolDate:          lib.EolDate,
 				Relation:         lib.Relation,
+				RootParent:       lib.RootParent,
 				DatadogScore:     vulnRef.DatadogScore,
 				Reachability:     vulnRef.Reachability,
 				ExploitAvailable: vulnRef.ExploitAvailable,
@@ -98,7 +112,13 @@ func parseResponse(body []byte) (*ScanResult, error) {
 				finding.Summary = vulnDef.Summary
 				finding.Severity = vulnDef.Severity
 				finding.CVSSScore = vulnDef.CVSSScore
+				finding.CVSSVector = vulnDef.CVSSVector
 				finding.CWEs = vulnDef.CWEs
+				finding.EPSSScore = vulnDef.EPSSScore
+				finding.EPSSPercentile = vulnDef.EPSSPercentile
+				finding.ExploitSources = vulnDef.ExploitSources
+				finding.ExploitURLs = vulnDef.ExploitURLs
+				finding.CISAAdded = vulnDef.CISAAdded
 			}
 
 			// Extract closest and latest fix versions from structured remediations

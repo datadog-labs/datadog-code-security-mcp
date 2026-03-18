@@ -255,6 +255,15 @@ func formatLibraryScanResult(result *libraryscan.ScanResult) *mcp.CallToolResult
 			}
 			output += "\n"
 		}
+		if f.LicenseID != "" {
+			output += fmt.Sprintf("- **License:** %s\n", f.LicenseID)
+		}
+		if f.LatestVersion != "" && f.LatestVersion != f.LibraryVersion {
+			output += fmt.Sprintf("- **Latest version:** `%s`\n", f.LatestVersion)
+		}
+		if f.RootParent != nil {
+			output += fmt.Sprintf("- **Root dependency:** `%s`\n", *f.RootParent)
+		}
 		output += fmt.Sprintf("- **Severity:** %s", f.Severity)
 		if f.CVSSScore > 0 {
 			output += fmt.Sprintf(" (CVSS: %.1f)", f.CVSSScore)
@@ -263,6 +272,16 @@ func formatLibraryScanResult(result *libraryscan.ScanResult) *mcp.CallToolResult
 			output += fmt.Sprintf(" · Datadog Score: %.1f", f.DatadogScore)
 		}
 		output += "\n"
+		if f.CVSSVector != "" {
+			output += fmt.Sprintf("- **CVSS Vector:** `%s`\n", f.CVSSVector)
+		}
+		if f.EPSSScore != nil {
+			output += fmt.Sprintf("- **EPSS Score:** %.5f", *f.EPSSScore)
+			if f.EPSSPercentile != nil {
+				output += fmt.Sprintf(" (%.1f%% percentile)", *f.EPSSPercentile*100)
+			}
+			output += "\n"
+		}
 		if f.Summary != "" {
 			output += fmt.Sprintf("- **Summary:** %s\n", f.Summary)
 		}
@@ -283,7 +302,13 @@ func formatLibraryScanResult(result *libraryscan.ScanResult) *mcp.CallToolResult
 			if f.ExploitPoC != nil && *f.ExploitPoC {
 				output += " (PoC exists)"
 			}
+			if len(f.ExploitSources) > 0 {
+				output += fmt.Sprintf(" — sources: %s", strings.Join(f.ExploitSources, ", "))
+			}
 			output += "\n"
+		}
+		if f.CISAAdded != nil {
+			output += fmt.Sprintf("- 🏛️ **CISA KEV:** added %s\n", *f.CISAAdded)
 		}
 		output += "\n"
 	}
