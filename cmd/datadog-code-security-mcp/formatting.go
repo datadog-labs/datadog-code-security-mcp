@@ -212,8 +212,9 @@ func formatLibraryScanResult(result *libraryscan.ScanResult) *mcp.CallToolResult
 	// Return the raw JSON so that agents can still inspect the payload.
 	if result.UnsupportedVersion != 0 {
 		output += fmt.Sprintf("⚠️ **Unsupported response version %d** (this client supports version 1).\n\n", result.UnsupportedVersion)
-		output += "Structured parsing was skipped to avoid misreading an unknown schema. "
-		output += "Raw API response is provided below for inspection:\n\n"
+		output += "The API returned a schema this version of the MCP server cannot safely parse. "
+		output += "**Please upgrade to the latest version of `datadog-code-security-mcp`** to get full structured results.\n\n"
+		output += "In the meantime, the raw API response is provided below for inspection:\n\n"
 		output += "```json\n" + result.RawResponse + "\n```\n"
 		return mcp.NewToolResultText(output)
 	}
