@@ -14,14 +14,14 @@ func TestParseResponse_Empty(t *testing.T) {
 	}
 }
 
-func TestParseResponse_RawResponseIsPreserved(t *testing.T) {
-	body := []byte(`{"version": 1, "libraries": {}, "vulnerabilities": {}}`)
+func TestParseResponse_UnsupportedVersionRawResponseIsPreserved(t *testing.T) {
+	body := []byte(`{"version": 99, "libraries": {}, "vulnerabilities": {}}`)
 	result, err := parseResponse(body)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if result.RawResponse != string(body) {
-		t.Errorf("expected RawResponse to equal input body, got %q", result.RawResponse)
+		t.Errorf("expected RawResponse to equal input body for unsupported version, got %q", result.RawResponse)
 	}
 }
 

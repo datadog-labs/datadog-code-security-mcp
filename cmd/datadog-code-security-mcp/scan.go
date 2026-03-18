@@ -421,11 +421,11 @@ func outputLibraryScanHuman(result *libraryscan.ScanResult) error {
 			fmt.Printf("   Datadog Score: %.1f\n", f.DatadogScore)
 		}
 		if f.EPSSScore != nil {
-			fmt.Printf("   EPSS Score: %.5f", *f.EPSSScore)
 			if f.EPSSPercentile != nil {
-				fmt.Printf(" (%.1f%% percentile)", *f.EPSSPercentile*100)
+				fmt.Printf("   EPSS Score: %.5f (%.1f%% percentile)\n", *f.EPSSScore, *f.EPSSPercentile*100)
+			} else {
+				fmt.Printf("   EPSS Score: %.5f\n", *f.EPSSScore)
 			}
-			fmt.Println()
 		}
 		if f.Summary != "" {
 			fmt.Printf("   Summary: %s\n", f.Summary)

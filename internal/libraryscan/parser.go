@@ -45,7 +45,6 @@ type mcpRemediation struct {
 }
 
 type mcpVulnerabilityDef struct {
-	ID             string   `json:"id"`
 	CVE            string   `json:"cve"`
 	Summary        string   `json:"summary"`
 	Severity       string   `json:"severity"`
@@ -80,7 +79,7 @@ func parseResponse(body []byte) (*ScanResult, error) {
 	}
 
 	if len(raw.Libraries) == 0 {
-		return &ScanResult{RawResponse: string(body)}, nil
+		return &ScanResult{}, nil
 	}
 
 	var findings []VulnerabilityFinding
@@ -135,5 +134,5 @@ func parseResponse(body []byte) (*ScanResult, error) {
 		}
 	}
 
-	return &ScanResult{Findings: findings, RawResponse: string(body)}, nil
+	return &ScanResult{Findings: findings}, nil
 }
