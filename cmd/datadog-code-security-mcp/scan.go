@@ -395,22 +395,32 @@ func outputLibraryScanHuman(result *libraryscan.ScanResult) error {
 	for i, f := range result.Findings {
 		icon := getSeverityIcon(strings.ToUpper(f.Severity))
 		fmt.Printf("%d. %s [%s] %s\n", i+1, icon, strings.ToUpper(f.Severity), f.GHSAID)
-		if len(f.CVEAliases) > 0 {
-			fmt.Printf("   CVE: %s\n", strings.Join(f.CVEAliases, ", "))
+		if f.CVE != "" {
+			fmt.Printf("   CVE: %s\n", f.CVE)
 		}
 		fmt.Printf("   Library: %s @ %s\n", f.LibraryName, f.LibraryVersion)
+		if f.Ecosystem != "" {
+			fmt.Printf("   Ecosystem: %s (%s)\n", f.Ecosystem, f.Relation)
+		}
 		if f.CVSSScore > 0 {
 			fmt.Printf("   CVSS Score: %.1f\n", f.CVSSScore)
 		}
-		fmt.Printf("   Summary: %s\n", f.Summary)
-		fmt.Printf("   Remediation: %s\n", f.Remediation)
+		if f.DatadogScore > 0 {
+			fmt.Printf("   Datadog Score: %.1f\n", f.DatadogScore)
+		}
+		if f.Summary != "" {
+			fmt.Printf("   Summary: %s\n", f.Summary)
+		}
+		if f.Reachability != "" {
+			fmt.Printf("   Reachability: %s\n", f.Reachability)
+		}
 		if f.ClosestFixVersion != "" {
 			fmt.Printf("   Closest safe version: %s\n", f.ClosestFixVersion)
 		}
 		if f.LatestFixVersion != "" {
 			fmt.Printf("   Latest safe version: %s\n", f.LatestFixVersion)
 		}
-		if f.ExploitAvailable {
+		if f.ExploitAvailable != nil && *f.ExploitAvailable {
 			fmt.Println("   ⚠️  Exploit available")
 		}
 		fmt.Println()

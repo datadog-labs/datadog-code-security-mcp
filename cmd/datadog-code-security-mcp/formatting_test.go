@@ -40,20 +40,23 @@ func TestFormatLibraryScanResult_NoFindings(t *testing.T) {
 }
 
 func TestFormatLibraryScanResult_SingleFinding(t *testing.T) {
+	exploitTrue := true
 	result := &libraryscan.ScanResult{
 		Findings: []libraryscan.VulnerabilityFinding{
 			{
 				GHSAID:            "GHSA-test-1234-5678",
-				CVEAliases:        []string{"CVE-2024-1234"},
+				CVE:               "CVE-2024-1234",
 				LibraryName:       "lodash",
 				LibraryVersion:    "4.17.20",
+				Ecosystem:         "npm",
+				Relation:          "direct",
 				Severity:          "High",
 				CVSSScore:         8.1,
+				DatadogScore:      7.5,
 				Summary:           "Prototype pollution",
-				Remediation:       "Upgrade to 4.17.21",
 				ClosestFixVersion: "4.17.21",
 				LatestFixVersion:  "4.17.21",
-				ExploitAvailable:  true,
+				ExploitAvailable:  &exploitTrue,
 			},
 		},
 	}
@@ -71,8 +74,8 @@ func TestFormatLibraryScanResult_SingleFinding(t *testing.T) {
 		"4.17.20",
 		"High",
 		"8.1",
+		"7.5",
 		"Prototype pollution",
-		"Upgrade to 4.17.21",
 		"4.17.21",
 		"Exploit available",
 	}
@@ -113,10 +116,20 @@ func TestFormatLibraryScanResult_SeveritySummary(t *testing.T) {
 
 func TestFormatLibraryScanResult_NoUnformattedPlaceholders(t *testing.T) {
 	// Regression: ensure no %s/%d/%v placeholders leak into output.
+	exploitFalse := false
 	cases := []*libraryscan.ScanResult{
 		{Findings: nil},
 		{Findings: []libraryscan.VulnerabilityFinding{
-			{GHSAID: "GHSA-x", Severity: "Medium", LibraryName: "pkg", LibraryVersion: "1.0"},
+			{
+				GHSAID:           "GHSA-x",
+				CVE:              "CVE-2024-0001",
+				Severity:         "Medium",
+				LibraryName:      "pkg",
+				LibraryVersion:   "1.0",
+				Ecosystem:        "npm",
+				Relation:         "direct",
+				ExploitAvailable: &exploitFalse,
+			},
 		}},
 	}
 	for _, result := range cases {
@@ -127,5 +140,26 @@ func TestFormatLibraryScanResult_NoUnformattedPlaceholders(t *testing.T) {
 				t.Errorf("output contains unformatted placeholder %q", placeholder)
 			}
 		}
+	}
+}
+
+func TestFormatLibraryScanResult_ExploitPoCShown(t *testing.T) {
+	exploitTrue := true
+	result := &libraryscan.ScanResult{
+		Findings: []libraryscan.VulnerabilityFinding{
+			{
+				GHSAID:           "GHSA-poc",
+				LibraryName:      "vuln-lib",
+				LibraryVersion:   "1.0",
+				Severity:         "Critical",
+				ExploitAvailable: &exploitTrue,
+				ExploitPoC:       &exploitTrue,
+			},
+		},
+	}
+
+	text := extractResultText(formatLibraryScanResult(result))
+	if !strings.Contains(text, "PoC exists") {
+		t.Error("expected 'PoC exists' in output when ExploitPoC is true")
 	}
 }

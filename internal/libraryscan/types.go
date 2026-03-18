@@ -23,22 +23,36 @@ type ScanRequest struct {
 	CommitHash   string
 }
 
-// VulnerabilityFinding represents a single vulnerability found in a library.
+// VulnerabilityFinding represents a single vulnerability found in a library,
+// combining data from the library result, vulnerability reference, and vulnerability definition.
 type VulnerabilityFinding struct {
-	GHSAID         string
-	CVEAliases     []string
-	Summary        string
-	Details        string
+	// Advisory/vulnerability info (from vulnerability definition)
+	GHSAID    string
+	CVE       string
+	Summary   string
+	Severity  string // Title-case: "Critical", "High", "Medium", "Low"
+	CVSSScore float64
+	CWEs      []string
+
+	// Library info
 	LibraryPURL    string
 	LibraryName    string
 	LibraryVersion string
-	Severity       string // Title-case: "Critical", "High", "Medium", "Low" (from Datadog SCORE_ENRICHER)
-	// Note: the formatter uses strings.ToUpper when passing to severityToEmoji
-	CVSSScore         float64
-	Remediation       string
+	Ecosystem      string
+	Relation       string // "direct" or "transitive"
+
+	// Risk info from vulnerability reference
+	DatadogScore     float64
+	Reachability     string
+	ExploitAvailable *bool
+	ExploitPoC       *bool
+
+	// Fix info from vulnerability reference
+	FixVersion        string
+	HasRemediation    bool
+	FixType           string
 	ClosestFixVersion string
 	LatestFixVersion  string
-	ExploitAvailable  bool
 }
 
 // ScanResult holds the result of a library vulnerability scan.

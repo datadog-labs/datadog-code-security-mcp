@@ -208,9 +208,6 @@ func formatLibraryScanResult(result *libraryscan.ScanResult) *mcp.CallToolResult
 	output := "# Library Vulnerability Scan Results\n\n"
 	if len(result.Findings) == 0 {
 		output += "✅ No vulnerabilities found! \n"
-		if result.RawResponse != "" {
-			output += "\n---\n\n## Raw API Response\n\n```json\n" + result.RawResponse + "\n```\n"
-		}
 		return mcp.NewToolResultText(output)
 	}
 
@@ -224,43 +221,59 @@ func formatLibraryScanResult(result *libraryscan.ScanResult) *mcp.CallToolResult
 	output += "| Severity | Count |\n|----------|-------|\n"
 	for _, sev := range []string{"Critical", "High", "Medium", "Low"} {
 		if c := counts[sev]; c > 0 {
-			output += fmt.Sprintf("| %s %s | **%d** |\n", severityToEmoji(strings.ToUpper(sev)), sev, c) // ToUpper: severityToEmoji uses uppercase constants
+			// severityToEmoji expects uppercase constants (e.g. "CRITICAL"); Severity is title-case.
+			output += fmt.Sprintf("| %s %s | **%d** |\n", severityToEmoji(strings.ToUpper(sev)), sev, c)
 		}
 	}
 	output += fmt.Sprintf("| **Total** | **%d** |\n\n", len(result.Findings))
 
 	output += fmt.Sprintf("## Vulnerabilities (%d)\n\n", len(result.Findings))
 	for i, f := range result.Findings {
-		// VulnerabilityFinding.Severity is title-case (e.g. "Critical") from the Datadog score
-		// enricher, but severityToEmoji expects uppercase constants (e.g. "CRITICAL").
+		// Severity is title-case (e.g. "Critical"); severityToEmoji expects uppercase.
 		emoji := severityToEmoji(strings.ToUpper(f.Severity))
 		output += fmt.Sprintf("### %s %d. %s\n", emoji, i+1, f.GHSAID)
-		if len(f.CVEAliases) > 0 {
-			output += fmt.Sprintf("- **CVE:** %s\n", strings.Join(f.CVEAliases, ", "))
+		if f.CVE != "" {
+			output += fmt.Sprintf("- **CVE:** %s\n", f.CVE)
 		}
 		output += fmt.Sprintf("- **Library:** `%s` @ `%s`\n", f.LibraryName, f.LibraryVersion)
+		if f.Ecosystem != "" {
+			output += fmt.Sprintf("- **Ecosystem:** %s", f.Ecosystem)
+			if f.Relation != "" {
+				output += fmt.Sprintf(" (%s)", f.Relation)
+			}
+			output += "\n"
+		}
 		output += fmt.Sprintf("- **Severity:** %s", f.Severity)
 		if f.CVSSScore > 0 {
 			output += fmt.Sprintf(" (CVSS: %.1f)", f.CVSSScore)
 		}
+		if f.DatadogScore > 0 {
+			output += fmt.Sprintf(" · Datadog Score: %.1f", f.DatadogScore)
+		}
 		output += "\n"
-		output += fmt.Sprintf("- **Summary:** %s\n", f.Summary)
-		output += fmt.Sprintf("- **Remediation:** %s\n", f.Remediation)
+		if f.Summary != "" {
+			output += fmt.Sprintf("- **Summary:** %s\n", f.Summary)
+		}
+		if len(f.CWEs) > 0 {
+			output += fmt.Sprintf("- **CWEs:** %s\n", strings.Join(f.CWEs, ", "))
+		}
+		if f.Reachability != "" {
+			output += fmt.Sprintf("- **Reachability:** %s\n", f.Reachability)
+		}
 		if f.ClosestFixVersion != "" {
 			output += fmt.Sprintf("- **Closest safe version:** `%s`\n", f.ClosestFixVersion)
 		}
 		if f.LatestFixVersion != "" {
 			output += fmt.Sprintf("- **Latest safe version:** `%s`\n", f.LatestFixVersion)
 		}
-		if f.ExploitAvailable {
-			output += "- ⚠️ **Exploit available**\n"
+		if f.ExploitAvailable != nil && *f.ExploitAvailable {
+			output += "- ⚠️ **Exploit available**"
+			if f.ExploitPoC != nil && *f.ExploitPoC {
+				output += " (PoC exists)"
+			}
+			output += "\n"
 		}
 		output += "\n"
-	}
-
-	// Raw API response
-	if result.RawResponse != "" {
-		output += "---\n\n## Raw API Response\n\n```json\n" + result.RawResponse + "\n```\n\n"
 	}
 
 	// Actionable next steps
