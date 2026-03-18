@@ -80,7 +80,6 @@ func TestParseResponse_TwoLibrariesWithVulns(t *testing.T) {
 		},
 		"vulnerabilities": {
 			"GHSA-p9m8-27x8-rg87": {
-				"id": "GHSA-p9m8-27x8-rg87",
 				"cve": "CVE-2021-41269",
 				"summary": "Critical vulnerability found in cron-utils",
 				"severity": "Critical",
@@ -88,7 +87,6 @@ func TestParseResponse_TwoLibrariesWithVulns(t *testing.T) {
 				"cwes": ["CWE-94"]
 			},
 			"GHSA-pfj3-56hm-jwq5": {
-				"id": "GHSA-pfj3-56hm-jwq5",
 				"cve": "CVE-2020-26238",
 				"summary": "Template injection in cron-utils",
 				"severity": "High",
@@ -186,7 +184,6 @@ func TestParseResponse_VulnDefinitionEnrichesFields(t *testing.T) {
 		},
 		"vulnerabilities": {
 			"GHSA-xxxx": {
-				"id": "GHSA-xxxx",
 				"cve": "CVE-2024-9999",
 				"summary": "Test vulnerability",
 				"severity": "Critical",
