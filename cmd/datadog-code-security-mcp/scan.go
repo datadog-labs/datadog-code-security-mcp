@@ -402,14 +402,36 @@ func outputLibraryScanHuman(result *libraryscan.ScanResult) error {
 		if f.Ecosystem != "" {
 			fmt.Printf("   Ecosystem: %s (%s)\n", f.Ecosystem, f.Relation)
 		}
+		if f.LicenseID != "" {
+			fmt.Printf("   License: %s\n", f.LicenseID)
+		}
+		if f.LatestVersion != "" && f.LatestVersion != f.LibraryVersion {
+			fmt.Printf("   Latest version: %s\n", f.LatestVersion)
+		}
+		if f.RootParent != nil {
+			fmt.Printf("   Root dependency: %s\n", *f.RootParent)
+		}
 		if f.CVSSScore > 0 {
 			fmt.Printf("   CVSS Score: %.1f\n", f.CVSSScore)
+		}
+		if f.CVSSVector != "" {
+			fmt.Printf("   CVSS Vector: %s\n", f.CVSSVector)
 		}
 		if f.DatadogScore > 0 {
 			fmt.Printf("   Datadog Score: %.1f\n", f.DatadogScore)
 		}
+		if f.EPSSScore != nil {
+			fmt.Printf("   EPSS Score: %.5f", *f.EPSSScore)
+			if f.EPSSPercentile != nil {
+				fmt.Printf(" (%.1f%% percentile)", *f.EPSSPercentile*100)
+			}
+			fmt.Println()
+		}
 		if f.Summary != "" {
 			fmt.Printf("   Summary: %s\n", f.Summary)
+		}
+		if len(f.CWEs) > 0 {
+			fmt.Printf("   CWEs: %s\n", strings.Join(f.CWEs, ", "))
 		}
 		if f.Reachability != "" {
 			fmt.Printf("   Reachability: %s\n", f.Reachability)
@@ -421,7 +443,17 @@ func outputLibraryScanHuman(result *libraryscan.ScanResult) error {
 			fmt.Printf("   Latest safe version: %s\n", f.LatestFixVersion)
 		}
 		if f.ExploitAvailable != nil && *f.ExploitAvailable {
-			fmt.Println("   ⚠️  Exploit available")
+			exploit := "   ⚠️  Exploit available"
+			if f.ExploitPoC != nil && *f.ExploitPoC {
+				exploit += " (PoC exists)"
+			}
+			if len(f.ExploitSources) > 0 {
+				exploit += " — sources: " + strings.Join(f.ExploitSources, ", ")
+			}
+			fmt.Println(exploit)
+		}
+		if f.CISAAdded != nil {
+			fmt.Printf("   🏛️  CISA KEV: added %s\n", *f.CISAAdded)
 		}
 		fmt.Println()
 	}
