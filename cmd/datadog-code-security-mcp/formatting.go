@@ -51,21 +51,16 @@ func formatScanResult(result *scan.ScanResult) *mcp.CallToolResult {
 	output += fmt.Sprintf("| **Total** | **%d** |\n", result.Summary.Total)
 	output += "\n"
 
-	// Collect all violations grouped by severity for later use
+	// Collect all violations for display
 	type violationEntry struct {
 		detectionType string
 		violation     types.Violation
 	}
-	var criticalHigh []violationEntry
 	var allViolations []violationEntry
 
 	for detectionType, violations := range result.Results {
 		for _, v := range violations {
-			entry := violationEntry{detectionType: string(detectionType), violation: v}
-			allViolations = append(allViolations, entry)
-			if v.Severity == types.SeverityCritical || v.Severity == types.SeverityHigh {
-				criticalHigh = append(criticalHigh, entry)
-			}
+			allViolations = append(allViolations, violationEntry{detectionType: string(detectionType), violation: v})
 		}
 	}
 
