@@ -3,6 +3,7 @@ package libraryscan
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 )
 
 // mcpScanResult is the top-level structure of the MCP-optimized scan result response (version 1).
@@ -15,14 +16,18 @@ type mcpScanResult struct {
 }
 
 type mcpLibraryResult struct {
-	Name            string       `json:"name"`
-	Version         string       `json:"version"`
-	Ecosystem       string       `json:"ecosystem"`
-	LicenseID       string       `json:"licenseId"`
-	LatestVersion   string       `json:"latestVersion"`
-	EolDate         *string      `json:"eolDate"`
-	Relation        string       `json:"relation"`
-	RootParent      *string      `json:"rootParent"`
+	Name          string       `json:"name"`
+	Version       string       `json:"version"`
+	Ecosystem     string       `json:"ecosystem"`
+	LicenseID     string       `json:"licenseId"`
+	OpenSSFLevel  string       `json:"openssfLevel"`
+	Popularity    string       `json:"popularity"`
+	LatestVersion string       `json:"latestVersion"`
+	EolDate       *string      `json:"eolDate"`
+	Relation      string       `json:"relation"`
+	RootParent    *string      `json:"rootParent"`
+	TraversalPath *string      `json:"traversalPath"`
+	Risks         []string     `json:"risks"`
 	Vulnerabilities []mcpVulnRef `json:"vulnerabilities"`
 }
 
@@ -82,20 +87,12 @@ func parseResponse(body []byte) (*ScanResult, error) {
 		return &ScanResult{}, nil
 	}
 
-	var findings []VulnerabilityFinding
+	var libraries []LibraryInfo
 	for purl, lib := range raw.Libraries {
+		var vulns []VulnerabilityDetail
 		for _, vulnRef := range lib.Vulnerabilities {
-			finding := VulnerabilityFinding{
+			detail := VulnerabilityDetail{
 				GHSAID:           vulnRef.AdvisoryID,
-				LibraryPURL:      purl,
-				LibraryName:      lib.Name,
-				LibraryVersion:   lib.Version,
-				Ecosystem:        lib.Ecosystem,
-				LicenseID:        lib.LicenseID,
-				LatestVersion:    lib.LatestVersion,
-				EolDate:          lib.EolDate,
-				Relation:         lib.Relation,
-				RootParent:       lib.RootParent,
 				DatadogScore:     vulnRef.DatadogScore,
 				Reachability:     vulnRef.Reachability,
 				ExploitAvailable: vulnRef.ExploitAvailable,
@@ -105,34 +102,59 @@ func parseResponse(body []byte) (*ScanResult, error) {
 				FixType:          vulnRef.FixType,
 			}
 
-			// Enrich from deduplicated vulnerability definition
+			// Enrich from the deduplicated advisory definition
 			if vulnDef, ok := raw.Vulnerabilities[vulnRef.AdvisoryID]; ok {
-				finding.CVE = vulnDef.CVE
-				finding.Summary = vulnDef.Summary
-				finding.Severity = vulnDef.Severity
-				finding.CVSSScore = vulnDef.CVSSScore
-				finding.CVSSVector = vulnDef.CVSSVector
-				finding.CWEs = vulnDef.CWEs
-				finding.EPSSScore = vulnDef.EPSSScore
-				finding.EPSSPercentile = vulnDef.EPSSPercentile
-				finding.ExploitSources = vulnDef.ExploitSources
-				finding.ExploitURLs = vulnDef.ExploitURLs
-				finding.CISAAdded = vulnDef.CISAAdded
+				detail.CVE = vulnDef.CVE
+				detail.Summary = vulnDef.Summary
+				detail.Severity = vulnDef.Severity
+				detail.CVSSScore = vulnDef.CVSSScore
+				detail.CVSSVector = vulnDef.CVSSVector
+				detail.CWEs = vulnDef.CWEs
+				detail.EPSSScore = vulnDef.EPSSScore
+				detail.EPSSPercentile = vulnDef.EPSSPercentile
+				detail.ExploitSources = vulnDef.ExploitSources
+				detail.ExploitURLs = vulnDef.ExploitURLs
+				detail.CISAAdded = vulnDef.CISAAdded
 			}
 
 			// Extract closest and latest fix versions from structured remediations
 			for _, r := range vulnRef.Remediations {
 				switch r.Type {
 				case "closest_no_vulnerabilities":
-					finding.ClosestFixVersion = r.LibraryVersion
+					detail.ClosestFixVersion = r.LibraryVersion
 				case "latest_no_vulnerabilities":
-					finding.LatestFixVersion = r.LibraryVersion
+					detail.LatestFixVersion = r.LibraryVersion
 				}
 			}
 
-			findings = append(findings, finding)
+			vulns = append(vulns, detail)
 		}
+
+		libraries = append(libraries, LibraryInfo{
+			PURL:            purl,
+			Name:            lib.Name,
+			Version:         lib.Version,
+			Ecosystem:       lib.Ecosystem,
+			LicenseID:       lib.LicenseID,
+			OpenSSFLevel:    lib.OpenSSFLevel,
+			Popularity:      lib.Popularity,
+			LatestVersion:   lib.LatestVersion,
+			EolDate:         lib.EolDate,
+			Relation:        lib.Relation,
+			RootParent:      lib.RootParent,
+			TraversalPath:   lib.TraversalPath,
+			Risks:           lib.Risks,
+			Vulnerabilities: vulns,
+		})
 	}
 
-	return &ScanResult{Findings: findings}, nil
+	// Sort libraries: most vulnerabilities first, then alphabetically for deterministic output.
+	sort.Slice(libraries, func(i, j int) bool {
+		if len(libraries[i].Vulnerabilities) != len(libraries[j].Vulnerabilities) {
+			return len(libraries[i].Vulnerabilities) > len(libraries[j].Vulnerabilities)
+		}
+		return libraries[i].Name < libraries[j].Name
+	})
+
+	return &ScanResult{Libraries: libraries}, nil
 }

@@ -9,8 +9,8 @@ func TestParseResponse_Empty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(result.Findings) != 0 {
-		t.Errorf("expected 0 findings, got %d", len(result.Findings))
+	if len(result.Libraries) != 0 {
+		t.Errorf("expected 0 libraries, got %d", len(result.Libraries))
 	}
 }
 
@@ -100,63 +100,71 @@ func TestParseResponse_TwoLibrariesWithVulns(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(result.Findings) != 2 {
-		t.Fatalf("expected 2 findings, got %d", len(result.Findings))
+	if len(result.Libraries) != 2 {
+		t.Fatalf("expected 2 libraries, got %d", len(result.Libraries))
 	}
 
-	// Index findings by advisory ID for deterministic assertions
-	byID := map[string]VulnerabilityFinding{}
-	for _, f := range result.Findings {
-		byID[f.GHSAID] = f
+	// Index libraries by name for deterministic assertions
+	byName := map[string]LibraryInfo{}
+	for _, lib := range result.Libraries {
+		byName[lib.Name] = lib
 	}
 
-	f1, ok := byID["GHSA-p9m8-27x8-rg87"]
+	lib1, ok := byName["com.cronutils:cron-utils"]
 	if !ok {
-		t.Fatal("expected finding for GHSA-p9m8-27x8-rg87")
+		t.Fatal("expected library com.cronutils:cron-utils")
 	}
-	if f1.CVE != "CVE-2021-41269" {
-		t.Errorf("expected CVE-2021-41269, got %s", f1.CVE)
+	if lib1.Version != "9.1.2" {
+		t.Errorf("expected Version 9.1.2, got %s", lib1.Version)
 	}
-	if f1.LibraryName != "com.cronutils:cron-utils" {
-		t.Errorf("unexpected library name: %s", f1.LibraryName)
+	if lib1.Ecosystem != "Maven" {
+		t.Errorf("expected Ecosystem Maven, got %s", lib1.Ecosystem)
 	}
-	if f1.LibraryVersion != "9.1.2" {
-		t.Errorf("expected LibraryVersion 9.1.2, got %s", f1.LibraryVersion)
+	if lib1.Relation != "direct" {
+		t.Errorf("expected Relation direct, got %s", lib1.Relation)
 	}
-	if f1.Severity != "Critical" {
-		t.Errorf("expected Severity Critical, got %s", f1.Severity)
+	if len(lib1.Vulnerabilities) != 1 {
+		t.Fatalf("expected 1 vulnerability for cron-utils, got %d", len(lib1.Vulnerabilities))
 	}
-	if f1.CVSSScore != 9.8 {
-		t.Errorf("expected CVSSScore 9.8, got %f", f1.CVSSScore)
+	v1 := lib1.Vulnerabilities[0]
+	if v1.GHSAID != "GHSA-p9m8-27x8-rg87" {
+		t.Errorf("expected GHSA-p9m8-27x8-rg87, got %s", v1.GHSAID)
 	}
-	if f1.Relation != "direct" {
-		t.Errorf("expected Relation direct, got %s", f1.Relation)
+	if v1.CVE != "CVE-2021-41269" {
+		t.Errorf("expected CVE-2021-41269, got %s", v1.CVE)
 	}
-	if f1.Ecosystem != "Maven" {
-		t.Errorf("expected Ecosystem Maven, got %s", f1.Ecosystem)
+	if v1.Severity != "Critical" {
+		t.Errorf("expected Severity Critical, got %s", v1.Severity)
 	}
-	if f1.ClosestFixVersion != "9.1.6" {
-		t.Errorf("expected ClosestFixVersion 9.1.6, got %s", f1.ClosestFixVersion)
+	if v1.CVSSScore != 9.8 {
+		t.Errorf("expected CVSSScore 9.8, got %f", v1.CVSSScore)
 	}
-	if f1.LatestFixVersion != "9.2.0" {
-		t.Errorf("expected LatestFixVersion 9.2.0, got %s", f1.LatestFixVersion)
+	if v1.ClosestFixVersion != "9.1.6" {
+		t.Errorf("expected ClosestFixVersion 9.1.6, got %s", v1.ClosestFixVersion)
 	}
-	if f1.ExploitAvailable == nil || !*f1.ExploitAvailable {
+	if v1.LatestFixVersion != "9.2.0" {
+		t.Errorf("expected LatestFixVersion 9.2.0, got %s", v1.LatestFixVersion)
+	}
+	if v1.ExploitAvailable == nil || !*v1.ExploitAvailable {
 		t.Error("expected ExploitAvailable to be true")
 	}
 
-	f2, ok := byID["GHSA-pfj3-56hm-jwq5"]
+	lib2, ok := byName["com.cronutils:cron-utils-deps"]
 	if !ok {
-		t.Fatal("expected finding for GHSA-pfj3-56hm-jwq5")
+		t.Fatal("expected library com.cronutils:cron-utils-deps")
 	}
-	if f2.CVE != "CVE-2020-26238" {
-		t.Errorf("expected CVE-2020-26238, got %s", f2.CVE)
+	if lib2.Relation != "transitive" {
+		t.Errorf("expected Relation transitive, got %s", lib2.Relation)
 	}
-	if f2.Relation != "transitive" {
-		t.Errorf("expected Relation transitive, got %s", f2.Relation)
+	if len(lib2.Vulnerabilities) != 1 {
+		t.Fatalf("expected 1 vulnerability for cron-utils-deps, got %d", len(lib2.Vulnerabilities))
 	}
-	if f2.ExploitAvailable != nil {
-		t.Errorf("expected ExploitAvailable to be nil, got %v", *f2.ExploitAvailable)
+	v2 := lib2.Vulnerabilities[0]
+	if v2.CVE != "CVE-2020-26238" {
+		t.Errorf("expected CVE-2020-26238, got %s", v2.CVE)
+	}
+	if v2.ExploitAvailable != nil {
+		t.Errorf("expected ExploitAvailable to be nil, got %v", *v2.ExploitAvailable)
 	}
 }
 
@@ -197,39 +205,43 @@ func TestParseResponse_VulnDefinitionEnrichesFields(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(result.Findings) != 1 {
-		t.Fatalf("expected 1 finding, got %d", len(result.Findings))
+	if len(result.Libraries) != 1 {
+		t.Fatalf("expected 1 library, got %d", len(result.Libraries))
+	}
+	lib := result.Libraries[0]
+	if len(lib.Vulnerabilities) != 1 {
+		t.Fatalf("expected 1 vulnerability, got %d", len(lib.Vulnerabilities))
 	}
 
-	f := result.Findings[0]
-	if f.GHSAID != "GHSA-xxxx" {
-		t.Errorf("expected GHSA-xxxx, got %s", f.GHSAID)
+	v := lib.Vulnerabilities[0]
+	if v.GHSAID != "GHSA-xxxx" {
+		t.Errorf("expected GHSA-xxxx, got %s", v.GHSAID)
 	}
-	if f.CVE != "CVE-2024-9999" {
-		t.Errorf("expected CVE-2024-9999, got %s", f.CVE)
+	if v.CVE != "CVE-2024-9999" {
+		t.Errorf("expected CVE-2024-9999, got %s", v.CVE)
 	}
-	if f.Summary != "Test vulnerability" {
-		t.Errorf("unexpected summary: %s", f.Summary)
+	if v.Summary != "Test vulnerability" {
+		t.Errorf("unexpected summary: %s", v.Summary)
 	}
-	if f.Severity != "Critical" {
-		t.Errorf("expected Critical, got %s", f.Severity)
+	if v.Severity != "Critical" {
+		t.Errorf("expected Critical, got %s", v.Severity)
 	}
-	if f.CVSSScore != 9.5 {
-		t.Errorf("expected CVSSScore 9.5, got %f", f.CVSSScore)
+	if v.CVSSScore != 9.5 {
+		t.Errorf("expected CVSSScore 9.5, got %f", v.CVSSScore)
 	}
-	if len(f.CWEs) != 2 || f.CWEs[0] != "CWE-502" {
-		t.Errorf("unexpected CWEs: %v", f.CWEs)
+	if len(v.CWEs) != 2 || v.CWEs[0] != "CWE-502" {
+		t.Errorf("unexpected CWEs: %v", v.CWEs)
 	}
-	if f.DatadogScore != 9.5 {
-		t.Errorf("expected DatadogScore 9.5, got %f", f.DatadogScore)
+	if v.DatadogScore != 9.5 {
+		t.Errorf("expected DatadogScore 9.5, got %f", v.DatadogScore)
 	}
-	if f.Reachability != "REACHABLE" {
-		t.Errorf("expected Reachability REACHABLE, got %s", f.Reachability)
+	if v.Reachability != "REACHABLE" {
+		t.Errorf("expected Reachability REACHABLE, got %s", v.Reachability)
 	}
-	if f.ExploitAvailable == nil || !*f.ExploitAvailable {
+	if v.ExploitAvailable == nil || !*v.ExploitAvailable {
 		t.Error("expected ExploitAvailable to be true")
 	}
-	if f.ExploitPoC == nil || !*f.ExploitPoC {
+	if v.ExploitPoC == nil || !*v.ExploitPoC {
 		t.Error("expected ExploitPoC to be true")
 	}
 }
@@ -267,23 +279,26 @@ func TestParseResponse_RemediationFromVulnRef(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(result.Findings) != 1 {
-		t.Fatalf("expected 1 finding, got %d", len(result.Findings))
+	if len(result.Libraries) != 1 {
+		t.Fatalf("expected 1 library, got %d", len(result.Libraries))
 	}
-	f := result.Findings[0]
-	if f.ClosestFixVersion != "1.0.5" {
-		t.Errorf("expected ClosestFixVersion 1.0.5, got %s", f.ClosestFixVersion)
+	if len(result.Libraries[0].Vulnerabilities) != 1 {
+		t.Fatalf("expected 1 vulnerability, got %d", len(result.Libraries[0].Vulnerabilities))
 	}
-	if f.LatestFixVersion != "2.0.0" {
-		t.Errorf("expected LatestFixVersion 2.0.0, got %s", f.LatestFixVersion)
+	v := result.Libraries[0].Vulnerabilities[0]
+	if v.ClosestFixVersion != "1.0.5" {
+		t.Errorf("expected ClosestFixVersion 1.0.5, got %s", v.ClosestFixVersion)
 	}
-	if f.HasRemediation != true {
+	if v.LatestFixVersion != "2.0.0" {
+		t.Errorf("expected LatestFixVersion 2.0.0, got %s", v.LatestFixVersion)
+	}
+	if v.HasRemediation != true {
 		t.Error("expected HasRemediation to be true")
 	}
-	if f.ExploitAvailable == nil || *f.ExploitAvailable {
+	if v.ExploitAvailable == nil || *v.ExploitAvailable {
 		t.Error("expected ExploitAvailable to be false (non-nil pointer to false)")
 	}
-	if f.ExploitPoC != nil {
+	if v.ExploitPoC != nil {
 		t.Error("expected ExploitPoC to be nil")
 	}
 }
@@ -294,8 +309,8 @@ func TestParseResponse_UnsupportedVersion_SkipsParsingAndPreservesRaw(t *testing
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(result.Findings) != 0 {
-		t.Errorf("expected 0 findings for unsupported version, got %d", len(result.Findings))
+	if len(result.Libraries) != 0 {
+		t.Errorf("expected 0 libraries for unsupported version, got %d", len(result.Libraries))
 	}
 	if result.UnsupportedVersion != 99 {
 		t.Errorf("expected UnsupportedVersion 99, got %d", result.UnsupportedVersion)
@@ -313,6 +328,8 @@ func TestParseResponse_LibraryWithNoVulns(t *testing.T) {
 				"name": "safe-lib",
 				"version": "1.0",
 				"ecosystem": "npm",
+				"licenseId": "MIT",
+				"latestVersion": "2.0.0",
 				"relation": "direct",
 				"vulnerabilities": []
 			}
@@ -324,7 +341,74 @@ func TestParseResponse_LibraryWithNoVulns(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(result.Findings) != 0 {
-		t.Errorf("expected 0 findings for library with no vulns, got %d", len(result.Findings))
+	if len(result.Libraries) != 1 {
+		t.Fatalf("expected 1 library entry, got %d", len(result.Libraries))
+	}
+	lib := result.Libraries[0]
+	if lib.Name != "safe-lib" {
+		t.Errorf("expected library name safe-lib, got %s", lib.Name)
+	}
+	if lib.Version != "1.0" {
+		t.Errorf("expected version 1.0, got %s", lib.Version)
+	}
+	if lib.Ecosystem != "npm" {
+		t.Errorf("expected ecosystem npm, got %s", lib.Ecosystem)
+	}
+	if lib.LicenseID != "MIT" {
+		t.Errorf("expected license MIT, got %s", lib.LicenseID)
+	}
+	if lib.LatestVersion != "2.0.0" {
+		t.Errorf("expected latestVersion 2.0.0, got %s", lib.LatestVersion)
+	}
+	if lib.Relation != "direct" {
+		t.Errorf("expected relation direct, got %s", lib.Relation)
+	}
+	if len(lib.Vulnerabilities) != 0 {
+		t.Errorf("expected 0 vulnerabilities, got %d", len(lib.Vulnerabilities))
+	}
+}
+
+func TestParseResponse_LibrariesPopulatedForAllEntries(t *testing.T) {
+	body := []byte(`{
+		"version": 1,
+		"libraries": {
+			"pkg:npm/vuln-lib@1.0": {
+				"name": "vuln-lib",
+				"version": "1.0",
+				"ecosystem": "npm",
+				"relation": "direct",
+				"vulnerabilities": [{"advisoryId": "GHSA-xxxx", "fixVersion": "", "hasRemediation": false, "fixType": "", "remediations": [], "reachability": ""}]
+			},
+			"pkg:npm/safe-lib@2.0": {
+				"name": "safe-lib",
+				"version": "2.0",
+				"ecosystem": "npm",
+				"relation": "transitive",
+				"vulnerabilities": []
+			}
+		},
+		"vulnerabilities": {}
+	}`)
+
+	result, err := parseResponse(body)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result.Libraries) != 2 {
+		t.Fatalf("expected 2 library entries, got %d", len(result.Libraries))
+	}
+
+	// Libraries are sorted: most vulns first, then alphabetically.
+	if result.Libraries[0].Name != "vuln-lib" {
+		t.Errorf("expected vuln-lib first (most vulns), got %s", result.Libraries[0].Name)
+	}
+	if len(result.Libraries[0].Vulnerabilities) != 1 {
+		t.Errorf("expected 1 vulnerability for vuln-lib, got %d", len(result.Libraries[0].Vulnerabilities))
+	}
+	if result.Libraries[1].Name != "safe-lib" {
+		t.Errorf("expected safe-lib second, got %s", result.Libraries[1].Name)
+	}
+	if len(result.Libraries[1].Vulnerabilities) != 0 {
+		t.Errorf("expected 0 vulnerabilities for safe-lib, got %d", len(result.Libraries[1].Vulnerabilities))
 	}
 }
