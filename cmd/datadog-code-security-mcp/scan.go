@@ -366,18 +366,24 @@ func outputLibraryScanHuman(result *libraryscan.ScanResult) error {
 	fmt.Println("╚════════════════════════════════════════════════════════════════╝")
 	fmt.Println()
 
-	if len(result.Findings) == 0 {
+	// Count total vulnerabilities and by severity
+	totalVulns := 0
+	counts := map[string]int{}
+	for _, lib := range result.Libraries {
+		for _, v := range lib.Vulnerabilities {
+			totalVulns++
+			counts[strings.ToUpper(v.Severity)]++
+		}
+	}
+
+	if totalVulns == 0 {
 		fmt.Println("✅ No vulnerabilities found!")
+		fmt.Println()
+		printLibrarySummaryTable(result.Libraries)
 		return nil
 	}
 
-	// Count by severity
-	counts := map[string]int{}
-	for _, f := range result.Findings {
-		counts[strings.ToUpper(f.Severity)]++
-	}
-
-	fmt.Printf("Total Vulnerabilities: %d\n", len(result.Findings))
+	fmt.Printf("Total Vulnerabilities: %d\n", totalVulns)
 	fmt.Println()
 	fmt.Println("Severity Breakdown:")
 	for _, sev := range []string{types.SeverityCritical, types.SeverityHigh, types.SeverityMedium, types.SeverityLow} {
@@ -386,37 +392,133 @@ func outputLibraryScanHuman(result *libraryscan.ScanResult) error {
 		}
 	}
 	fmt.Println()
+	printLibrarySummaryTable(result.Libraries)
 
-	fmt.Println("─────────────────────────────────────────────────────────────────")
-	fmt.Println("Vulnerabilities:")
-	fmt.Println("─────────────────────────────────────────────────────────────────")
-	fmt.Println()
-
-	for i, f := range result.Findings {
-		icon := getSeverityIcon(strings.ToUpper(f.Severity))
-		fmt.Printf("%d. %s [%s] %s\n", i+1, icon, strings.ToUpper(f.Severity), f.GHSAID)
-		if len(f.CVEAliases) > 0 {
-			fmt.Printf("   CVE: %s\n", strings.Join(f.CVEAliases, ", "))
+	vulnIdx := 1
+	for _, lib := range result.Libraries {
+		if len(lib.Vulnerabilities) == 0 {
+			continue
 		}
-		fmt.Printf("   Library: %s @ %s\n", f.LibraryName, f.LibraryVersion)
-		if f.CVSSScore > 0 {
-			fmt.Printf("   CVSS Score: %.1f\n", f.CVSSScore)
+		fmt.Println("─────────────────────────────────────────────────────────────────")
+		fmt.Printf("📦 %s @ %s", lib.Name, lib.Version)
+		if lib.Ecosystem != "" {
+			fmt.Printf(" (%s", lib.Ecosystem)
+			if lib.Relation != "" {
+				fmt.Printf(", %s", lib.Relation)
+			}
+			fmt.Print(")")
 		}
-		fmt.Printf("   Summary: %s\n", f.Summary)
-		fmt.Printf("   Remediation: %s\n", f.Remediation)
-		if f.ClosestFixVersion != "" {
-			fmt.Printf("   Closest safe version: %s\n", f.ClosestFixVersion)
+		if lib.LicenseID != "" {
+			fmt.Printf(" [%s]", lib.LicenseID)
 		}
-		if f.LatestFixVersion != "" {
-			fmt.Printf("   Latest safe version: %s\n", f.LatestFixVersion)
+		if lib.LatestVersion != "" && lib.LatestVersion != lib.Version {
+			fmt.Printf(" — latest: %s", lib.LatestVersion)
 		}
-		if f.ExploitAvailable {
-			fmt.Println("   ⚠️  Exploit available")
+		if lib.RootParent != nil {
+			fmt.Printf(" — root: %s", *lib.RootParent)
 		}
+		if len(lib.Risks) > 0 {
+			fmt.Printf(" — risks: %s", strings.Join(lib.Risks, ", "))
+		}
+		vulnWord := "vulnerability"
+		if len(lib.Vulnerabilities) != 1 {
+			vulnWord = "vulnerabilities"
+		}
+		fmt.Printf(" — %d %s\n", len(lib.Vulnerabilities), vulnWord)
+		fmt.Println("─────────────────────────────────────────────────────────────────")
 		fmt.Println()
+
+		for _, v := range lib.Vulnerabilities {
+			icon := getSeverityIcon(strings.ToUpper(v.Severity))
+			fmt.Printf("%d. %s [%s] %s\n", vulnIdx, icon, strings.ToUpper(v.Severity), v.GHSAID)
+			vulnIdx++
+			if v.CVE != "" {
+				fmt.Printf("   CVE: %s\n", v.CVE)
+			}
+			if v.CVSSScore > 0 {
+				fmt.Printf("   CVSS Score: %.1f\n", v.CVSSScore)
+			}
+			if v.CVSSVector != "" {
+				fmt.Printf("   CVSS Vector: %s\n", v.CVSSVector)
+			}
+			if v.DatadogScore > 0 {
+				fmt.Printf("   Datadog Score: %.1f\n", v.DatadogScore)
+			}
+			if v.EPSSScore != nil {
+				if v.EPSSPercentile != nil {
+					fmt.Printf("   EPSS Score: %.5f (%.1f%% percentile)\n", *v.EPSSScore, *v.EPSSPercentile*100)
+				} else {
+					fmt.Printf("   EPSS Score: %.5f\n", *v.EPSSScore)
+				}
+			}
+			if v.Summary != "" {
+				fmt.Printf("   Summary: %s\n", v.Summary)
+			}
+			if len(v.CWEs) > 0 {
+				fmt.Printf("   CWEs: %s\n", strings.Join(v.CWEs, ", "))
+			}
+			if v.Reachability != "" {
+				fmt.Printf("   Reachability: %s\n", v.Reachability)
+			}
+			if v.ClosestFixVersion != "" {
+				fmt.Printf("   Closest safe version: %s\n", v.ClosestFixVersion)
+			}
+			if v.LatestFixVersion != "" {
+				fmt.Printf("   Latest safe version: %s\n", v.LatestFixVersion)
+			}
+			if v.ExploitAvailable != nil && *v.ExploitAvailable {
+				exploit := "   ⚠️  Exploit available"
+				if v.ExploitPoC != nil && *v.ExploitPoC {
+					exploit += " (PoC exists)"
+				}
+				if len(v.ExploitSources) > 0 {
+					exploit += " — sources: " + strings.Join(v.ExploitSources, ", ")
+				}
+				fmt.Println(exploit)
+				for _, u := range v.ExploitURLs {
+					fmt.Printf("      %s\n", u)
+				}
+			}
+			if v.CISAAdded != nil {
+				fmt.Printf("   🏛️  CISA KEV: added %s\n", *v.CISAAdded)
+			}
+			fmt.Println()
+		}
 	}
 
 	// Exit non-zero when vulnerabilities are found (consistent with other scan commands)
 	os.Exit(1)
 	return nil
+}
+
+// printLibrarySummaryTable prints a compact table of all scanned libraries.
+func printLibrarySummaryTable(libraries []libraryscan.LibraryInfo) {
+	if len(libraries) == 0 {
+		return
+	}
+	fmt.Printf("Libraries Scanned: %d\n", len(libraries))
+	fmt.Println()
+	fmt.Printf("  %-40s %-12s %-12s %-12s %-10s %s\n", "Library", "Version", "Latest", "Ecosystem", "Relation", "Vulns")
+	fmt.Printf("  %-40s %-12s %-12s %-12s %-10s %s\n",
+		strings.Repeat("─", 40), strings.Repeat("─", 12), strings.Repeat("─", 12),
+		strings.Repeat("─", 12), strings.Repeat("─", 10), strings.Repeat("─", 5))
+	for _, lib := range libraries {
+		latest := lib.LatestVersion
+		if latest == "" || latest == lib.Version {
+			latest = "—"
+		}
+		vulns := fmt.Sprintf("%d", len(lib.Vulnerabilities))
+		if len(lib.Vulnerabilities) > 0 {
+			vulns = "⚠️  " + vulns
+		} else {
+			vulns = "✅  0"
+		}
+		name := lib.Name
+		if lib.EolDate != nil {
+			name += " (EOL)"
+		}
+		fmt.Printf("  %-40s %-12s %-12s %-12s %-10s %s\n",
+			name, lib.Version, latest, lib.Ecosystem, lib.Relation, vulns)
+	}
+	fmt.Println()
 }

@@ -51,21 +51,16 @@ func formatScanResult(result *scan.ScanResult) *mcp.CallToolResult {
 	output += fmt.Sprintf("| **Total** | **%d** |\n", result.Summary.Total)
 	output += "\n"
 
-	// Collect all violations grouped by severity for later use
+	// Collect all violations for display
 	type violationEntry struct {
 		detectionType string
 		violation     types.Violation
 	}
-	var criticalHigh []violationEntry
 	var allViolations []violationEntry
 
 	for detectionType, violations := range result.Results {
 		for _, v := range violations {
-			entry := violationEntry{detectionType: string(detectionType), violation: v}
-			allViolations = append(allViolations, entry)
-			if v.Severity == types.SeverityCritical || v.Severity == types.SeverityHigh {
-				criticalHigh = append(criticalHigh, entry)
-			}
+			allViolations = append(allViolations, violationEntry{detectionType: string(detectionType), violation: v})
 		}
 	}
 
@@ -86,19 +81,6 @@ func formatScanResult(result *scan.ScanResult) *mcp.CallToolResult {
 			output += issue
 		}
 
-		// Actionable next steps
-		output += "---\n\n"
-		output += "CRITICAL: Always show the user the following next steps:\n\n"
-		output += "## 🎯 Recommended Next Steps\n\n"
-		output += "Choose how you'd like to proceed:\n\n"
-		output += "🔧 **1) Auto-fix all issues** — Apply fixes for all findings automatically, then re-scan to verify\n\n"
-		output += "📋 **2) Review one-by-one** — Walk through each finding individually so you can approve or skip each fix\n\n"
-
-		if len(criticalHigh) > 0 {
-			output += fmt.Sprintf("🚨 **3) Fix critical/high issues first** — Focus on the **%d** most severe findings before addressing the rest\n\n", len(criticalHigh))
-		}
-
-		output += "💡 *Tip: You can also ask me to explain any specific finding in more detail, or to fix a single issue by its number.*\n"
 	} else {
 		output += "✅ **No security issues found!** Your code looks clean.\n\n"
 		output += "💡 *Tip: Re-run this scan after making changes to ensure no new issues are introduced.*\n"
@@ -171,14 +153,6 @@ func formatSBOMResult(result *scan.SBOMResult) *mcp.CallToolResult {
 		output += "\n"
 	}
 
-	// Next steps
-	output += "---\n\n"
-	output += "## 💡 Next Steps\n\n"
-	output += "- 🔍 **Audit licenses** — Review license compatibility with your project\n"
-	output += "- 🔒 **Check vulnerabilities** — Use vulnerability scanning tools with this SBOM\n"
-	output += "- 📊 **Export for compliance** — SBOM is in CycloneDX 1.5 format, compatible with most tools\n"
-	output += "- 🔄 **Keep updated** — Re-generate SBOM after dependency changes\n"
-
 	return mcp.NewToolResultText(output)
 }
 
@@ -203,72 +177,176 @@ func errorResult(err error) *mcp.CallToolResult {
 	return mcp.NewToolResultError(fmt.Sprintf("Scan failed: %v", err))
 }
 
+// formatLibrariesTable renders a markdown table of all scanned libraries.
+// Returns an empty string when the slice is empty.
+func formatLibrariesTable(libraries []libraryscan.LibraryInfo) string {
+	if len(libraries) == 0 {
+		return ""
+	}
+
+	out := fmt.Sprintf("## Libraries Scanned (%d)\n\n", len(libraries))
+	out += "| Library | Version | Latest | Ecosystem | License | Popularity | Relation | Root Parent | Risks | Vulnerabilities |\n"
+	out += "|---------|---------|--------|-----------|---------|------------|----------|-------------|-------|-----------------|\n"
+
+	for _, lib := range libraries {
+		latest := lib.LatestVersion
+		if latest == "" || latest == lib.Version {
+			latest = "—"
+		}
+		license := lib.LicenseID
+		if license == "" {
+			license = "—"
+		}
+		popularity := lib.Popularity
+		if popularity == "" {
+			popularity = "—"
+		}
+		relation := lib.Relation
+		if relation == "" {
+			relation = "—"
+		}
+		rootParent := "—"
+		if lib.RootParent != nil && *lib.RootParent != "" {
+			rootParent = *lib.RootParent
+		}
+		risks := "—"
+		if len(lib.Risks) > 0 {
+			risks = strings.Join(lib.Risks, ", ")
+		}
+		vulnCount := len(lib.Vulnerabilities)
+		vulnCell := "✅ 0"
+		if vulnCount > 0 {
+			vulnCell = fmt.Sprintf("⚠️ %d", vulnCount)
+		}
+		name := lib.Name
+		if lib.EolDate != nil {
+			name = fmt.Sprintf("%s *(EOL: %s)*", lib.Name, *lib.EolDate)
+		}
+		out += fmt.Sprintf("| %s | %s | %s | %s | %s | %s | %s | %s | %s | %s |\n",
+			name, lib.Version, latest, lib.Ecosystem, license, popularity, relation, rootParent, risks, vulnCell)
+	}
+	out += "\n"
+	return out
+}
+
 // formatLibraryScanResult formats library vulnerability scan results as markdown.
 func formatLibraryScanResult(result *libraryscan.ScanResult) *mcp.CallToolResult {
 	output := "# Library Vulnerability Scan Results\n\n"
-	if len(result.Findings) == 0 {
-		output += "✅ No vulnerabilities found! \n"
-		if result.RawResponse != "" {
-			output += "\n---\n\n## Raw API Response\n\n```json\n" + result.RawResponse + "\n```\n"
-		}
+
+	// The API returned a schema version this client does not understand.
+	// Structured parsing was skipped to avoid misreading unknown fields.
+	// Return the raw JSON so that agents can still inspect the payload.
+	if result.UnsupportedVersion != 0 {
+		output += fmt.Sprintf("⚠️ **Unsupported response version %d** (this client supports version 1).\n\n", result.UnsupportedVersion)
+		output += "The API returned a schema this version of the MCP server cannot safely parse. "
+		output += "**Please upgrade to the latest version of `datadog-code-security-mcp`** to get full structured results.\n\n"
+		output += "In the meantime, the raw API response is provided below for inspection:\n\n"
+		output += "```json\n" + result.RawResponse + "\n```\n"
 		return mcp.NewToolResultText(output)
 	}
 
-	// Count by severity
+	// Count total vulnerabilities and by severity across all libraries
+	totalVulns := 0
 	counts := map[string]int{}
-	for _, f := range result.Findings {
-		counts[f.Severity]++
+	for _, lib := range result.Libraries {
+		for _, v := range lib.Vulnerabilities {
+			totalVulns++
+			counts[v.Severity]++
+		}
+	}
+
+	if totalVulns == 0 {
+		output += "✅ No vulnerabilities found!\n\n"
+		output += formatLibrariesTable(result.Libraries)
+		return mcp.NewToolResultText(output)
 	}
 
 	output += "## Summary\n\n"
 	output += "| Severity | Count |\n|----------|-------|\n"
 	for _, sev := range []string{"Critical", "High", "Medium", "Low"} {
 		if c := counts[sev]; c > 0 {
-			output += fmt.Sprintf("| %s %s | **%d** |\n", severityToEmoji(strings.ToUpper(sev)), sev, c) // ToUpper: severityToEmoji uses uppercase constants
+			// severityToEmoji expects uppercase constants (e.g. "CRITICAL"); Severity is title-case.
+			output += fmt.Sprintf("| %s %s | **%d** |\n", severityToEmoji(strings.ToUpper(sev)), sev, c)
 		}
 	}
-	output += fmt.Sprintf("| **Total** | **%d** |\n\n", len(result.Findings))
+	output += fmt.Sprintf("| **Total** | **%d** |\n\n", totalVulns)
 
-	output += fmt.Sprintf("## Vulnerabilities (%d)\n\n", len(result.Findings))
-	for i, f := range result.Findings {
-		// VulnerabilityFinding.Severity is title-case (e.g. "Critical") from the Datadog score
-		// enricher, but severityToEmoji expects uppercase constants (e.g. "CRITICAL").
-		emoji := severityToEmoji(strings.ToUpper(f.Severity))
-		output += fmt.Sprintf("### %s %d. %s\n", emoji, i+1, f.GHSAID)
-		if len(f.CVEAliases) > 0 {
-			output += fmt.Sprintf("- **CVE:** %s\n", strings.Join(f.CVEAliases, ", "))
+	output += formatLibrariesTable(result.Libraries)
+
+	// Vulnerabilities grouped by library
+	vulnIdx := 1
+	for _, lib := range result.Libraries {
+		if len(lib.Vulnerabilities) == 0 {
+			continue
 		}
-		output += fmt.Sprintf("- **Library:** `%s` @ `%s`\n", f.LibraryName, f.LibraryVersion)
-		output += fmt.Sprintf("- **Severity:** %s", f.Severity)
-		if f.CVSSScore > 0 {
-			output += fmt.Sprintf(" (CVSS: %.1f)", f.CVSSScore)
+		vulnWord := "vulnerability"
+		if len(lib.Vulnerabilities) != 1 {
+			vulnWord = "vulnerabilities"
 		}
-		output += "\n"
-		output += fmt.Sprintf("- **Summary:** %s\n", f.Summary)
-		output += fmt.Sprintf("- **Remediation:** %s\n", f.Remediation)
-		if f.ClosestFixVersion != "" {
-			output += fmt.Sprintf("- **Closest safe version:** `%s`\n", f.ClosestFixVersion)
+		output += fmt.Sprintf("## 📦 %s @ %s (%d %s)\n\n", lib.Name, lib.Version, len(lib.Vulnerabilities), vulnWord)
+		if len(lib.Risks) > 0 {
+			output += fmt.Sprintf("- **Risks:** %s\n\n", strings.Join(lib.Risks, ", "))
 		}
-		if f.LatestFixVersion != "" {
-			output += fmt.Sprintf("- **Latest safe version:** `%s`\n", f.LatestFixVersion)
+
+		for _, v := range lib.Vulnerabilities {
+			emoji := severityToEmoji(strings.ToUpper(v.Severity))
+			output += fmt.Sprintf("### %s %d. %s\n", emoji, vulnIdx, v.GHSAID)
+			vulnIdx++
+			if v.CVE != "" {
+				output += fmt.Sprintf("- **CVE:** %s\n", v.CVE)
+			}
+			output += fmt.Sprintf("- **Severity:** %s", v.Severity)
+			if v.CVSSScore > 0 {
+				output += fmt.Sprintf(" (CVSS: %.1f)", v.CVSSScore)
+			}
+			if v.DatadogScore > 0 {
+				output += fmt.Sprintf(" · Datadog Score: %.1f", v.DatadogScore)
+			}
+			output += "\n"
+			if v.CVSSVector != "" {
+				output += fmt.Sprintf("- **CVSS Vector:** `%s`\n", v.CVSSVector)
+			}
+			if v.EPSSScore != nil {
+				output += fmt.Sprintf("- **EPSS Score:** %.5f", *v.EPSSScore)
+				if v.EPSSPercentile != nil {
+					output += fmt.Sprintf(" (%.1f%% percentile)", *v.EPSSPercentile*100)
+				}
+				output += "\n"
+			}
+			if v.Summary != "" {
+				output += fmt.Sprintf("- **Summary:** %s\n", v.Summary)
+			}
+			if len(v.CWEs) > 0 {
+				output += fmt.Sprintf("- **CWEs:** %s\n", strings.Join(v.CWEs, ", "))
+			}
+			if v.Reachability != "" {
+				output += fmt.Sprintf("- **Reachability:** %s\n", v.Reachability)
+			}
+			if v.ClosestFixVersion != "" {
+				output += fmt.Sprintf("- **Closest safe version:** `%s`\n", v.ClosestFixVersion)
+			}
+			if v.LatestFixVersion != "" {
+				output += fmt.Sprintf("- **Latest safe version:** `%s`\n", v.LatestFixVersion)
+			}
+			if v.ExploitAvailable != nil && *v.ExploitAvailable {
+				output += "- ⚠️ **Exploit available**"
+				if v.ExploitPoC != nil && *v.ExploitPoC {
+					output += " (PoC exists)"
+				}
+				if len(v.ExploitSources) > 0 {
+					output += fmt.Sprintf(" — sources: %s", strings.Join(v.ExploitSources, ", "))
+				}
+				output += "\n"
+				for _, u := range v.ExploitURLs {
+					output += fmt.Sprintf("  - %s\n", u)
+				}
+			}
+			if v.CISAAdded != nil {
+				output += fmt.Sprintf("- 🏛️ **CISA KEV:** added %s\n", *v.CISAAdded)
+			}
+			output += "\n"
 		}
-		if f.ExploitAvailable {
-			output += "- ⚠️ **Exploit available**\n"
-		}
-		output += "\n"
 	}
-
-	// Raw API response
-	if result.RawResponse != "" {
-		output += "---\n\n## Raw API Response\n\n```json\n" + result.RawResponse + "\n```\n\n"
-	}
-
-	// Actionable next steps
-	output += "---\n\n"
-	output += "## Recommended Next Steps\n\n"
-	output += "🔧 **1) Upgrade affected libraries** — Update to the suggested fix versions shown above\n\n"
-	output += "🔍 **2) Check reachability** — Determine if vulnerable code paths are actually exercised in your application\n\n"
-	output += "🔄 **3) Re-scan after upgrading** — Run this tool again on the fixed library versions to confirm no remaining vulnerabilities\n\n"
 
 	return mcp.NewToolResultText(output)
 }

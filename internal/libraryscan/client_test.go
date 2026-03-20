@@ -82,7 +82,7 @@ func TestClient_PollResult_NotFoundThenOK(t *testing.T) {
 		}
 		// Second call: return results
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"VULNERABILITY_DETECTION": {"advisories": []}}`))
+		_, _ = w.Write([]byte(`{"version": 1, "libraries": {}, "vulnerabilities": {}}`))
 	}))
 	defer srv.Close()
 
@@ -172,7 +172,7 @@ func TestClient_Scan_EndToEnd(t *testing.T) {
 		}
 		// GET poll — return result immediately
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"VULNERABILITY_DETECTION": {"advisories": []}}`))
+		_, _ = w.Write([]byte(`{"version": 1, "libraries": {}, "vulnerabilities": {}}`))
 	}))
 	defer srv.Close()
 
