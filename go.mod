@@ -6,7 +6,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/mark3labs/mcp-go v0.44.1
 	github.com/owenrumney/go-sarif/v2 v2.3.3
-	github.com/package-url/packageurl-go v0.1.3
+	github.com/package-url/packageurl-go v0.1.5
 	github.com/spf13/cobra v1.10.2
 )
 
