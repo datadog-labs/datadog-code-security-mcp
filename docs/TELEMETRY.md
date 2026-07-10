@@ -19,7 +19,7 @@ Each tool invocation or CLI command sends one log event containing:
 | `output_format`            | `human` or `json` — CLI scan events only                                                         |
 | `duration_ms`              | How long the scan took                                                                           |
 | `success`                  | Whether the invocation succeeded                                                                 |
-| `error.kind`               | Categorized error type (e.g. `BinaryNotFound`, `AuthRequired`) — never raw messages              |
+| `error.kind`               | Categorized error type (`BinaryNotFound`, `AuthRequired`, `PathNotFound`, `Timeout`, `Network`, `ScanError`, `Unknown`) — never raw messages |
 | `os`, `arch`, `go_version` | Runtime platform info                                                                            |
 | `ci`                       | Whether a `CI` environment variable is set                                                       |
 | `session_id`               | Random UUID stable for one MCP server lifetime (MCP mode only)                                   |
@@ -71,7 +71,7 @@ The anonymous install ID is a random UUID (`uuid.New()`) generated once on first
 
 - **Endpoint**: `https://browser-http-intake.logs.datadoghq.com/api/v2/logs`
 - **Auth**: client token (RUM-style, publicly embeddable) injected at build time via `TELEMETRY_CLIENT_TOKEN` CI secret, never your `DD_API_KEY` or `DD_APP_KEY`
-- **Transport**: HTTP POST, `Content-Type: application/json`, 500ms timeout
+- **Transport**: HTTP POST, `Content-Type: application/json`, 2 s per-request timeout; process waits up to 3 s at exit for any in-flight POST to complete
 - **Fire-and-forget**: telemetry errors are swallowed and never affect scan results
 - **No stdout writes**: telemetry is only written to the intake, never to stdout (which would corrupt the MCP STDIO protocol)
 

@@ -33,14 +33,15 @@ const (
 	// compiled in for a single org, so the site is always datadoghq.com.
 	intakeBaseURL = "https://browser-http-intake.logs.datadoghq.com/api/v2/logs"
 
-	// httpTimeout caps each individual HTTP POST. 500 ms is generous for a small
-	// JSON payload to a nearby intake; keeping it short ensures we never visibly
-	// delay the user even if the POST runs synchronously.
-	httpTimeout = 500 * time.Millisecond
+	// httpTimeout caps each individual HTTP POST. 2 s gives enough headroom
+	// for DNS + TLS establishment on a cold connection to the intake endpoint
+	// (a full TLS handshake can take 300–800 ms across a transatlantic link).
+	httpTimeout = 2 * time.Second
 
 	// flushTimeout is the maximum time Flush() will wait for an in-flight POST
-	// to complete before giving up. Chosen to be imperceptible at process exit.
-	flushTimeout = 500 * time.Millisecond
+	// to complete before giving up. Must exceed httpTimeout so that a timed-out
+	// HTTP request always calls wg.Done() before Flush() abandons the wait.
+	flushTimeout = 3 * time.Second
 )
 
 // Client holds all invariant telemetry fields resolved once at construction.

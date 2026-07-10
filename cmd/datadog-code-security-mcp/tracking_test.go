@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -176,6 +177,33 @@ func TestTrackCLIScan_ResultFields(t *testing.T) {
 	}
 	if v, _ := item["partial_errors_count"].(float64); int(v) != 1 {
 		t.Errorf("partial_errors_count = %v, want 1", item["partial_errors_count"])
+	}
+}
+
+// TestTrackCLIScan_ErrorDeliveredAfterFlush verifies that when RunE returns an
+// error (and Cobra therefore skips PersistentPostRun), calling flushTelemetry()
+// in main()'s error path still delivers the event. This is a regression guard
+// for the bug where os.Exit(1) was called before the telemetry goroutine had a
+// chance to complete.
+func TestTrackCLIScan_ErrorDeliveredAfterFlush(t *testing.T) {
+	srv, ch := captureCmdServer(t)
+	telemetryClient = newCmdTestTelemetryClient(t, srv)
+	t.Cleanup(func() { telemetryClient = nil })
+
+	scanErr := errors.New("path does not exist: ./testdata/vulnerabilities/sast")
+	trackCLIScan(context.Background(), "sast", nil, time.Now(), 1, false, scanErr)
+	// Simulate what main() now does on error: flush before os.Exit(1).
+	flushTelemetry()
+
+	item := waitCmdEvent(t, ch)
+	if item["success"] != false {
+		t.Errorf("success = %v, want false", item["success"])
+	}
+	if item["operation"] != "sast_scan" {
+		t.Errorf("operation = %v, want sast_scan", item["operation"])
+	}
+	if item["interface"] != "cli" {
+		t.Errorf("interface = %v, want cli", item["interface"])
 	}
 }
 

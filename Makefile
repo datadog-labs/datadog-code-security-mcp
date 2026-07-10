@@ -63,8 +63,15 @@ install: ## Install the binary to $GOPATH/bin
 	go install -ldflags "$(LDFLAGS)" ./cmd/$(BINARY_NAME)
 	@echo "✓ Installed to $(shell go env GOPATH)/bin/$(BINARY_NAME)"
 
-run: ## Run the binary (for development)
-	go run -ldflags "$(LDFLAGS)" ./cmd/$(BINARY_NAME)
+# Capture any words after "run" as passthrough arguments.
+# This lets you type: make run scan sast ./src
+ifeq (run,$(firstword $(MAKECMDGOALS)))
+  RUN_ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
+  $(eval $(RUN_ARGS):;@:)
+endif
+
+run: ## Run the binary. Extra words become args: make run scan sast ./src
+	go run -ldflags "$(LDFLAGS)" ./cmd/$(BINARY_NAME) $(RUN_ARGS)
 
 fmt: ## Format code
 	@echo "Formatting code..."

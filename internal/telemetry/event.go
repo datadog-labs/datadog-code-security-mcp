@@ -37,10 +37,12 @@ type Event struct {
 }
 
 // ErrorInfo is the error object included in the payload when status == "error".
+// Raw error messages are intentionally excluded to prevent file paths or other
+// user-specific data from leaking into telemetry. Only the categorised kind
+// and a scrubbed stack trace are sent.
 type ErrorInfo struct {
-	Kind    string `json:"kind"`
-	Message string `json:"message,omitempty"`
-	Stack   string `json:"stack,omitempty"`
+	Kind  string `json:"kind"`
+	Stack string `json:"stack,omitempty"`
 }
 
 // ErrorKind constants used as the error.kind field.
@@ -48,6 +50,7 @@ const (
 	ErrKindBinaryNotFound   = "BinaryNotFound"
 	ErrKindAuthRequired     = "AuthRequired"
 	ErrKindInvalidArguments = "InvalidArguments"
+	ErrKindPathNotFound     = "PathNotFound"
 	ErrKindTimeout          = "Timeout"
 	ErrKindScanError        = "ScanError"
 	ErrKindNetwork          = "Network"
@@ -90,6 +93,13 @@ func CategorizeError(err error) string {
 		return ErrKindBinaryNotFound
 	}
 
+	// Path / file-not-found errors from user-supplied scan targets.
+	if strings.Contains(msg, "path does not exist") ||
+		strings.Contains(msg, "no such file or directory") ||
+		strings.Contains(msg, "cannot find the path") {
+		return ErrKindPathNotFound
+	}
+
 	// Argument / validation errors.
 	if strings.Contains(msg, constants.ErrInvalidArguments) ||
 		strings.Contains(msg, "is required") ||
@@ -115,15 +125,15 @@ func CategorizeError(err error) string {
 }
 
 // ErrorInfoFromError builds an ErrorInfo from an error, including a scrubbed stack trace.
-// Returns nil for a nil error.
+// The raw error message is intentionally omitted to prevent file paths or other
+// user-specific data from appearing in telemetry. Returns nil for a nil error.
 func ErrorInfoFromError(err error) *ErrorInfo {
 	if err == nil {
 		return nil
 	}
 	return &ErrorInfo{
-		Kind:    CategorizeError(err),
-		Message: scrubPaths(err.Error()),
-		Stack:   scrubPaths(filterStack(string(debug.Stack()))),
+		Kind:  CategorizeError(err),
+		Stack: scrubPaths(filterStack(string(debug.Stack()))),
 	}
 }
 

@@ -91,9 +91,13 @@ For more information, visit: https://github.com/datadog-labs/datadog-code-securi
 		newVersionCmd(),      // Version info
 	)
 
-	// Execute root command
+	// Execute root command. When RunE returns an error Cobra skips
+	// PersistentPostRun, so we flush telemetry here before exiting.
+	// Print the error first so the user sees it immediately; Flush() then
+	// waits up to flushTimeout for the in-flight POST before we exit.
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		flushTelemetry()
 		os.Exit(1)
 	}
 }
