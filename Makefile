@@ -1,14 +1,25 @@
 .PHONY: build test lint clean install run fmt mod help
 
+# Load .env file if it exists (for local dev; never committed).
+# Variables defined there take precedence over the defaults below.
+-include .env
+export
+
 # Version information
 VERSION ?= dev
 COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "none")
 BUILD_TIME ?= $(shell date -u '+%Y-%m-%d_%H:%M:%S')
 
+# Telemetry build vars (override via env or .env file)
+TELEMETRY_CLIENT_TOKEN ?=
+TELEMETRY_ENV ?= development
+
 # Build flags
 LDFLAGS = -X main.version=$(VERSION) \
           -X main.commit=$(COMMIT) \
-          -X main.buildTime=$(BUILD_TIME)
+          -X main.buildTime=$(BUILD_TIME) \
+          -X main.telemetryClientToken=$(TELEMETRY_CLIENT_TOKEN) \
+          -X main.telemetryEnv=$(TELEMETRY_ENV)
 
 # Binary name
 BINARY_NAME = datadog-code-security-mcp

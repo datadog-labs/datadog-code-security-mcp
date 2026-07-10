@@ -582,6 +582,20 @@ func runCommand(userInput string) error {
 # Cache credentials in Provider to avoid repeated auth calls
 ```
 
+### Telemetry
+
+Anonymous usage telemetry lives in `internal/telemetry/`. Key env vars:
+- `DD_CODE_SECURITY_TELEMETRY_DISABLED=1` — disable telemetry at runtime
+- `DO_NOT_TRACK=1` — standard opt-out (https://consoledonottrack.com/)
+- `DD_CODE_SECURITY_TELEMETRY_TOKEN=<token>` — runtime token fallback for dev (no rebuild)
+
+Build-time ldflags (set via CI secrets):
+- `-X main.telemetryClientToken=<token>` — RUM client token
+- `-X main.telemetryEnv=production` — environment tag
+
+Config file: `~/.datadog-code-security-mcp/config.json` (install_id, opt-out, notice flag).
+See `docs/TELEMETRY.md` for the full privacy policy.
+
 ### Updating Dependencies
 ```bash
 go get -u ./...       # Update all deps

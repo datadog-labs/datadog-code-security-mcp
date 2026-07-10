@@ -23,7 +23,15 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
-          go-version: '1.23'
+          go-version-file: 'go.mod'
+
+      - name: Warn if telemetry token is absent
+        env:
+          TELEMETRY_CLIENT_TOKEN: ${{ secrets.TELEMETRY_CLIENT_TOKEN }}
+        run: |
+          if [ -z "$TELEMETRY_CLIENT_TOKEN" ]; then
+            echo "::warning::TELEMETRY_CLIENT_TOKEN secret is not set — production binary will be built without telemetry support"
+          fi
 
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a # v6
@@ -32,6 +40,7 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TELEMETRY_CLIENT_TOKEN: ${{ secrets.TELEMETRY_CLIENT_TOKEN }}
 
       - name: Get Datadog credentials
         id: dd-sts

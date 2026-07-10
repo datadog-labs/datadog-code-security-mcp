@@ -5,15 +5,40 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+
+	"github.com/datadog-labs/datadog-code-security-mcp/internal/telemetry"
 )
 
 var (
 	version   = "dev"
 	commit    = "none"
 	buildTime = "unknown"
+
+	// telemetryClientToken is a publicly-embeddable RUM-style client token injected at
+	// build time via -X main.telemetryClientToken=<token>. When empty (local/dev builds)
+	// telemetry is silently disabled. Falls back to DD_CODE_SECURITY_TELEMETRY_TOKEN env var.
+	telemetryClientToken = ""
+
+	// telemetryEnv is the deployment environment injected at build time.
+	// Defaults to "development"; release builds set "production".
+	telemetryEnv = "development"
 )
 
+// telemetryClient is the package-level client shared by all CLI commands.
+// Initialised once in main() before any subcommand runs.
+var telemetryClient *telemetry.Client
+
+// flushTelemetry drains any in-flight telemetry POST before the process exits.
+// Call this immediately before os.Exit so the goroutine has a chance to finish.
+func flushTelemetry() {
+	if telemetryClient != nil {
+		telemetryClient.Flush()
+	}
+}
+
 func main() {
+	var noTelemetry bool
+
 	rootCmd := &cobra.Command{
 		Use:   "datadog-code-security-mcp",
 		Short: "Datadog Code Security MCP Server",
@@ -35,7 +60,28 @@ For more information, visit: https://github.com/datadog-labs/datadog-code-securi
 		Version:       fmt.Sprintf("%s (commit: %s, built: %s)", version, commit, buildTime),
 		SilenceUsage:  true,
 		SilenceErrors: true,
+		PersistentPreRun: func(cmd *cobra.Command, args []string) {
+			telemetryClient = telemetry.New(telemetry.Options{
+				CompiledToken: telemetryClientToken,
+				Env:           telemetryEnv,
+				Version:       version,
+				NoTelemetry:   noTelemetry,
+			})
+			telemetryClient.MaybeShowFirstRunNotice()
+		},
+		// Flush waits up to 500 ms for any in-flight telemetry POST before the
+		// process exits. This keeps Track non-blocking (output is shown first)
+		// while still delivering the event in the common case.
+		PersistentPostRun: func(cmd *cobra.Command, args []string) {
+			if telemetryClient != nil {
+				telemetryClient.Flush()
+			}
+		},
 	}
+
+	// --no-telemetry is a persistent flag visible on all subcommands.
+	rootCmd.PersistentFlags().BoolVar(&noTelemetry, "no-telemetry", false,
+		"Disable anonymous usage telemetry")
 
 	// Add commands
 	rootCmd.AddCommand(

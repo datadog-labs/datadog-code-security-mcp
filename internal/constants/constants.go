@@ -8,6 +8,24 @@ const (
 	EnvAuthDomain = "DD_AUTH_DOMAIN"
 )
 
+// Telemetry environment variable names
+const (
+	// EnvTelemetryDisabled disables telemetry when set to a truthy value (1, true, yes).
+	EnvTelemetryDisabled = "DD_CODE_SECURITY_TELEMETRY_DISABLED"
+	// EnvDoNotTrack respects the DO_NOT_TRACK standard (https://consoledonottrack.com/).
+	EnvDoNotTrack = "DO_NOT_TRACK"
+	// EnvTelemetryToken allows overriding the compiled-in client token at runtime (dev use only).
+	EnvTelemetryToken = "DD_CODE_SECURITY_TELEMETRY_TOKEN"
+)
+
+// Telemetry payload constants
+const (
+	// TelemetryService is the service name sent in every telemetry log.
+	TelemetryService = "datadog-code-security-mcp"
+	// TelemetryDDSource is the ddsource query param value required by the browser intake.
+	TelemetryDDSource = "browser"
+)
+
 // Argument keys for MCP tool requests
 const (
 	ArgFilePaths  = "file_paths"

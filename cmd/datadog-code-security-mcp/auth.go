@@ -9,7 +9,11 @@ import (
 )
 
 // setAuthCredentials gets credentials from auth provider and sets them as environment variables
-// This allows the scanner subprocess to access them
+// This allows the scanner subprocess to access them.
+//
+// TODO(refactor): this duplicates the credential-loading logic in scan.go's
+// loadAuthToEnv. Both should be consolidated into internal/auth so the CLI
+// and MCP paths share a single implementation. Track in a follow-up PR.
 func setAuthCredentials(ctx context.Context) error {
 	// Check if already set via environment variables
 	if os.Getenv(constants.EnvAPIKey) != "" && os.Getenv(constants.EnvAPPKey) != "" {

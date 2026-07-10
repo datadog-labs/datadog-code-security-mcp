@@ -1,15 +1,18 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 
+	"github.com/google/uuid"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 	"github.com/spf13/cobra"
 
 	"github.com/datadog-labs/datadog-code-security-mcp/internal/auth"
 	"github.com/datadog-labs/datadog-code-security-mcp/internal/scan"
+	"github.com/datadog-labs/datadog-code-security-mcp/internal/telemetry"
 )
 
 func newStartCmd() *cobra.Command {
@@ -59,6 +62,10 @@ The server will run until terminated with Ctrl+C or SIGTERM.`,
 
 var authProvider *auth.Provider
 
+// mcpTelemetryClient is the MCP-mode telemetry client with a session_id.
+// It is separate from the CLI telemetryClient so it carries the session UUID.
+var mcpTelemetryClient *telemetry.Client
+
 func runServer() error {
 	// Load authentication configuration
 	authConfig, err := auth.LoadConfig()
@@ -71,6 +78,19 @@ func runServer() error {
 	if err != nil {
 		return fmt.Errorf("failed to create auth provider: %w", err)
 	}
+
+	// Create a separate MCP telemetry client with a stable session_id for the
+	// lifetime of this server process.
+	sessionID := uuid.New().String()
+	mcpTelemetryClient = telemetry.New(telemetry.Options{
+		CompiledToken: telemetryClientToken,
+		Env:           telemetryEnv,
+		Version:       version,
+		SessionID:     sessionID,
+		// Inherit the NoTelemetry state that was already evaluated in main().
+		// If telemetryClient is nil or disabled we just won't have a client at all.
+		NoTelemetry: telemetryClient == nil || !telemetryClient.Enabled(),
+	})
 
 	// Create MCP server
 	s := server.NewMCPServer(
@@ -89,6 +109,16 @@ func runServer() error {
 		fmt.Fprintf(os.Stderr, "Note: Running in local-only mode. Set DD_API_KEY/DD_APP_KEY or DD_AUTH_DOMAIN for cloud features.\n")
 	}
 	fmt.Fprintf(os.Stderr, "Server ready. Listening on STDIO...\n")
+
+	// Emit a single startup event so we can track how many MCP sessions run
+	// without auth configured (local-only mode). Fires once per server lifetime.
+	if mcpTelemetryClient != nil {
+		attrs := telemetry.CommonAttrs()
+		attrs["operation"] = "server_start"
+		attrs["interface"] = "mcp"
+		attrs["auth_configured"] = authConfig.IsConfigured()
+		mcpTelemetryClient.TrackInfo(context.Background(), "mcp server started", attrs)
+	}
 
 	// Start STDIO server (handles signal context internally)
 	return server.ServeStdio(s)

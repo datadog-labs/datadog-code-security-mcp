@@ -41,6 +41,7 @@ When working on a feature branch, test your changes with Claude Desktop before p
 **When the user asks you to run scans or test functionality, ALWAYS use the MCP tools if available, NOT the CLI commands.** The MCP tools are the primary interface for this project and represent the actual user experience.
 
 **Available MCP Tools (use these first):**
+
 - `mcp__datadog-code-security__datadog_code_security_scan` - Comprehensive scan (SAST + Secrets + SCA)
 - `mcp__datadog-code-security__datadog_sast_scan` - SAST only
 - `mcp__datadog-code-security__datadog_secrets_scan` - Secrets only
@@ -50,12 +51,14 @@ When working on a feature branch, test your changes with Claude Desktop before p
 **CLI Commands (for development/debugging only):**
 
 Use CLI commands (`go run ./cmd/datadog-code-security-mcp ...`) ONLY when:
+
 - Testing the CLI interface specifically
 - Debugging binary execution issues
 - MCP tools are not working or not available
 - Running in CI/CD pipelines
 
 **Example:**
+
 - ❌ Wrong: `go run ./cmd/datadog-code-security-mcp scan all ./`
 - ✅ Correct: Use `mcp__datadog-code-security__datadog_code_security_scan` tool
 
@@ -163,6 +166,7 @@ tail -f ~/.claude/logs/mcp*.log
 ### High-Level Flow
 
 **SAST/Secrets Scanning Path:**
+
 ```
 AI Assistant (Claude/Cursor)
   ↓ STDIO (MCP Protocol)
@@ -184,6 +188,7 @@ Returns []types.Violation
 ```
 
 **SCA Scanning Path (Two-Step Process):**
+
 ```
 AI Assistant (Claude/Cursor)
   ↓ STDIO (MCP Protocol)
@@ -209,6 +214,7 @@ Returns []types.Violation
 ```
 
 **Standalone SBOM Generation Path:**
+
 ```
 AI Assistant (Claude/Cursor)
   ↓ STDIO (MCP Protocol)
@@ -228,6 +234,7 @@ Returns component list (name, version, license)
 ### Key Components
 
 **`cmd/datadog-code-security-mcp/`** - CLI entry point
+
 - `main.go`: Cobra setup, routes to subcommands
 - `start.go`: MCP server mode (STDIO transport), registers MCP tools
 - `scan.go`: Direct scan CLI mode (no MCP)
@@ -235,11 +242,13 @@ Returns component list (name, version, license)
 - `version.go`: Version info injected at build time via ldflags
 
 **`internal/types/`** - Centralized type definitions
+
 - `detection.go`: `DetectionType` constants (SAST, Secrets, SCA, SBOM)
 - `severity.go`: Severity types and filtering logic
 - `types.go`: Shared types (`Violation`, `ScanResult`, `ScanArgs`, etc.)
 
 **`internal/scan/`** - Core scan orchestration
+
 - `scan.go`: Main entry point, input validation, coordinates scanners
 - `executor.go`: **Parallel scan execution** with goroutines, error aggregation
 - `base_static_analyzer.go`: **Template method pattern** for SAST/Secrets scanners
@@ -251,20 +260,24 @@ Returns component list (name, version, license)
 - `types.go`: Re-exports from `internal/types` for backward compatibility
 
 **`internal/processing/`** - Result processing
+
 - `sarif.go`: SARIF parser (for static analyzer output)
 - `sca.go`: SCA result processing (CVE parsing, severity mapping)
 
 **`internal/sbom/`** - SBOM generation
+
 - `generator.go`: Wraps datadog-sbom-generator binary
 - `generator_test.go`: Unit tests for SBOM generation
 - **Used by**: Both standalone SBOM generation and SCA scanner (internal step)
 
 **`internal/binary/`** - Binary discovery and execution
+
 - `manager.go`: **Binary Naming Convention System** (see below), PATH lookup, installation instructions
 - `executor.go`: Command execution with timeout and context
 - `validation.go`: Binary prerequisite validation (fail-fast checks)
 
 **`internal/auth/`** - Authentication
+
 - `config.go`: Load from `DD_API_KEY`, `DD_APP_KEY`, `DD_SITE`
 - `provider.go`: Credential management with caching
 
@@ -281,12 +294,14 @@ The codebase supports multiple Datadog binaries with **different GitHub release 
   - Pattern: `{name}_{os}_{arch}.zip`
 
 **Implementation** (`internal/binary/manager.go`):
+
 1. `NamingConvention` enum: `rust-triple` vs `simple`
 2. `BinaryConfig` specifies convention per binary
 3. `mapArchitecture()` is convention-aware (returns `x86_64`/`aarch64` for Rust, `amd64`/`arm64` for Go)
 4. Filename generation conditionally uses correct pattern
 
 **Validation** (`internal/binary/validation.go`):
+
 - Binary validation logic validates prerequisites before scan execution
 - Called early in `scan.ExecuteScan()` to fail fast if binaries are missing
 - Provides platform-specific installation instructions when binaries not found
@@ -307,6 +322,7 @@ The codebase supports multiple Datadog binaries with **different GitHub release 
 6. Add MCP tool in `cmd/start.go` → `registerSecurityTools()`
 
 **Example: Modular Scanner Pattern**
+
 ```go
 // internal/scan/foo.go
 func NewFooScanner(binMgr *binary.BinaryManager) Scanner {
@@ -334,6 +350,7 @@ func NewFooScanner(binMgr *binary.BinaryManager) Scanner {
 ### Security Validation
 
 **ALWAYS validate user input**:
+
 - Use `filepath.Clean()` on all paths from users/MCP
 - Validate paths are within working directory (prevent traversal)
 - Whitelist environment variables (see `auth/config.go` regex patterns)
@@ -356,6 +373,23 @@ func NewFooScanner(binMgr *binary.BinaryManager) Scanner {
 **SBOM scanning** works without authentication. SAST/Secrets require credentials to fetch rules from Datadog.
 
 Configuration is loaded in `internal/auth/config.go` with strict validation (whitelist for DD_SITE, regex checks for invalid characters).
+
+## Telemetry
+
+Anonymous usage telemetry is sent to the Datadog logs intake using a publicly-embeddable client token (RUM-style, not a secret). See `docs/TELEMETRY.md` for the full privacy policy and what is/isn't collected.
+
+**Telemetry environment variables:**
+
+- `DD_CODE_SECURITY_TELEMETRY_DISABLED=1`: disable telemetry
+- `DO_NOT_TRACK=1`: disable telemetry (standard: https://consoledonottrack.com/)
+- `DD_CODE_SECURITY_TELEMETRY_TOKEN=<token>`: runtime fallback for the client token (dev use; no rebuild needed)
+
+**Telemetry build-time ldflags:**
+
+- `-X main.telemetryClientToken=<token>`: client token (set via `TELEMETRY_CLIENT_TOKEN` in CI)
+- `-X main.telemetryEnv=production`: deployment env tag (default: `development`)
+
+**Config file**: `~/.datadog-code-security-mcp/config.json`: holds `install_id` (stable anonymous UUID), `telemetry_enabled`, and `first_run_notice_shown`.
 
 ## Common Gotchas
 
@@ -380,12 +414,14 @@ Configuration is loaded in `internal/auth/config.go` with strict validation (whi
 ## External Dependencies
 
 **Required for scanning**:
+
 - `datadog-static-analyzer` binary (SAST/Secrets)
 - `datadog-sbom-generator` binary (SBOM)
 
 Binaries are discovered in PATH. If not found, installation instructions are generated based on the platform and binary's naming convention.
 
 **Go Dependencies**:
+
 - `github.com/spf13/cobra` - CLI framework
 - `github.com/mark3labs/mcp-go` - MCP protocol implementation
 - `github.com/owenrumney/go-sarif/v2` - SARIF parsing

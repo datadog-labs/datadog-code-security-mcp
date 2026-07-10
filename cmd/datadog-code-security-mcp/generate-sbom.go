@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/datadog-labs/datadog-code-security-mcp/internal/sbom"
+	"github.com/datadog-labs/datadog-code-security-mcp/internal/telemetry"
 	"github.com/datadog-labs/datadog-code-security-mcp/internal/types"
 )
 
@@ -60,6 +62,7 @@ Examples:
 
 func runGenerateSBOM(path string, workingDir string, outputJSON bool) error {
 	ctx := context.Background()
+	start := time.Now()
 
 	// Build SBOM args
 	sbomArgs := types.SBOMArgs{
@@ -70,6 +73,24 @@ func runGenerateSBOM(path string, workingDir string, outputJSON bool) error {
 	// Generate SBOM
 	generator := sbom.NewGenerator()
 	result, err := generator.Generate(ctx, sbomArgs)
+
+	// Track before returning.
+	if telemetryClient != nil {
+		attrs := telemetry.CommonAttrs()
+		attrs["command"] = "generate_sbom"
+		attrs["interface"] = "cli"
+		attrs["duration_ms"] = time.Since(start).Milliseconds()
+		attrs["success"] = err == nil
+		if result != nil {
+			attrs["findings_count"] = result.Summary.TotalComponents
+		}
+		if err != nil {
+			telemetryClient.TrackError(ctx, err, "generate sbom failed", attrs)
+		} else {
+			telemetryClient.TrackInfo(ctx, "generate sbom completed", attrs)
+		}
+	}
+
 	if err != nil {
 		return err
 	}
