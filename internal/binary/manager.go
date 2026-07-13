@@ -87,11 +87,10 @@ var BinaryConfigs = map[BinaryType]BinaryConfig{
 		},
 	},
 	BinaryTypeIaC: {
-		BinaryName:        "datadog-iac-scanner",
-		GitHubRepo:        "DataDog/datadog-iac-scanner",
-		NamingConvention:  NamingConventionSimple,
-		ArchiveFormat:     ArchiveFormatTarGz,
-		VersionedFilename: true, // assets are named {name}_{version}_{os}_{arch}.tar.gz
+		BinaryName:       "datadog-iac-scanner",
+		GitHubRepo:       "DataDog/datadog-iac-scanner",
+		NamingConvention: NamingConventionSimple,
+		ArchiveFormat:    ArchiveFormatTarGz,
 		SupportedPlatforms: []Platform{
 			{OS: "darwin", Arch: "arm64"},
 			{OS: "linux", Arch: "amd64"},
@@ -285,10 +284,10 @@ echo "Installing %s version ${VERSION}"
 		// Choose extract command based on archive format
 		var extractCmd string
 		if archiveExt == ".tar.gz" {
-			extractCmd = fmt.Sprintf("curl -L \"%s\" -o /tmp/%s.tar.gz && tar xzf /tmp/%s.tar.gz -C /tmp/ && mkdir -p ~/.local/bin && mv /tmp/%s ~/.local/bin/ && chmod +x ~/.local/bin/%s",
+			extractCmd = fmt.Sprintf("curl -fL \"%s\" -o /tmp/%s.tar.gz && tar xzf /tmp/%s.tar.gz -C /tmp/ && mkdir -p ~/.local/bin && mv /tmp/%s ~/.local/bin/ && chmod +x ~/.local/bin/%s",
 				downloadURL, bm.config.BinaryName, bm.config.BinaryName, bm.config.BinaryName, bm.config.BinaryName)
 		} else {
-			extractCmd = fmt.Sprintf("curl -L \"%s\" -o /tmp/%s.zip && unzip -o /tmp/%s.zip -d /tmp/ && mkdir -p ~/.local/bin && mv /tmp/%s ~/.local/bin/ && chmod +x ~/.local/bin/%s",
+			extractCmd = fmt.Sprintf("curl -fL \"%s\" -o /tmp/%s.zip && unzip -o /tmp/%s.zip -d /tmp/ && mkdir -p ~/.local/bin && mv /tmp/%s ~/.local/bin/ && chmod +x ~/.local/bin/%s",
 				downloadURL, bm.config.BinaryName, bm.config.BinaryName, bm.config.BinaryName, bm.config.BinaryName)
 		}
 
