@@ -417,7 +417,7 @@ datadog-security-cli --version`
 		return `# Install datadog-security-cli on macOS:
 
 # Install via Homebrew
-brew install --cask datadog/tap/datadog-security-cli
+brew install --cask datadog-security-cli
 
 # Verify installation
 datadog-security-cli --version`
