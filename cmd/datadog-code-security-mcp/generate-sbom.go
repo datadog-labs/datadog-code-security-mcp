@@ -77,7 +77,7 @@ func runGenerateSBOM(path string, workingDir string, outputJSON bool) error {
 	// Track before returning.
 	if telemetryClient != nil {
 		attrs := telemetry.CommonAttrs()
-		attrs["command"] = "generate_sbom"
+		attrs["operation"] = "generate_sbom"
 		attrs["interface"] = "cli"
 		attrs["duration_ms"] = time.Since(start).Milliseconds()
 		attrs["success"] = err == nil
