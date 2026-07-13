@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/datadog-labs/datadog-code-security-mcp/internal/binary"
 	"github.com/datadog-labs/datadog-code-security-mcp/internal/types"
@@ -21,6 +22,7 @@ func ExecuteParallelScans(ctx context.Context, args ScanArgs, binaryMgr *binary.
 		scanType string
 		findings []types.Violation
 		err      error
+		duration time.Duration // wall-clock time for this scan type
 	}
 
 	// Buffered channel sized to number of scan types
@@ -38,13 +40,14 @@ func ExecuteParallelScans(ctx context.Context, args ScanArgs, binaryMgr *binary.
 
 			scannerInst := getScannerFor(st, binaryMgr)
 			if scannerInst == nil {
-				results <- scanResult{st, nil, fmt.Errorf("unknown scan type: %s", st)}
+				results <- scanResult{st, nil, fmt.Errorf("unknown scan type: %s", st), 0}
 				return
 			}
 
-			// Execute scan (may take several seconds)
+			// Execute scan (may take several seconds) and record wall time
+			scanStart := time.Now()
 			findings, err := scannerInst.Execute(ctx, args)
-			results <- scanResult{st, findings, err}
+			results <- scanResult{st, findings, err, time.Since(scanStart)}
 		}(scanType)
 	}
 
@@ -60,9 +63,11 @@ func ExecuteParallelScans(ctx context.Context, args ScanArgs, binaryMgr *binary.
 	// we still return the Secrets findings with an error for SAST
 	allFindings := make([]types.Violation, 0)
 	resultsByType := make(map[types.DetectionType][]types.Violation)
+	durations := make(map[string]int64)
 	var errors []ScanError
 
 	for result := range results {
+		durations[result.scanType] = result.duration.Milliseconds()
 		if result.err != nil {
 			errors = append(errors, ScanError{
 				DetectionType: result.scanType,
@@ -84,6 +89,7 @@ func ExecuteParallelScans(ctx context.Context, args ScanArgs, binaryMgr *binary.
 		Results:       resultsByType,
 		Errors:        errors,
 		PartialResult: len(errors) > 0 && len(allFindings) > 0,
+		Durations:     durations,
 	}, nil
 }
 

@@ -125,6 +125,56 @@ func TestExecuteParallelScans_SCABinaryMissing(t *testing.T) {
 	}
 }
 
+// TestExecuteParallelScans_DurationsPopulated verifies that Durations is
+// populated for every requested scan type, whether the scan succeeds or fails.
+func TestExecuteParallelScans_DurationsPopulated(t *testing.T) {
+	ctx := context.Background()
+	args := ScanArgs{
+		FilePaths:  []string{"."},
+		WorkingDir: ".",
+		ScanTypes:  []string{"sca", "iac"},
+	}
+
+	binMgr := binary.NewBinaryManager()
+	result, err := ExecuteParallelScans(ctx, args, binMgr)
+	if err != nil {
+		t.Fatalf("unexpected error from executor: %v", err)
+	}
+
+	if result.Durations == nil {
+		t.Fatal("expected Durations to be non-nil")
+	}
+
+	for _, st := range args.ScanTypes {
+		if _, ok := result.Durations[st]; !ok {
+			t.Errorf("Durations[%q] missing; want an entry for every requested scan type", st)
+		}
+	}
+}
+
+// TestExecuteParallelScans_DurationsAreNonNegative verifies that per-scan
+// durations recorded in result.Durations are >= 0 (wall time cannot be negative).
+func TestExecuteParallelScans_DurationsAreNonNegative(t *testing.T) {
+	ctx := context.Background()
+	args := ScanArgs{
+		FilePaths:  []string{"."},
+		WorkingDir: ".",
+		ScanTypes:  []string{"sca"},
+	}
+
+	binMgr := binary.NewBinaryManager()
+	result, err := ExecuteParallelScans(ctx, args, binMgr)
+	if err != nil {
+		t.Fatalf("unexpected error from executor: %v", err)
+	}
+
+	for st, d := range result.Durations {
+		if d < 0 {
+			t.Errorf("Durations[%q] = %d; want >= 0", st, d)
+		}
+	}
+}
+
 // TestExecuteParallelScans_AllScanTypes verifies all three scan types are dispatched in parallel.
 // Each scan type will either succeed (findings + result entry) or fail (error entry) depending
 // on whether the required binary is installed. The test checks that no scan type is silently dropped.

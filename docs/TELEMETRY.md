@@ -4,20 +4,25 @@ Datadog Code Security MCP collects **anonymous usage telemetry** to help the tea
 
 ## What is collected
 
-Each tool invocation or CLI command sends one log event containing:
+### Event model
 
-| Field                      | Description                                                                                      |
+Every scan emits **one telemetry event per scan type** plus, when multiple types are run together (`scan all` / `datadog_code_security_scan`), an additional **aggregate event** that covers the whole batch. This lets you count executions of any single type (e.g. `iac_scan`) directly by `operation`, without inferring counts from the aggregate.
+
+| Invocation | Events emitted |
+| --- | --- |
+| Single-type (`scan sast`, `datadog_sast_scan`) | One per-scan event (`operation=sast_scan`, `standalone=true`) |
+| Multi-type (`scan all`, `datadog_code_security_scan`) | One aggregate event (`operation=code_security_scan`) **plus** one per-scan event per executed type (`standalone=false`) |
+| Initialization failure (binary missing, bad path) | One aggregate event only (`success=false`) — no per-scan events since nothing executed |
+
+### Fields
+
+**Common to all events:**
+
+| Field | Description |
 | -------------------------- | ------------------------------------------------------------------------------------------------ |
 | `operation`                | Stable operation name (e.g. `sast_scan`, `code_security_scan`, `generate_sbom`)                  |
 | `interface`                | `cli` or `mcp`                                                                                   |
-| `scan_types`               | Comma-separated list of scan types actually requested (e.g. `sast,secrets`) — scan events only   |
-| `findings_count`           | **Number** of findings — no content or details                                                   |
-| `scan_types_breakdown`     | Per-detection-type finding counts (e.g. `{"sast":3,"secrets":1}`) — scan events only             |
-| `severity_breakdown`       | Per-severity finding counts (e.g. `{"HIGH":2,"MEDIUM":2}`) — scan events only                    |
-| `paths_count`              | Number of file paths or PURLs passed to the scan                                                 |
-| `partial_errors_count`     | Number of scan types that failed when others succeeded (graceful degradation) — scan events only |
-| `output_format`            | `human` or `json` — CLI scan events only                                                         |
-| `duration_ms`              | How long the scan took                                                                           |
+| `duration_ms`              | Wall-clock time for this event: per-scan time for per-scan events; total elapsed time for aggregate |
 | `success`                  | Whether the invocation succeeded                                                                 |
 | `error.kind`               | Categorized error type (`BinaryNotFound`, `AuthRequired`, `PathNotFound`, `Timeout`, `Network`, `ScanError`, `Unknown`) — never raw messages |
 | `os`, `arch`, `go_version` | Runtime platform info                                                                            |
@@ -26,6 +31,33 @@ Each tool invocation or CLI command sends one log event containing:
 | `usr.id`                   | Anonymous install ID — random UUID unique per installation                                       |
 | `version`                  | CLI version                                                                                      |
 | `env`                      | Deployment environment (`development` or `production`)                                           |
+
+**Per-scan events only** (`sast_scan`, `secrets_scan`, `sca_scan`, `iac_scan`):
+
+| Field | Description |
+| -------------------------- | ------------------------------------------------------------------------------------------------ |
+| `standalone`               | `true` when the scan type was invoked on its own; `false` when part of a `scan all` batch        |
+| `findings_count`           | **Number** of findings for this scan type — no content or details                               |
+| `severity_breakdown`       | Per-severity finding counts for this type (e.g. `{"HIGH":2,"MEDIUM":2}`)                        |
+| `paths_count`              | Number of file paths passed to the scan                                                          |
+| `output_format`            | `human` or `json` — CLI events only                                                              |
+
+**Aggregate event only** (`code_security_scan`):
+
+| Field | Description |
+| -------------------------- | ------------------------------------------------------------------------------------------------ |
+| `scan_types`               | Comma-separated list of scan types requested (e.g. `sast,secrets`)                              |
+| `findings_count`           | Total findings across all scan types                                                             |
+| `scan_types_breakdown`     | Per-detection-type finding counts (e.g. `{"sast":3,"secrets":1}`)                               |
+| `severity_breakdown`       | Per-severity finding counts across all types (e.g. `{"HIGH":2,"MEDIUM":2}`)                      |
+| `scan_durations_breakdown` | Per-scan-type wall time in ms (e.g. `{"sast":1200,"secrets":340}`) — sourced from goroutine timing |
+| `partial_errors_count`     | Number of scan types that failed when others succeeded (graceful degradation)                    |
+| `partial_errors_breakdown` | Per-scan-type error kind for each failed type (e.g. `{"iac":"BinaryNotFound"}`) — kinds only, no raw messages |
+| `batch_id`                 | Random UUID shared with every per-scan event in this batch — use to isolate one `scan all` execution |
+| `paths_count`              | Number of file paths passed to the scan                                                          |
+| `output_format`            | `human` or `json` — CLI events only                                                              |
+
+> **Tip**: To isolate all events from a single `scan all` run, filter by `batch_id:<uuid>`. Both the aggregate event and all per-scan events (`standalone:false`) share the same `batch_id`. Single-type standalone scans do not have a `batch_id`.
 
 ## What is explicitly NOT collected
 

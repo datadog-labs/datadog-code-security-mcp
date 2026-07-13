@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 
 	"github.com/datadog-labs/datadog-code-security-mcp/internal/auth"
@@ -165,7 +166,13 @@ func runDirectScan(scanType string, paths []string, workingDir string, outputJSO
 	return err
 }
 
-// trackCLIScan emits a telemetry event for a direct CLI scan invocation.
+// trackCLIScan emits telemetry for a direct CLI scan invocation.
+//
+// Single scan type: emits one per-scan event (standalone=true).
+// "all" (multi-type): emits the aggregate code_security_scan event enriched with
+// scan_durations_breakdown and partial_errors_breakdown, then one per-scan event
+// per executed type (standalone=false).
+// Initialization errors (result==nil): emits only the aggregate event.
 func trackCLIScan(ctx context.Context, scanType string, result *scan.ScanResult, start time.Time, pathsCount int, outputJSON bool, err error) {
 	if telemetryClient == nil {
 		return
@@ -174,28 +181,59 @@ func trackCLIScan(ctx context.Context, scanType string, result *scan.ScanResult,
 	if outputJSON {
 		outputFormat = "json"
 	}
-	// Normalize "all" to match the MCP operation name for the equivalent tool.
-	operation := scanType + "_scan"
-	if scanType == "all" {
-		operation = "code_security_scan"
+
+	base := map[string]any{
+		"paths_count":   pathsCount,
+		"output_format": outputFormat,
 	}
+
+	if scanType != "all" {
+		// Standalone single-type scan: emit one per-scan event directly.
+		var durationMS int64
+		if result != nil && result.Durations != nil {
+			durationMS = result.Durations[scanType]
+		}
+		emitPerScanEvent(ctx, telemetryClient, "cli", scanType, result, durationMS, true, base, err)
+		return
+	}
+
+	// "scan all": generate a batch_id shared by the aggregate event and all per-scan
+	// events so the entire batch can be isolated in dashboards/queries.
+	batchID := uuid.New().String()
+
+	// Aggregate event first.
+	operation := "code_security_scan"
+	totalDuration := time.Since(start).Milliseconds()
 	attrs := telemetry.CommonAttrs()
 	attrs["operation"] = operation
 	attrs["interface"] = "cli"
-	attrs["duration_ms"] = time.Since(start).Milliseconds()
+	attrs["duration_ms"] = totalDuration
 	attrs["success"] = err == nil
 	attrs["paths_count"] = pathsCount
 	attrs["output_format"] = outputFormat
+	attrs["batch_id"] = batchID
 	if result != nil {
 		attrs["findings_count"] = result.Summary.Total
 		attrs["scan_types_breakdown"] = result.Summary.ByDetectionType
 		attrs["severity_breakdown"] = result.Summary.BySeverity
 		attrs["partial_errors_count"] = len(result.Errors)
+		if len(result.Durations) > 0 {
+			attrs["scan_durations_breakdown"] = result.Durations
+		}
+		if len(result.Errors) > 0 {
+			attrs["partial_errors_breakdown"] = buildErrorKindBreakdown(result)
+		}
 	}
 	if err != nil {
 		telemetryClient.TrackError(ctx, err, operation+" failed", attrs)
 	} else {
 		telemetryClient.TrackInfo(ctx, operation+" completed", attrs)
+	}
+
+	// Per-scan events for each executed scan type (standalone=false, same batch_id).
+	if result != nil {
+		base["batch_id"] = batchID
+		emitPerScanEvents(ctx, telemetryClient, "cli", result, false, base)
 	}
 }
 

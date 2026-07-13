@@ -81,9 +81,11 @@ func ExecuteScan(ctx context.Context, args ScanArgs) (*ScanResult, error) {
 		return nil, fmt.Errorf("scan execution failed: %w\n\nTroubleshooting:\n- Ensure datadog-static-analyzer is installed and in PATH\n- Run 'datadog-static-analyzer --version' to verify installation\n- Check file paths are correct and accessible", err)
 	}
 
-	// If all scans failed and there are no findings, return the error
+	// If all scans failed and there are no findings, return both the result (so
+	// the tracking layer can still emit per-scan events with durations/error kinds)
+	// and the error so callers know the overall scan failed.
 	if len(result.Errors) > 0 && result.Summary.Total == 0 && !result.PartialResult {
-		return nil, fmt.Errorf("all scans failed:\n%s", formatErrors(result.Errors))
+		return result, fmt.Errorf("all scans failed:\n%s", formatErrors(result.Errors))
 	}
 
 	return result, nil

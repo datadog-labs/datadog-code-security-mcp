@@ -60,6 +60,10 @@ type ScanResult struct {
 	Results       map[DetectionType][]Violation `json:"results" jsonschema:"description=Results from each detection type"`
 	Errors        []ScanError                   `json:"errors,omitempty" jsonschema:"description=Any errors encountered during scanning"`
 	PartialResult bool                          `json:"partial_result,omitempty" jsonschema:"description=True if some scans failed but others succeeded"`
+	// Durations holds the wall-clock time in milliseconds for each scan type. It is
+	// in-process only and intentionally excluded from JSON output (CLI --json and MCP
+	// markdown formatting) so per-scan timings remain a telemetry-only concern.
+	Durations map[string]int64 `json:"-"`
 }
 
 // ScanError represents an error that occurred during scanning

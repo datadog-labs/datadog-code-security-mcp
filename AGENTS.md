@@ -596,6 +596,8 @@ Build-time ldflags (set via CI secrets):
 Config file: `~/.datadog-code-security-mcp/config.json` (install_id, opt-out, notice flag).
 See `docs/TELEMETRY.md` for the full privacy policy.
 
+**Event model**: Single-type scans emit one per-scan event (`standalone=true`). Multi-type (`scan all`) emits an aggregate `code_security_scan` event **plus** one per-scan event per type (`standalone=false`). The aggregate carries `scan_durations_breakdown` and `partial_errors_breakdown` (error kinds only). Helpers for this logic live in `cmd/datadog-code-security-mcp/handlers.go` (`emitPerScanEvents`, `emitPerScanEvent`, `executedScanTypes`, `buildErrorKindBreakdown`, `severityBreakdownFor`).
+
 ### Updating Dependencies
 ```bash
 go get -u ./...       # Update all deps

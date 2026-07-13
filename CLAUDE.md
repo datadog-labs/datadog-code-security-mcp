@@ -378,6 +378,14 @@ Configuration is loaded in `internal/auth/config.go` with strict validation (whi
 
 Anonymous usage telemetry is sent to the Datadog logs intake using a publicly-embeddable client token (RUM-style, not a secret). See `docs/TELEMETRY.md` for the full privacy policy and what is/isn't collected.
 
+**Event model**: Every scan emits one telemetry event per scan type. For multi-type runs (`scan all` / `datadog_code_security_scan`), an additional aggregate `code_security_scan` event is emitted. This means `operation:iac_scan` counts all IaC executions directly, whether standalone or part of a batch.
+
+Key fields:
+- `standalone` (bool): `true` for single-type invocations, `false` for per-scan events within a batch.
+- `duration_ms`: per-scan wall time on per-scan events; total wall-clock time on the aggregate.
+- `scan_durations_breakdown`: map of `{detType: ms}` on the aggregate event.
+- `partial_errors_breakdown`: map of `{detType: errorKind}` on the aggregate event — kinds only, no raw messages.
+
 **Telemetry environment variables:**
 
 - `DD_CODE_SECURITY_TELEMETRY_DISABLED=1`: disable telemetry

@@ -2,12 +2,14 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/mark3labs/mcp-go/mcp"
 
 	"github.com/datadog-labs/datadog-code-security-mcp/internal/constants"
@@ -284,28 +286,62 @@ func handleLibraryVulnerabilityScan(ctx context.Context, request mcp.CallToolReq
 	return formatLibraryScanResult(result), nil
 }
 
-// trackMCPScan sends a telemetry event for scan tool calls. Track is non-blocking.
+// trackMCPScan sends telemetry for a scan tool call.
+//
+// Single scan type: emits one per-scan event (standalone=true).
+// Multiple scan types (scan all): emits the aggregate code_security_scan event
+// enriched with scan_durations_breakdown and partial_errors_breakdown, then one
+// per-scan event per executed type (standalone=false).
+// Initialization errors (result==nil): emits only the aggregate event.
 func trackMCPScan(ctx context.Context, operation string, scanTypes []string, result *scan.ScanResult, start time.Time, pathsCount int, err error) {
 	if mcpTelemetryClient == nil {
 		return
 	}
+
+	base := map[string]any{"paths_count": pathsCount}
+
+	if len(scanTypes) == 1 {
+		// Standalone single-type scan: emit one event directly.
+		emitPerScanEvent(ctx, mcpTelemetryClient, "mcp", scanTypes[0], result, 0, true, base, err)
+		return
+	}
+
+	// Multi-type (scan all): generate a batch_id shared by the aggregate event and
+	// all per-scan events so the batch can be isolated in dashboards/queries.
+	batchID := uuid.New().String()
+
+	// Aggregate event first.
+	totalDuration := time.Since(start).Milliseconds()
 	attrs := telemetry.CommonAttrs()
 	attrs["operation"] = operation
 	attrs["interface"] = "mcp"
 	attrs["scan_types"] = strings.Join(scanTypes, ",")
-	attrs["duration_ms"] = time.Since(start).Milliseconds()
+	attrs["duration_ms"] = totalDuration
 	attrs["success"] = err == nil
 	attrs["paths_count"] = pathsCount
+	attrs["batch_id"] = batchID
 	if result != nil {
 		attrs["findings_count"] = result.Summary.Total
 		attrs["scan_types_breakdown"] = result.Summary.ByDetectionType
 		attrs["severity_breakdown"] = result.Summary.BySeverity
 		attrs["partial_errors_count"] = len(result.Errors)
+		if len(result.Durations) > 0 {
+			attrs["scan_durations_breakdown"] = result.Durations
+		}
+		if len(result.Errors) > 0 {
+			attrs["partial_errors_breakdown"] = buildErrorKindBreakdown(result)
+		}
 	}
 	if err != nil {
 		mcpTelemetryClient.TrackError(ctx, err, operation+" failed", attrs)
 	} else {
 		mcpTelemetryClient.TrackInfo(ctx, operation+" completed", attrs)
+	}
+
+	// Per-scan events for each executed scan type (standalone=false, same batch_id).
+	if result != nil {
+		base["batch_id"] = batchID
+		emitPerScanEvents(ctx, mcpTelemetryClient, "mcp", result, false, base)
 	}
 }
 
@@ -337,4 +373,105 @@ func operationFromScanTypes(scanTypes []string) string {
 		return scanTypes[0] + "_scan"
 	}
 	return "code_security_scan"
+}
+
+// canonicalScanOrder defines the stable order used when iterating scan types for
+// per-scan events, ensuring deterministic event ordering in tests.
+var canonicalScanOrder = []string{"sast", "secrets", "sca", "iac"}
+
+// executedScanTypes returns the union of successful and failed scan types from
+// result, ordered canonically (sast, secrets, sca, iac) for determinism.
+func executedScanTypes(result *scan.ScanResult) []string {
+	seen := make(map[string]bool)
+	for dt := range result.Results {
+		seen[string(dt)] = true
+	}
+	for _, e := range result.Errors {
+		seen[e.DetectionType] = true
+	}
+	var out []string
+	for _, st := range canonicalScanOrder {
+		if seen[st] {
+			out = append(out, st)
+		}
+	}
+	// Any type not in canonical order (future-proofing) appended last.
+	for st := range seen {
+		if !contains(canonicalScanOrder, st) {
+			out = append(out, st)
+		}
+	}
+	return out
+}
+
+func contains(slice []string, s string) bool {
+	for _, v := range slice {
+		if v == s {
+			return true
+		}
+	}
+	return false
+}
+
+// buildErrorKindBreakdown returns a map of {detectionType: errorKind} for failed
+// scan types, using telemetry.CategorizeError. No raw error messages are included.
+func buildErrorKindBreakdown(result *scan.ScanResult) map[string]string {
+	breakdown := make(map[string]string, len(result.Errors))
+	for _, e := range result.Errors {
+		breakdown[e.DetectionType] = telemetry.CategorizeError(errors.New(e.Error))
+	}
+	return breakdown
+}
+
+// emitPerScanEvents emits one telemetry event per executed scan type in result.
+// standalone=true for single-type invocations, false when part of a scan all.
+// base contains extra attrs (e.g. paths_count, output_format) merged into each event.
+func emitPerScanEvents(ctx context.Context, client *telemetry.Client, iface string, result *scan.ScanResult, standalone bool, base map[string]any) {
+	for _, st := range executedScanTypes(result) {
+		var scanErr error
+		for _, e := range result.Errors {
+			if e.DetectionType == st {
+				scanErr = errors.New(e.Error)
+				break
+			}
+		}
+		var durationMS int64
+		if result.Durations != nil {
+			durationMS = result.Durations[st]
+		}
+		emitPerScanEvent(ctx, client, iface, st, result, durationMS, standalone, base, scanErr)
+	}
+}
+
+// emitPerScanEvent sends a single per-scan telemetry event.
+func emitPerScanEvent(ctx context.Context, client *telemetry.Client, iface, scanType string, result *scan.ScanResult, durationMS int64, standalone bool, base map[string]any, scanErr error) {
+	operation := scanType + "_scan"
+	attrs := telemetry.CommonAttrs()
+	attrs["operation"] = operation
+	attrs["interface"] = iface
+	attrs["standalone"] = standalone
+	attrs["duration_ms"] = durationMS
+	attrs["success"] = scanErr == nil
+	for k, v := range base {
+		attrs[k] = v
+	}
+	if result != nil && scanErr == nil {
+		violations := result.Results[types.DetectionType(scanType)]
+		attrs["findings_count"] = len(violations)
+		attrs["severity_breakdown"] = severityBreakdownFor(violations)
+	}
+	if scanErr != nil {
+		client.TrackError(ctx, scanErr, operation+" failed", attrs)
+	} else {
+		client.TrackInfo(ctx, operation+" completed", attrs)
+	}
+}
+
+// severityBreakdownFor counts violations by severity for a single scan type.
+func severityBreakdownFor(violations []types.Violation) map[string]int {
+	m := make(map[string]int)
+	for _, v := range violations {
+		m[v.Severity]++
+	}
+	return m
 }
