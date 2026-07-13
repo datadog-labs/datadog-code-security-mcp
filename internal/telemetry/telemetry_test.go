@@ -119,6 +119,13 @@ func TestTrackError_ErrorObject(t *testing.T) {
 	if errObj["kind"] == "" {
 		t.Error("error.kind is empty")
 	}
+	msg, _ := errObj["message"].(string)
+	if msg == "" {
+		t.Error("error.message is empty; expected a sanitized message")
+	}
+	if !contains(msg, "unexpected EOF") {
+		t.Errorf("error.message = %q, want it to retain the failure detail", msg)
+	}
 }
 
 // TestTrackError_NoErrorOnInfo verifies the error field is absent for non-error events.

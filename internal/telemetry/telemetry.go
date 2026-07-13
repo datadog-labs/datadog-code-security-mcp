@@ -4,7 +4,11 @@
 // publicly-embeddable client token injected at build time.
 //
 // Privacy guarantees:
-//   - No source code, file paths, scan findings, secrets, or user identifiers.
+//   - No source code, scan findings, secrets, or user identifiers.
+//   - Error messages are sanitised before sending: absolute paths are collapsed
+//     to basenames, the home directory is scrubbed, and length is capped
+//     (see sanitizeErrorMessage). This keeps failure reasons actionable without
+//     leaking usernames, repo paths, or scan content.
 //   - Anonymous install_id (random UUID, stable per installation).
 //   - Opt-out via --no-telemetry flag, DD_CODE_SECURITY_TELEMETRY_DISABLED=1,
 //     DO_NOT_TRACK=1, or config file telemetry_enabled=false.

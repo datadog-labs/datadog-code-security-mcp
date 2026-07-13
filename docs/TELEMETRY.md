@@ -24,7 +24,8 @@ Every scan emits **one telemetry event per scan type** plus, when multiple types
 | `interface`                | `cli` or `mcp`                                                                                   |
 | `duration_ms`              | Wall-clock time for this event: per-scan time for per-scan events; total elapsed time for aggregate |
 | `success`                  | Whether the invocation succeeded                                                                 |
-| `error.kind`               | Categorized error type (`BinaryNotFound`, `AuthRequired`, `PathNotFound`, `Timeout`, `Network`, `ScanError`, `Unknown`) — never raw messages |
+| `error.kind`               | Categorized error type (`BinaryNotFound`, `AuthRequired`, `PathNotFound`, `Timeout`, `Network`, `ScanError`, `Unknown`) |
+| `error.message`            | Sanitized failure detail — absolute paths collapsed to basenames, home dir scrubbed, whitespace flattened, capped at 500 chars. Explains *why* a scan failed (e.g. `remote not found`) beyond the coarse `error.kind` |
 | `os`, `arch`, `go_version` | Runtime platform info                                                                            |
 | `ci`                       | Whether a `CI` environment variable is set                                                       |
 | `session_id`               | Random UUID stable for one MCP server lifetime (MCP mode only)                                   |
@@ -61,12 +62,25 @@ Every scan emits **one telemetry event per scan type** plus, when multiple types
 
 ## What is explicitly NOT collected
 
-- Source code, file contents, or file paths
-- Scan findings, detected secrets, or vulnerability details
-- Usernames, email addresses, or repo names
+- Source code, file contents, or scan findings
+- Detected secrets or vulnerability details
+- Absolute file paths, directory structure, usernames, or repo paths — error
+  messages are sanitized before sending (absolute paths are collapsed to a bare
+  filename, the home directory is scrubbed); at most a file *basename* (e.g.
+  `exclude`) may remain to make a failure understandable
 - Machine identifiers or IP addresses (beyond what the server logs server-side)
 - Flag values (only flag names)
 - Any user-identifiable information
+
+### A note on `error.message`
+
+To make failures debuggable, error events include a **sanitized** `error.message`.
+Many failures bubble up from external scanner binaries (and their own
+dependencies like `git`), whose output is open-ended — coarse categorization
+(`error.kind`) alone cannot capture reasons like `remote not found` or
+`not a directory`. Before sending, the message is passed through a sanitizer that
+collapses absolute paths to basenames, scrubs the home directory, flattens
+newlines, and caps the length at 500 characters.
 
 ## How to opt out
 

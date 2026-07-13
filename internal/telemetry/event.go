@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime/debug"
 	"strings"
 
@@ -37,12 +38,19 @@ type Event struct {
 }
 
 // ErrorInfo is the error object included in the payload when status == "error".
-// Raw error messages are intentionally excluded to prevent file paths or other
-// user-specific data from leaking into telemetry. Only the categorised kind
-// and a scrubbed stack trace are sent.
+//
+// It carries the categorised Kind, a scrubbed stack trace, and a sanitised
+// Message. The Message is NOT the raw error string: it is passed through
+// sanitizeErrorMessage, which collapses absolute filesystem paths to their
+// basenames, scrubs the user's home directory, flattens whitespace, and caps
+// the length. This gives enough detail to understand *why* a scan failed
+// (e.g. "remote not found", "not a directory") — which coarse categorisation
+// alone cannot capture for errors bubbling up from external scanner binaries —
+// without leaking usernames, repo paths, or scan content.
 type ErrorInfo struct {
-	Kind  string `json:"kind"`
-	Stack string `json:"stack,omitempty"`
+	Kind    string `json:"kind"`
+	Message string `json:"message,omitempty"`
+	Stack   string `json:"stack,omitempty"`
 }
 
 // ErrorKind constants used as the error.kind field.
@@ -124,17 +132,74 @@ func CategorizeError(err error) string {
 	return ErrKindUnknown
 }
 
-// ErrorInfoFromError builds an ErrorInfo from an error, including a scrubbed stack trace.
-// The raw error message is intentionally omitted to prevent file paths or other
-// user-specific data from appearing in telemetry. Returns nil for a nil error.
+// ErrorInfoFromError builds an ErrorInfo from an error, including the categorised
+// kind, a sanitised message, and a scrubbed stack trace. The message is passed
+// through sanitizeErrorMessage so that file paths, usernames, and repo names are
+// removed before the message is sent. Returns nil for a nil error.
 func ErrorInfoFromError(err error) *ErrorInfo {
 	if err == nil {
 		return nil
 	}
 	return &ErrorInfo{
-		Kind:  CategorizeError(err),
-		Stack: scrubPaths(filterStack(string(debug.Stack()))),
+		Kind:    CategorizeError(err),
+		Message: sanitizeErrorMessage(err.Error()),
+		Stack:   scrubPaths(filterStack(string(debug.Stack()))),
 	}
+}
+
+// maxErrorMessageLen caps the sanitised error message. Scanner failures can
+// append large multi-line stderr/stdout dumps; this bounds the payload while
+// keeping enough of the message to be actionable.
+const maxErrorMessageLen = 500
+
+// absPathPattern matches absolute filesystem paths so they can be collapsed to a
+// basename. It handles Unix ("/a/b/c") and Windows ("C:\a\b\c" or "C:/a/b/c")
+// forms with at least one intermediate separator. Path segments exclude
+// whitespace and ":" so a trailing ": message" (as in "open /a/b: not a dir")
+// is not swallowed into the path.
+var absPathPattern = regexp.MustCompile(`(?:[A-Za-z]:)?(?:/|\\)(?:[^\s/\\:]+(?:/|\\))+[^\s/\\:]*`)
+
+// sanitizeErrorMessage returns a privacy-scrubbed, length-capped version of an
+// error message suitable for telemetry. It:
+//   - collapses absolute filesystem paths to their basename (drops usernames,
+//     repo paths, and directory structure)
+//   - scrubs the user's home directory as a final safety net
+//   - flattens all whitespace runs (including newlines) to single spaces so the
+//     multi-line scanner dumps become one readable line
+//   - trims to maxErrorMessageLen runes
+func sanitizeErrorMessage(msg string) string {
+	// Collapse absolute paths to their basename before whitespace flattening so
+	// the regex sees intact path tokens.
+	msg = absPathPattern.ReplaceAllStringFunc(msg, func(p string) string {
+		// Normalise separators for basename extraction, keep a leading marker so
+		// it is obvious a path was elided.
+		base := p
+		if i := strings.LastIndexAny(base, `/\`); i >= 0 && i < len(base)-1 {
+			base = base[i+1:]
+		} else if i >= 0 {
+			// Trailing separator (e.g. "/a/b/"): take the last non-empty segment.
+			trimmed := strings.TrimRight(base, `/\`)
+			if j := strings.LastIndexAny(trimmed, `/\`); j >= 0 {
+				base = trimmed[j+1:]
+			}
+		}
+		if base == "" {
+			return ".../"
+		}
+		return ".../" + base
+	})
+
+	// Flatten whitespace (newlines, tabs, repeated spaces) to single spaces.
+	msg = strings.Join(strings.Fields(msg), " ")
+
+	// Home-dir safety net for any path form the regex did not catch.
+	msg = scrubPaths(msg)
+
+	// Cap length (rune-safe).
+	if len([]rune(msg)) > maxErrorMessageLen {
+		msg = string([]rune(msg)[:maxErrorMessageLen]) + "…"
+	}
+	return msg
 }
 
 // scrubPaths removes the user's home directory from a string so that file paths
