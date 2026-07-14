@@ -1,11 +1,14 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
+	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 
+	"github.com/datadog-labs/datadog-code-security-mcp/internal/binary"
 	"github.com/datadog-labs/datadog-code-security-mcp/internal/telemetry"
 )
 
@@ -30,10 +33,10 @@ var telemetryClient *telemetry.Client
 
 // flushTelemetry drains any in-flight telemetry POST before the process exits.
 // Call this immediately before os.Exit so the goroutine has a chance to finish.
+// Flush is nil-safe, so this works even if the client was never constructed.
 func flushTelemetry() {
-	if telemetryClient != nil {
-		telemetryClient.Flush()
-	}
+	scannerVersionCache.Close()
+	telemetryClient.Flush()
 }
 
 func main() {
@@ -61,21 +64,27 @@ For more information, visit: https://github.com/datadog-labs/datadog-code-securi
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {
-			telemetryClient = telemetry.New(telemetry.Options{
+			opts := telemetry.Options{
 				CompiledToken: telemetryClientToken,
 				Env:           telemetryEnv,
 				Version:       version,
 				NoTelemetry:   noTelemetry,
-			})
+			}
+			if cmd.Name() == "start" {
+				opts.SessionID = uuid.New().String()
+			}
+			telemetryClient = telemetry.New(opts)
+			if telemetryClient.Enabled() {
+				scannerVersionCache = binary.NewBinaryVersionCache()
+				scannerVersionCache.Refresh()
+			}
 			telemetryClient.MaybeShowFirstRunNotice()
 		},
 		// Flush waits up to 500 ms for any in-flight telemetry POST before the
 		// process exits. This keeps Track non-blocking (output is shown first)
 		// while still delivering the event in the common case.
 		PersistentPostRun: func(cmd *cobra.Command, args []string) {
-			if telemetryClient != nil {
-				telemetryClient.Flush()
-			}
+			flushTelemetry()
 		},
 	}
 
@@ -95,8 +104,14 @@ For more information, visit: https://github.com/datadog-labs/datadog-code-securi
 	// PersistentPostRun, so we flush telemetry here before exiting.
 	// Print the error first so the user sees it immediately; Flush() then
 	// waits up to flushTimeout for the in-flight POST before we exit.
+	//
+	// errViolationsFound is not a failure: the scan succeeded but reported
+	// findings, so we exit non-zero without printing an error (the findings
+	// were already rendered). Telemetry is still flushed either way.
 	if err := rootCmd.Execute(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		if !errors.Is(err, errViolationsFound) {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		}
 		flushTelemetry()
 		os.Exit(1)
 	}

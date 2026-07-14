@@ -16,18 +16,18 @@ type mcpScanResult struct {
 }
 
 type mcpLibraryResult struct {
-	Name          string       `json:"name"`
-	Version       string       `json:"version"`
-	Ecosystem     string       `json:"ecosystem"`
-	LicenseID     string       `json:"licenseId"`
-	OpenSSFLevel  string       `json:"openssfLevel"`
-	Popularity    string       `json:"popularity"`
-	LatestVersion string       `json:"latestVersion"`
-	EolDate       *string      `json:"eolDate"`
-	Relation      string       `json:"relation"`
-	RootParent    *string      `json:"rootParent"`
-	TraversalPath *string      `json:"traversalPath"`
-	Risks         []string     `json:"risks"`
+	Name            string       `json:"name"`
+	Version         string       `json:"version"`
+	Ecosystem       string       `json:"ecosystem"`
+	LicenseID       string       `json:"licenseId"`
+	OpenSSFLevel    string       `json:"openssfLevel"`
+	Popularity      string       `json:"popularity"`
+	LatestVersion   string       `json:"latestVersion"`
+	EolDate         *string      `json:"eolDate"`
+	Relation        string       `json:"relation"`
+	RootParent      *string      `json:"rootParent"`
+	TraversalPath   *string      `json:"traversalPath"`
+	Risks           []string     `json:"risks"`
 	Vulnerabilities []mcpVulnRef `json:"vulnerabilities"`
 }
 

@@ -4,9 +4,13 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"regexp"
 	"runtime"
 	"strings"
 )
+
+// semverRE extracts the first semver string (X.Y.Z) from binary --version output.
+var semverRE = regexp.MustCompile(`\d+\.\d+\.\d+`)
 
 // Binary supported OS/architecture combination
 type Platform struct {
@@ -33,11 +37,13 @@ const (
 // BinaryConfig contains the configuration for a specific binary type
 type BinaryConfig struct {
 	BinaryName         string
+	TelemetryKey       string
 	GitHubRepo         string
 	SupportedPlatforms []Platform
 	NamingConvention   NamingConvention
 	ArchiveFormat      ArchiveFormat // defaults to zip if empty
 	VersionedFilename  bool          // if true, release assets embed the version: {name}_{version}_{os}_{arch}.{ext}
+	VersionArgs        []string      // defaults to --version if empty
 }
 
 // BinaryType represents different types of binaries
@@ -54,6 +60,7 @@ const (
 var BinaryConfigs = map[BinaryType]BinaryConfig{
 	BinaryTypeStaticAnalyzer: {
 		BinaryName:       "datadog-static-analyzer",
+		TelemetryKey:     "static_analyzer",
 		GitHubRepo:       "DataDog/datadog-static-analyzer",
 		NamingConvention: NamingConventionRustTriple,
 		SupportedPlatforms: []Platform{
@@ -66,6 +73,7 @@ var BinaryConfigs = map[BinaryType]BinaryConfig{
 	},
 	BinaryTypeSBOMGenerator: {
 		BinaryName:       "datadog-sbom-generator",
+		TelemetryKey:     "sbom_generator",
 		GitHubRepo:       "DataDog/datadog-sbom-generator",
 		NamingConvention: NamingConventionSimple,
 		SupportedPlatforms: []Platform{
@@ -77,8 +85,10 @@ var BinaryConfigs = map[BinaryType]BinaryConfig{
 	},
 	BinaryTypeSecurity: {
 		BinaryName:       "datadog-security-cli",
+		TelemetryKey:     "security_cli",
 		GitHubRepo:       "",                     // Not distributed via GitHub releases
 		NamingConvention: NamingConventionSimple, // Not used for package-based install
+		VersionArgs:      []string{"version"},
 		SupportedPlatforms: []Platform{
 			{OS: "linux", Arch: "amd64"},
 			{OS: "linux", Arch: "arm64"},
@@ -88,6 +98,7 @@ var BinaryConfigs = map[BinaryType]BinaryConfig{
 	},
 	BinaryTypeIaC: {
 		BinaryName:       "datadog-iac-scanner",
+		TelemetryKey:     "iac_scanner",
 		GitHubRepo:       "DataDog/datadog-iac-scanner",
 		NamingConvention: NamingConventionSimple,
 		ArchiveFormat:    ArchiveFormatTarGz,
@@ -184,6 +195,29 @@ func (bm *BinaryManager) formatMissingBinaryError() error {
 		separator,
 		separator,
 	)
+}
+
+// GetVersion returns the semver (X.Y.Z) reported by the binary's version command.
+// Returns "not_found" if the binary is not in PATH, "unknown" if the version
+// string cannot be parsed.
+func (bm *BinaryManager) GetVersion(ctx context.Context) string {
+	path, err := exec.LookPath(bm.config.BinaryName)
+	if err != nil {
+		return "not_found"
+	}
+	versionArgs := bm.config.VersionArgs
+	if len(versionArgs) == 0 {
+		versionArgs = []string{"--version"}
+	}
+	// no-dd-sa:go-security/command-injection - path comes from exec.LookPath, not user input
+	out, err := exec.CommandContext(ctx, path, versionArgs...).Output()
+	if err != nil {
+		return "unknown"
+	}
+	if m := semverRE.FindString(string(out)); m != "" {
+		return m
+	}
+	return "unknown"
 }
 
 // Execute runs the binary with the given arguments
@@ -411,7 +445,7 @@ EOF
 sudo yum install datadog-security-cli
 
 # Verify installation
-datadog-security-cli --version`
+datadog-security-cli version`
 
 	case "darwin":
 		return `# Install datadog-security-cli on macOS:
@@ -420,7 +454,7 @@ datadog-security-cli --version`
 brew install --cask datadog-security-cli
 
 # Verify installation
-datadog-security-cli --version`
+datadog-security-cli version`
 
 	default:
 		return `# datadog-security-cli installation:

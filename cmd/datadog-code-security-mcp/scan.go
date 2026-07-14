@@ -3,12 +3,12 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 
 	"github.com/datadog-labs/datadog-code-security-mcp/internal/auth"
@@ -17,6 +17,12 @@ import (
 	"github.com/datadog-labs/datadog-code-security-mcp/internal/telemetry"
 	"github.com/datadog-labs/datadog-code-security-mcp/internal/types"
 )
+
+// errViolationsFound signals that a scan completed successfully but reported
+// findings, so the process should exit non-zero. It is not a scan failure:
+// telemetry still records success. main() maps it to exit code 1 without
+// printing an error, after flushing telemetry.
+var errViolationsFound = errors.New("violations found")
 
 func newScanCmd() *cobra.Command {
 	var (
@@ -110,27 +116,44 @@ func loadAuthToEnv(ctx context.Context) {
 func runDirectScan(scanType string, paths []string, workingDir string, outputJSON bool) error {
 	ctx := context.Background()
 	start := time.Now()
-
+	authMethod := detectAuthMethod()
 	loadAuthToEnv(ctx)
 	scanType = strings.ToLower(scanType)
+	scanTypes := []string{scanType}
+	if scanType == "all" {
+		scanTypes = types.SecurityScanTypes()
+	}
+	outputFormat := telemetry.OutputFormatHuman
+	if outputJSON {
+		outputFormat = telemetry.OutputFormatJSON
+	}
+	tracking := telemetry.ScanEvent{
+		StartedAt:    start,
+		OutputFormat: outputFormat,
+		WorkingDir:   workingDir,
+		AuthMethod:   authMethod,
+	}
+	defer func() { trackCLIScan(ctx, tracking) }()
 
-	// Validate that at least one path is provided
-	if len(paths) == 0 {
-		err := fmt.Errorf("%s scan requires at least one path to scan", scanType)
-		trackCLIScan(ctx, scanType, nil, start, 0, outputJSON, err)
+	// fail records a pre-execution failure as the canonical outcome. The
+	// deferred emit above sends exactly one event on every return path.
+	fail := func(err error) error {
+		tracking.Outcome = scan.NewFailedOutcome(scanTypes, err)
 		return err
 	}
 
-	// Build scan args
+	if len(paths) == 0 {
+		return fail(fmt.Errorf("%s scan requires at least one path to scan", scanType))
+	}
+
 	scanArgs := scan.ScanArgs{
 		FilePaths:  paths,
 		WorkingDir: workingDir,
 	}
 
-	// Set scan types based on command
 	switch scanType {
 	case "all":
-		scanArgs.ScanTypes = []string{string(types.DetectionTypeSAST), string(types.DetectionTypeSecrets), string(types.DetectionTypeSCA), string(types.DetectionTypeIaC)}
+		scanArgs.ScanTypes = types.SecurityScanTypes()
 	case "sast":
 		scanArgs.ScanTypes = []string{string(types.DetectionTypeSAST)}
 	case "secrets":
@@ -140,101 +163,29 @@ func runDirectScan(scanType string, paths []string, workingDir string, outputJSO
 	case "iac":
 		scanArgs.ScanTypes = []string{string(types.DetectionTypeIaC)}
 	default:
-		err := fmt.Errorf("invalid scan type: %s (valid options: all, sast, secrets, sca, iac)", scanType)
-		trackCLIScan(ctx, scanType, nil, start, len(paths), outputJSON, err)
+		tracking.PathsCount = len(paths)
+		return fail(fmt.Errorf("invalid scan type: %s (valid options: all, sast, secrets, sca, iac)", scanType))
+	}
+
+	outcome := scan.ExecuteScan(ctx, scanArgs)
+	tracking.Outcome = outcome
+	tracking.PathsCount = len(scanArgs.FilePaths)
+	tracking.WorkingDir = scanArgs.WorkingDir
+	if err := outcome.Err(); err != nil {
 		return err
 	}
 
-	// Execute scan
-	result, err := scan.ExecuteScan(ctx, scanArgs)
-	// Track before any os.Exit paths inside output funcs.
-	trackCLIScan(ctx, scanType, result, start, len(scanArgs.FilePaths), outputJSON, err)
-	if err != nil {
-		return err
-	}
-
-	// Output results
+	result := outcome.Result()
 	if outputJSON {
 		return outputResultsJSON(result)
 	}
-
-	exitOne, err := outputResultsHuman(result, scanType)
-	if exitOne {
-		flushTelemetry()
-		os.Exit(1)
+	if err := outputResultsHuman(result, scanType); err != nil {
+		return err
 	}
-	return err
-}
-
-// trackCLIScan emits telemetry for a direct CLI scan invocation.
-//
-// Single scan type: emits one per-scan event (standalone=true).
-// "all" (multi-type): emits the aggregate code_security_scan event enriched with
-// scan_durations_breakdown and partial_errors_breakdown, then one per-scan event
-// per executed type (standalone=false).
-// Initialization errors (result==nil): emits only the aggregate event.
-func trackCLIScan(ctx context.Context, scanType string, result *scan.ScanResult, start time.Time, pathsCount int, outputJSON bool, err error) {
-	if telemetryClient == nil {
-		return
+	if result.Summary.Total > 0 {
+		return errViolationsFound
 	}
-	outputFormat := "human"
-	if outputJSON {
-		outputFormat = "json"
-	}
-
-	base := map[string]any{
-		"paths_count":   pathsCount,
-		"output_format": outputFormat,
-	}
-
-	if scanType != "all" {
-		// Standalone single-type scan: emit one per-scan event directly.
-		var durationMS int64
-		if result != nil && result.Durations != nil {
-			durationMS = result.Durations[scanType]
-		}
-		emitPerScanEvent(ctx, telemetryClient, "cli", scanType, result, durationMS, true, base, err)
-		return
-	}
-
-	// "scan all": generate a batch_id shared by the aggregate event and all per-scan
-	// events so the entire batch can be isolated in dashboards/queries.
-	batchID := uuid.New().String()
-
-	// Aggregate event first.
-	operation := "code_security_scan"
-	totalDuration := time.Since(start).Milliseconds()
-	attrs := telemetry.CommonAttrs()
-	attrs["operation"] = operation
-	attrs["interface"] = "cli"
-	attrs["duration_ms"] = totalDuration
-	attrs["success"] = err == nil
-	attrs["paths_count"] = pathsCount
-	attrs["output_format"] = outputFormat
-	attrs["batch_id"] = batchID
-	if result != nil {
-		attrs["findings_count"] = result.Summary.Total
-		attrs["scan_types_breakdown"] = result.Summary.ByDetectionType
-		attrs["severity_breakdown"] = result.Summary.BySeverity
-		attrs["partial_errors_count"] = len(result.Errors)
-		if len(result.Durations) > 0 {
-			attrs["scan_durations_breakdown"] = result.Durations
-		}
-		if len(result.Errors) > 0 {
-			attrs["partial_errors_breakdown"] = buildErrorKindBreakdown(result)
-		}
-	}
-	if err != nil {
-		telemetryClient.TrackError(ctx, err, operation+" failed", attrs)
-	} else {
-		telemetryClient.TrackInfo(ctx, operation+" completed", attrs)
-	}
-
-	// Per-scan events for each executed scan type (standalone=false, same batch_id).
-	if result != nil {
-		base["batch_id"] = batchID
-		emitPerScanEvents(ctx, telemetryClient, "cli", result, false, base)
-	}
+	return nil
 }
 
 func outputResultsJSON(result *scan.ScanResult) error {
@@ -243,10 +194,10 @@ func outputResultsJSON(result *scan.ScanResult) error {
 	return encoder.Encode(result)
 }
 
-// outputResultsHuman prints scan results in human-readable form.
-// It returns (true, nil) when violations were found so the caller can flush
-// telemetry before calling os.Exit(1) — keeping output non-blocking.
-func outputResultsHuman(result *scan.ScanResult, scanType string) (exitOne bool, err error) {
+// outputResultsHuman prints scan results in human-readable form. It is a pure
+// presentation function; the caller decides the process exit code from the
+// result summary.
+func outputResultsHuman(result *scan.ScanResult, scanType string) error {
 	fmt.Println("╔════════════════════════════════════════════════════════════════╗")
 	fmt.Println("║       Datadog Code Security Scan Results                      ║")
 	fmt.Println("╚════════════════════════════════════════════════════════════════╝")
@@ -279,7 +230,7 @@ func outputResultsHuman(result *scan.ScanResult, scanType string) (exitOne bool,
 	// No violations found
 	if result.Summary.Total == 0 {
 		fmt.Println("✅ No security issues found!")
-		return false, nil
+		return nil
 	}
 
 	// Detailed violations
@@ -335,8 +286,7 @@ func outputResultsHuman(result *scan.ScanResult, scanType string) (exitOne bool,
 		fmt.Println()
 	}
 
-	// Exit with non-zero if violations found
-	return result.Summary.Total > 0, nil
+	return nil
 }
 
 func getSeverityIcon(severity string) string {
@@ -396,95 +346,55 @@ Examples:
 	return cmd
 }
 
-// TODO(refactor): the library scan orchestration here (PURL validation, auth
-// loading, git context detection, API client construction) is largely duplicated
-// in handlers.go's handleLibraryVulnerabilityScan. Extract the shared core into
-// internal/libraryscan so both the CLI and MCP paths can reuse it. Track in a
-// follow-up PR.
 func runLibraryScan(purls []string, workingDir string, outputJSON bool) error {
 	ctx := context.Background()
-	start := time.Now()
+	libraryCount := len(purls)
+	event := telemetry.OperationEvent{
+		Operation:      "library_scan",
+		StartedAt:      time.Now(),
+		LibrariesCount: &libraryCount,
+	}
+	defer func() { trackCLIOperation(ctx, event) }()
+
+	fail := func(err error) error {
+		event.Failure = err
+		return err
+	}
 
 	loadAuthToEnv(ctx)
 
 	apiKey := os.Getenv("DD_API_KEY")
 	appKey := os.Getenv("DD_APP_KEY")
 	site := os.Getenv("DD_SITE")
-	if site == "" {
-		site = "datadoghq.com"
-	}
 
 	if apiKey == "" || appKey == "" {
-		err := fmt.Errorf("DD_API_KEY and DD_APP_KEY are required for library scanning\n\nSet them via environment variables or run 'datadog-code-security-mcp dd-auth'")
-		trackCLILibraryScan(ctx, len(purls), 0, start, err)
-		return err
+		return fail(fmt.Errorf("DD_API_KEY and DD_APP_KEY are required for library scanning\n\nSet them via environment variables or run 'datadog-code-security-mcp dd-auth'"))
 	}
 
 	libs := make([]libraryscan.Library, 0, len(purls))
 	for _, p := range purls {
 		if err := libraryscan.ValidatePURL(p); err != nil {
-			trackCLILibraryScan(ctx, len(purls), 0, start, err)
-			return err
+			return fail(err)
 		}
 		libs = append(libs, libraryscan.Library{Purl: p})
 	}
 
-	// Use working dir (or ".") for git context
-	dir := workingDir
-	if dir == "" {
-		dir = "."
-	}
-	repoName, commitHash := libraryscan.DetectGitContext(ctx, dir)
-
-	client := libraryscan.NewClient(apiKey, appKey, site)
-	result, err := client.Scan(ctx, libraryscan.ScanRequest{
-		Libraries:    libs,
-		ResourceName: repoName,
-		CommitHash:   commitHash,
-	})
+	result, totalVulns, err := libraryscan.Run(ctx, apiKey, appKey, site, workingDir, libs)
 	if err != nil {
-		trackCLILibraryScan(ctx, len(purls), 0, start, fmt.Errorf("library scan failed: %w", err))
-		return fmt.Errorf("library scan failed: %w", err)
+		return fail(fmt.Errorf("library scan failed: %w", err))
 	}
-
-	// Count total vulnerabilities for telemetry (before os.Exit in outputLibraryScanHuman).
-	totalVulns := 0
-	for _, lib := range result.Libraries {
-		totalVulns += len(lib.Vulnerabilities)
-	}
-	trackCLILibraryScan(ctx, len(purls), totalVulns, start, nil)
+	event.FindingsCount = &totalVulns
 
 	if outputJSON {
 		return outputLibraryScanJSON(result)
 	}
-
-	exitOne, err := outputLibraryScanHuman(result)
-	if exitOne {
-		flushTelemetry()
-		os.Exit(1)
+	if err := outputLibraryScanHuman(result); err != nil {
+		return err
 	}
-	return err
-}
-
-// trackCLILibraryScan emits a telemetry event for a library scan CLI invocation.
-func trackCLILibraryScan(ctx context.Context, libCount, vulnCount int, start time.Time, err error) {
-	if telemetryClient == nil {
-		return
+	if totalVulns > 0 {
+		return errViolationsFound
 	}
-	attrs := telemetry.CommonAttrs()
-	attrs["operation"] = "library_scan"
-	attrs["interface"] = "cli"
-	attrs["duration_ms"] = time.Since(start).Milliseconds()
-	attrs["success"] = err == nil
-	attrs["libraries_count"] = libCount
-	if err == nil {
-		attrs["findings_count"] = vulnCount
-	}
-	if err != nil {
-		telemetryClient.TrackError(ctx, err, "library scan failed", attrs)
-	} else {
-		telemetryClient.TrackInfo(ctx, "library scan completed", attrs)
-	}
+	return nil
 }
 
 func outputLibraryScanJSON(result *libraryscan.ScanResult) error {
@@ -494,9 +404,8 @@ func outputLibraryScanJSON(result *libraryscan.ScanResult) error {
 }
 
 // outputLibraryScanHuman prints library scan results in human-readable form.
-// It returns (true, nil) when vulnerabilities were found so the caller can
-// flush telemetry before calling os.Exit(1).
-func outputLibraryScanHuman(result *libraryscan.ScanResult) (exitOne bool, err error) {
+// It is a pure presentation function; the caller decides the exit code.
+func outputLibraryScanHuman(result *libraryscan.ScanResult) error {
 	fmt.Println("╔════════════════════════════════════════════════════════════════╗")
 	fmt.Println("║       Library Vulnerability Scan Results                      ║")
 	fmt.Println("╚════════════════════════════════════════════════════════════════╝")
@@ -516,7 +425,7 @@ func outputLibraryScanHuman(result *libraryscan.ScanResult) (exitOne bool, err e
 		fmt.Println("✅ No vulnerabilities found!")
 		fmt.Println()
 		printLibrarySummaryTable(result.Libraries)
-		return false, nil
+		return nil
 	}
 
 	fmt.Printf("Total Vulnerabilities: %d\n", totalVulns)
@@ -622,8 +531,7 @@ func outputLibraryScanHuman(result *libraryscan.ScanResult) (exitOne bool, err e
 		}
 	}
 
-	// Exit non-zero when vulnerabilities are found (consistent with other scan commands)
-	return true, nil
+	return nil
 }
 
 // printLibrarySummaryTable prints a compact table of all scanned libraries.

@@ -386,6 +386,8 @@ Key fields:
 - `scan_durations_breakdown`: map of `{detType: ms}` on the aggregate event.
 - `partial_errors_breakdown`: map of `{detType: errorKind}` on the aggregate event — kinds only, no raw messages.
 
+**Privacy contract**: Error telemetry includes a categorized kind and a hardcoded, path-free `error.message` description for Error Tracking — a per-kind default or a more specific string for known sub-cases (optionally suffixed with the process exit code), never the raw error text. Stack traces are not collected. Scanner versions are collected once per process for both CLI and MCP and are not persisted. Any telemetry field change must also update `README.md`, `docs/TELEMETRY.md`, and the first-run notice.
+
 **Telemetry environment variables:**
 
 - `DD_CODE_SECURITY_TELEMETRY_DISABLED=1`: disable telemetry

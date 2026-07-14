@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -17,6 +16,7 @@ import (
 // decoded JSON body of each request (one map per POST).
 func captureServer(t *testing.T) (*httptest.Server, <-chan []map[string]any) {
 	t.Helper()
+	withTempHome(t)
 	ch := make(chan []map[string]any, 8)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
@@ -98,6 +98,39 @@ func TestTrackInfo_PayloadShape(t *testing.T) {
 	}
 }
 
+func TestTrack_DetachesRequestCancellation(t *testing.T) {
+	srv, ch := captureServer(t)
+	c := newTestClient(t, srv)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	c.TrackInfo(ctx, "request completed", map[string]any{"operation": "sast_scan"})
+	c.Flush()
+
+	items := waitEvent(t, ch)
+	if len(items) != 1 || items[0]["message"] != "request completed" {
+		t.Fatalf("event was lost after request cancellation: %v", items)
+	}
+}
+
+func TestFirstRunSnapshotSurvivesNoticePersistence(t *testing.T) {
+	srv, _ := captureServer(t)
+
+	first := newTestClient(t, srv)
+	if !first.IsFirstRun() {
+		t.Fatal("first client should snapshot first-run state")
+	}
+	first.MaybeShowFirstRunNotice()
+	if !first.IsFirstRun() {
+		t.Fatal("persisting the notice must not mutate the current process snapshot")
+	}
+
+	second := newTestClient(t, srv)
+	if second.IsFirstRun() {
+		t.Fatal("subsequent process should observe persisted notice state")
+	}
+}
+
 // TestTrackError_ErrorObject verifies the error object is present and correct.
 func TestTrackError_ErrorObject(t *testing.T) {
 	srv, ch := captureServer(t)
@@ -119,12 +152,17 @@ func TestTrackError_ErrorObject(t *testing.T) {
 	if errObj["kind"] == "" {
 		t.Error("error.kind is empty")
 	}
-	msg, _ := errObj["message"].(string)
-	if msg == "" {
-		t.Error("error.message is empty; expected a sanitized message")
+	// A curated, path-free description is emitted for Error Tracking, but the
+	// raw error text must never appear.
+	message, _ := errObj["message"].(string)
+	if message == "" {
+		t.Error("error.message should carry a curated description")
 	}
-	if !contains(msg, "unexpected EOF") {
-		t.Errorf("error.message = %q, want it to retain the failure detail", msg)
+	if strings.Contains(message, "unexpected EOF") {
+		t.Errorf("error.message must not include raw error text, got %q", message)
+	}
+	if _, present := errObj["stack"]; present {
+		t.Error("error.stack must not be included in telemetry")
 	}
 }
 
@@ -138,6 +176,31 @@ func TestTrackError_NoErrorOnInfo(t *testing.T) {
 	items := waitEvent(t, ch)
 	if items[0]["error"] != nil {
 		t.Error("error field must be absent for info event")
+	}
+}
+
+func TestTrackInfoCannotInjectErrorObject(t *testing.T) {
+	srv, ch := captureServer(t)
+	c := newTestClient(t, srv)
+
+	c.TrackInfo(context.Background(), "ok", map[string]any{
+		"error": map[string]any{
+			"kind":    "Injected",
+			"message": "/Users/alice/private/repo",
+		},
+		"error.kind":    "Injected",
+		"error.message": "/Users/alice/private/repo",
+	})
+
+	items := waitEvent(t, ch)
+	if _, present := items[0]["error"]; present {
+		t.Error("caller-supplied error object must be discarded")
+	}
+	if _, present := items[0]["error.kind"]; present {
+		t.Error("caller-supplied error.kind must be discarded")
+	}
+	if _, present := items[0]["error.message"]; present {
+		t.Error("caller-supplied error.message must be discarded")
 	}
 }
 
@@ -188,47 +251,20 @@ func TestOptOut_EnvDisabled(t *testing.T) {
 	}
 }
 
-// TestNoSensitiveFields verifies the home directory is scrubbed from error messages.
+// TestNoSensitiveFields verifies raw error messages never enter the payload.
 func TestNoSensitiveFields(t *testing.T) {
 	srv, ch := captureServer(t)
 	c := newTestClient(t, srv)
 
-	home, err := os.UserHomeDir()
-	if err != nil {
-		t.Skip("cannot determine home dir")
-	}
-
-	// Simulate an error whose message contains the real home-dir path.
-	sensitiveMsg := fmt.Sprintf("failed at %s/project/main.go", home)
+	sensitiveMsg := "failed at /Users/alice/private/project/main.go"
 	c.TrackError(context.Background(), fmt.Errorf("%s", sensitiveMsg), "", nil)
 
 	items := waitEvent(t, ch)
 	raw, _ := json.Marshal(items[0])
 	rawStr := string(raw)
 
-	// Home dir prefix should have been replaced with ~.
-	if contains(rawStr, home) {
-		t.Errorf("home directory path leaked into payload: %s", rawStr)
-	}
-}
-
-// TestScrubPaths_ForwardSlashVariant verifies that forward-slash path variants
-// (as produced by filepath.ToSlash, common on Windows) are also scrubbed.
-func TestScrubPaths_ForwardSlashVariant(t *testing.T) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		t.Skip("cannot determine home dir")
-	}
-
-	// Construct a path with forward slashes regardless of OS.
-	forwardSlashPath := strings.ReplaceAll(home, string(os.PathSeparator), "/") + "/project/secret.go"
-	result := scrubPaths(forwardSlashPath)
-
-	if contains(result, home) || contains(result, strings.ReplaceAll(home, string(os.PathSeparator), "/")) {
-		t.Errorf("forward-slash home dir variant not scrubbed: %s", result)
-	}
-	if !contains(result, "~") {
-		t.Errorf("expected ~ in scrubbed result, got: %s", result)
+	if contains(rawStr, sensitiveMsg) || contains(rawStr, "/Users/alice") {
+		t.Errorf("raw error message leaked into payload: %s", rawStr)
 	}
 }
 
@@ -261,6 +297,7 @@ func TestTrackRaw_ValidJSON(t *testing.T) {
 
 // TestURLQueryParams verifies the intake URL contains required query parameters.
 func TestURLQueryParams(t *testing.T) {
+	withTempHome(t)
 	urlCh := make(chan string, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		urlCh <- r.URL.String()

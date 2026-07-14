@@ -5,10 +5,7 @@
 //
 // Privacy guarantees:
 //   - No source code, scan findings, secrets, or user identifiers.
-//   - Error messages are sanitised before sending: absolute paths are collapsed
-//     to basenames, the home directory is scrubbed, and length is capped
-//     (see sanitizeErrorMessage). This keeps failure reasons actionable without
-//     leaking usernames, repo paths, or scan content.
+//   - Error telemetry contains a categorized kind only; messages are never sent.
 //   - Anonymous install_id (random UUID, stable per installation).
 //   - Opt-out via --no-telemetry flag, DD_CODE_SECURITY_TELEMETRY_DISABLED=1,
 //     DO_NOT_TRACK=1, or config file telemetry_enabled=false.
@@ -55,6 +52,7 @@ const (
 // Call Flush() before process exit (CLI) to drain any in-flight POST.
 type Client struct {
 	enabled    bool
+	firstRun   bool // true when this is the very first invocation on this machine
 	token      string
 	service    string
 	installID  string
@@ -64,6 +62,7 @@ type Client struct {
 	baseURL    string // overridable for tests
 	httpClient *http.Client
 	wg         sync.WaitGroup
+	noticeOnce sync.Once
 }
 
 // Options configures a Client at construction time.
@@ -103,6 +102,7 @@ func New(opts Options) *Client {
 
 	c := &Client{
 		enabled:    enabled && token != "",
+		firstRun:   !result.config.FirstRunNoticeShown,
 		token:      token,
 		service:    constants.TelemetryService,
 		installID:  result.config.InstallID,
@@ -137,34 +137,55 @@ func newWithBaseURL(opts Options, baseURL string) *Client {
 }
 
 // Enabled reports whether telemetry is active (token present + not opted out).
+// A nil client is treated as disabled.
 func (c *Client) Enabled() bool {
-	return c.enabled
+	return c != nil && c.enabled
 }
 
 // InstallID returns the persistent anonymous install identifier.
 func (c *Client) InstallID() string {
+	if c == nil {
+		return ""
+	}
 	return c.installID
+}
+
+// IsFirstRun reports whether this is the first time the tool has been invoked
+// on this machine (i.e. the first-run notice had not yet been shown when New()
+// was called). The value is snapshotted at construction, before MaybeShowFirstRunNotice
+// flips the persisted flag, so it reliably reflects the pre-invocation state.
+func (c *Client) IsFirstRun() bool {
+	return c != nil && c.firstRun
 }
 
 // Track sends a structured telemetry event. It is fully non-blocking: the HTTP
 // POST runs in a goroutine so callers are never delayed. Call Flush() before
 // process exit to drain the in-flight POST (see CLI wiring in main.go).
+//
+// A nil client is a no-op, so callers never need to nil-check before tracking.
 func (c *Client) Track(ctx context.Context, e Event) {
-	if !c.enabled {
+	if c == nil || !c.enabled {
 		return
 	}
 	obj := c.buildLogObject(e)
+	postCtx := context.WithoutCancel(ctx)
 	c.wg.Add(1)
 	go func() {
 		defer c.wg.Done()
-		_ = c.post(ctx, obj) // errors intentionally discarded
+		// Request cancellation must not discard an event after the handler
+		// returns. The HTTP client's timeout still bounds delivery.
+		_ = c.post(postCtx, obj) // errors intentionally discarded
 	}()
 }
 
 // Flush waits for any in-flight telemetry POST to finish, up to flushTimeout.
 // Call this at CLI exit so the process does not terminate before the POST
 // completes. In MCP server mode the server is long-lived, so Flush is a no-op.
+// A nil client is a no-op.
 func (c *Client) Flush() {
+	if c == nil {
+		return
+	}
 	done := make(chan struct{})
 	go func() {
 		c.wg.Wait()
@@ -185,8 +206,7 @@ func (c *Client) TrackInfo(ctx context.Context, message string, attrs map[string
 	})
 }
 
-// TrackError is a convenience wrapper for error events. The err is categorized
-// and its message + a stack trace are included in the error object.
+// TrackError is a convenience wrapper for categorized error events.
 func (c *Client) TrackError(ctx context.Context, err error, message string, attrs map[string]any) {
 	c.Track(ctx, Event{
 		Status:     StatusError,
@@ -199,7 +219,7 @@ func (c *Client) TrackError(ctx context.Context, err error, message string, attr
 // TrackRaw sends an event with a preassembled attributes blob (json.RawMessage).
 // The blob is validated; if invalid it is silently dropped. Prefer the typed API.
 func (c *Client) TrackRaw(ctx context.Context, status Status, message string, rawAttrs json.RawMessage) {
-	if !c.enabled {
+	if c == nil || !c.enabled {
 		return
 	}
 	if rawAttrs != nil && !json.Valid(rawAttrs) {
@@ -252,14 +272,28 @@ func (c *Client) buildLogObject(e Event) map[string]any {
 		obj["session_id"] = c.sessionID
 	}
 
-	// Merge caller-supplied attributes. These must not contain sensitive data.
+	// Merge caller-supplied attributes without allowing them to override or
+	// synthesize canonical envelope fields such as the structured error object.
 	for k, v := range e.Attributes {
-		if _, reserved := obj[k]; !reserved {
-			obj[k] = v
+		if isReservedEventField(k) {
+			continue
 		}
+		obj[k] = v
 	}
 
 	return obj
+}
+
+func isReservedEventField(key string) bool {
+	if strings.HasPrefix(key, "error.") {
+		return true
+	}
+	switch key {
+	case "service", "status", "usr", "message", "error", "session_id":
+		return true
+	default:
+		return false
+	}
 }
 
 // post serialises obj as a one-element JSON array and POSTs it to the intake.

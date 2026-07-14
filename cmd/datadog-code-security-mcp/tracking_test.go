@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/datadog-labs/datadog-code-security-mcp/internal/binary"
 	"github.com/datadog-labs/datadog-code-security-mcp/internal/scan"
 	"github.com/datadog-labs/datadog-code-security-mcp/internal/telemetry"
 	"github.com/datadog-labs/datadog-code-security-mcp/internal/types"
@@ -87,30 +88,62 @@ func eventByOperation(events []map[string]any, op string) map[string]any {
 	return nil
 }
 
-// ── operationFromScanTypes ────────────────────────────────────────────────────
-
-// TestOperationFromScanTypes verifies that stable, dashboard-friendly operation
-// names are derived from the scan-types slice without brittle joining.
-func TestOperationFromScanTypes(t *testing.T) {
-	cases := []struct {
-		scanTypes []string
-		want      string
-	}{
-		{[]string{"sast"}, "sast_scan"},
-		{[]string{"secrets"}, "secrets_scan"},
-		{[]string{"sca"}, "sca_scan"},
-		{[]string{"iac"}, "iac_scan"},
-		// All four types → full code-security operation (matches CLI "scan all").
-		{[]string{"sast", "secrets", "sca", "iac"}, "code_security_scan"},
-		// Any multi-type slice → code_security_scan, regardless of count.
-		{[]string{"sast", "secrets"}, "code_security_scan"},
-	}
-	for _, tc := range cases {
-		got := operationFromScanTypes(tc.scanTypes)
-		if got != tc.want {
-			t.Errorf("operationFromScanTypes(%v) = %q, want %q", tc.scanTypes, got, tc.want)
+func testScanOutcome(result *scan.ScanResult, durations map[string]int64, scanTypes ...string) *scan.ScanOutcome {
+	errorsByType := make(map[string]error)
+	if result != nil {
+		for _, scanErr := range result.Errors {
+			errorsByType[scanErr.DetectionType] = errors.New(scanErr.Error)
 		}
 	}
+	executions := make([]scan.ScanExecution, 0, len(scanTypes))
+	for _, scanType := range scanTypes {
+		var findings []types.Violation
+		if result != nil {
+			findings = result.Results[types.DetectionType(scanType)]
+		}
+		executions = append(executions, scan.ScanExecution{
+			DetectionType: types.DetectionType(scanType),
+			Findings:      findings,
+			Duration:      time.Duration(durations[scanType]) * time.Millisecond,
+			Err:           errorsByType[scanType],
+		})
+	}
+	return scan.NewCompletedOutcome(executions)
+}
+
+func testTrackCLIScan(ctx context.Context, scanType string, outcome *scan.ScanOutcome, start time.Time, pathsCount int, outputJSON bool, workingDir, authMethod string, err error) {
+	scanTypes := []string{scanType}
+	if scanType == "all" {
+		scanTypes = types.SecurityScanTypes()
+	}
+	outputFormat := telemetry.OutputFormatHuman
+	if outputJSON {
+		outputFormat = telemetry.OutputFormatJSON
+	}
+	if outcome == nil {
+		outcome = scan.NewFailedOutcome(scanTypes, err)
+	}
+	trackCLIScan(ctx, telemetry.ScanEvent{
+		Outcome:      outcome,
+		StartedAt:    start,
+		PathsCount:   pathsCount,
+		OutputFormat: outputFormat,
+		WorkingDir:   workingDir,
+		AuthMethod:   authMethod,
+	})
+}
+
+func testTrackMCPScan(ctx context.Context, _ string, scanTypes []string, outcome *scan.ScanOutcome, start time.Time, pathsCount int, workingDir, authMethod string, err error) {
+	if outcome == nil {
+		outcome = scan.NewFailedOutcome(scanTypes, err)
+	}
+	trackMCPScan(ctx, telemetry.ScanEvent{
+		Outcome:    outcome,
+		StartedAt:  start,
+		PathsCount: pathsCount,
+		WorkingDir: workingDir,
+		AuthMethod: authMethod,
+	})
 }
 
 // ── trackCLIScan ─────────────────────────────────────────────────────────────
@@ -122,7 +155,7 @@ func TestTrackCLIScan_OperationAll(t *testing.T) {
 	telemetryClient = newCmdTestTelemetryClient(t, srv)
 	t.Cleanup(func() { telemetryClient = nil })
 
-	trackCLIScan(context.Background(), "all", nil, time.Now(), 3, false, nil)
+	testTrackCLIScan(context.Background(), "all", nil, time.Now(), 3, false, "", "none", nil)
 
 	item := waitCmdEvent(t, ch)
 	if item["operation"] != "code_security_scan" {
@@ -142,7 +175,7 @@ func TestTrackCLIScan_OperationSingle(t *testing.T) {
 	telemetryClient = newCmdTestTelemetryClient(t, srv)
 	t.Cleanup(func() { telemetryClient = nil })
 
-	trackCLIScan(context.Background(), "sast", nil, time.Now(), 1, false, nil)
+	testTrackCLIScan(context.Background(), "sast", nil, time.Now(), 1, false, "", "none", nil)
 
 	item := waitCmdEvent(t, ch)
 	if item["operation"] != "sast_scan" {
@@ -165,7 +198,7 @@ func TestTrackCLIScan_OutputFormat(t *testing.T) {
 			telemetryClient = newCmdTestTelemetryClient(t, srv)
 			t.Cleanup(func() { telemetryClient = nil })
 
-			trackCLIScan(context.Background(), "sast", nil, time.Now(), 0, tc.outputJSON, nil)
+			testTrackCLIScan(context.Background(), "sast", nil, time.Now(), 0, tc.outputJSON, "", "none", nil)
 
 			item := waitCmdEvent(t, ch)
 			if item["output_format"] != tc.want {
@@ -177,8 +210,8 @@ func TestTrackCLIScan_OutputFormat(t *testing.T) {
 
 // TestTrackCLIScan_ResultFields verifies that the aggregate event carries
 // findings_count, severity_breakdown, scan_types_breakdown, and partial_errors_count.
-// The result has one successful scan (sast) and one failed (sca), so scan all
-// emits 2 events: aggregate + sca_scan.
+// The result has one successful scan (sast) and one failed (sca), so the
+// invocation emits an aggregate plus both per-scan events.
 func TestTrackCLIScan_ResultFields(t *testing.T) {
 	srv, ch := captureCmdServer(t)
 	telemetryClient = newCmdTestTelemetryClient(t, srv)
@@ -190,13 +223,22 @@ func TestTrackCLIScan_ResultFields(t *testing.T) {
 			BySeverity:      map[string]int{"HIGH": 3, "MEDIUM": 2},
 			ByDetectionType: map[string]int{"sast": 5},
 		},
+		Results: map[types.DetectionType][]types.Violation{
+			types.DetectionTypeSAST: {
+				{Severity: "HIGH", DetectionType: types.DetectionTypeSAST},
+				{Severity: "HIGH", DetectionType: types.DetectionTypeSAST},
+				{Severity: "HIGH", DetectionType: types.DetectionTypeSAST},
+				{Severity: "MEDIUM", DetectionType: types.DetectionTypeSAST},
+				{Severity: "MEDIUM", DetectionType: types.DetectionTypeSAST},
+			},
+		},
 		Errors: []types.ScanError{{DetectionType: "sca", Error: "binary not found"}},
 	}
-	trackCLIScan(context.Background(), "all", result, time.Now(), 2, false, nil)
+	outcome := testScanOutcome(result, nil, "sast", "sca")
+	testTrackCLIScan(context.Background(), "all", outcome, time.Now(), 2, false, "", "none", nil)
 	flushTelemetry()
 
-	// aggregate + sca_scan (sca failed; result.Results is empty so only sca from Errors)
-	events := waitNEvents(t, ch, 2)
+	events := waitNEvents(t, ch, 3)
 
 	item := eventByOperation(events, "code_security_scan")
 	if item == nil {
@@ -227,7 +269,8 @@ func TestTrackCLIScan_ErrorDeliveredAfterFlush(t *testing.T) {
 	t.Cleanup(func() { telemetryClient = nil })
 
 	scanErr := errors.New("path does not exist: ./testdata/vulnerabilities/sast")
-	trackCLIScan(context.Background(), "sast", nil, time.Now(), 1, false, scanErr)
+	start := time.Now().Add(-50 * time.Millisecond)
+	testTrackCLIScan(context.Background(), "sast", nil, start, 1, false, "", "none", scanErr)
 	// Simulate what main() now does on error: flush before os.Exit(1).
 	flushTelemetry()
 
@@ -241,6 +284,9 @@ func TestTrackCLIScan_ErrorDeliveredAfterFlush(t *testing.T) {
 	if item["interface"] != "cli" {
 		t.Errorf("interface = %v, want cli", item["interface"])
 	}
+	if duration, _ := item["duration_ms"].(float64); duration < 50 {
+		t.Errorf("duration_ms = %v, want elapsed invocation time for pre-execution failure", item["duration_ms"])
+	}
 }
 
 // ── trackMCPScan ─────────────────────────────────────────────────────────────
@@ -251,8 +297,8 @@ func TestTrackCLIScan_ErrorDeliveredAfterFlush(t *testing.T) {
 // absent (that field is aggregate-only).
 func TestTrackMCPScan_SingleTypeIsPerScanEvent(t *testing.T) {
 	srv, ch := captureCmdServer(t)
-	mcpTelemetryClient = newCmdTestTelemetryClient(t, srv)
-	t.Cleanup(func() { mcpTelemetryClient = nil })
+	telemetryClient = newCmdTestTelemetryClient(t, srv)
+	t.Cleanup(func() { telemetryClient = nil })
 
 	result := &scan.ScanResult{
 		Summary: types.ScanSummary{
@@ -267,7 +313,8 @@ func TestTrackMCPScan_SingleTypeIsPerScanEvent(t *testing.T) {
 			},
 		},
 	}
-	trackMCPScan(context.Background(), "secrets_scan", []string{"secrets"}, result, time.Now(), 4, nil)
+	outcome := testScanOutcome(result, nil, "secrets")
+	testTrackMCPScan(context.Background(), "secrets_scan", []string{"secrets"}, outcome, time.Now(), 4, "", "none", nil)
 	flushTelemetry()
 
 	item := waitCmdEvent(t, ch)
@@ -292,14 +339,76 @@ func TestTrackMCPScan_SingleTypeIsPerScanEvent(t *testing.T) {
 	}
 }
 
+// TestTrackMCPScan_SingleTypeCarriesDuration is a regression guard: a single-type
+// MCP scan must report the per-type wall-clock duration recorded by the executor,
+// not a hardcoded 0. Previously the MCP single-type path passed 0 while the CLI
+// path looked the duration up, so the majority of MCP tool calls reported 0ms.
+func TestTrackMCPScan_SingleTypeCarriesDuration(t *testing.T) {
+	srv, ch := captureCmdServer(t)
+	telemetryClient = newCmdTestTelemetryClient(t, srv)
+	t.Cleanup(func() { telemetryClient = nil })
+
+	result := &scan.ScanResult{
+		Summary: types.ScanSummary{
+			Total:           1,
+			BySeverity:      map[string]int{"HIGH": 1},
+			ByDetectionType: map[string]int{"sast": 1},
+		},
+		Results: map[types.DetectionType][]types.Violation{
+			types.DetectionTypeSAST: {{Severity: "HIGH", DetectionType: types.DetectionTypeSAST}},
+		},
+	}
+	outcome := testScanOutcome(result, map[string]int64{"sast": 1234}, "sast")
+	testTrackMCPScan(context.Background(), "sast_scan", []string{"sast"}, outcome, time.Now(), 1, "", "none", nil)
+	flushTelemetry()
+
+	item := waitCmdEvent(t, ch)
+	if v, _ := item["duration_ms"].(float64); int64(v) != 1234 {
+		t.Errorf("duration_ms = %v, want 1234 (per-scan duration from executor)", item["duration_ms"])
+	}
+}
+
+func TestTrackMCPScan_SingleTypePreservesTypedError(t *testing.T) {
+	srv, ch := captureCmdServer(t)
+	telemetryClient = newCmdTestTelemetryClient(t, srv)
+	t.Cleanup(func() { telemetryClient = nil })
+
+	outcome := scan.NewCompletedOutcome([]scan.ScanExecution{{
+		DetectionType: types.DetectionTypeSAST,
+		Duration:      25 * time.Millisecond,
+		Err:           context.DeadlineExceeded,
+	}})
+	testTrackMCPScan(
+		context.Background(),
+		"sast_scan",
+		[]string{"sast"},
+		outcome,
+		time.Now(),
+		1,
+		"",
+		"none",
+		errors.New("all scans failed"),
+	)
+	flushTelemetry()
+
+	item := waitCmdEvent(t, ch)
+	errorObject, ok := item["error"].(map[string]any)
+	if !ok {
+		t.Fatalf("error object missing: %v", item["error"])
+	}
+	if errorObject["kind"] != telemetry.ErrKindTimeout {
+		t.Errorf("error.kind = %v, want typed execution kind %s", errorObject["kind"], telemetry.ErrKindTimeout)
+	}
+}
+
 // TestTrackMCPScan_NilResult verifies that omitting the result does not panic
 // and that result-dependent fields are absent from the per-scan event payload.
 func TestTrackMCPScan_NilResult(t *testing.T) {
 	srv, ch := captureCmdServer(t)
-	mcpTelemetryClient = newCmdTestTelemetryClient(t, srv)
-	t.Cleanup(func() { mcpTelemetryClient = nil })
+	telemetryClient = newCmdTestTelemetryClient(t, srv)
+	t.Cleanup(func() { telemetryClient = nil })
 
-	trackMCPScan(context.Background(), "sast_scan", []string{"sast"}, nil, time.Now(), 0, nil)
+	testTrackMCPScan(context.Background(), "sast_scan", []string{"sast"}, nil, time.Now(), 0, "", "none", nil)
 	flushTelemetry()
 
 	item := waitCmdEvent(t, ch)
@@ -317,8 +426,8 @@ func TestTrackMCPScan_NilResult(t *testing.T) {
 // event per executed scan type, with standalone=false on per-scan events.
 func TestTrackMCPScan_ScanAllEmitsAggregateAndPerScanEvents(t *testing.T) {
 	srv, ch := captureCmdServer(t)
-	mcpTelemetryClient = newCmdTestTelemetryClient(t, srv)
-	t.Cleanup(func() { mcpTelemetryClient = nil })
+	telemetryClient = newCmdTestTelemetryClient(t, srv)
+	t.Cleanup(func() { telemetryClient = nil })
 
 	result := &scan.ScanResult{
 		Summary: types.ScanSummary{
@@ -333,10 +442,10 @@ func TestTrackMCPScan_ScanAllEmitsAggregateAndPerScanEvents(t *testing.T) {
 				{Severity: "HIGH", DetectionType: types.DetectionTypeSAST},
 			},
 		},
-		Errors:    []types.ScanError{{DetectionType: "secrets", Error: "binary not found"}},
-		Durations: map[string]int64{"sast": 1200, "secrets": 50},
+		Errors: []types.ScanError{{DetectionType: "secrets", Error: "binary not found"}},
 	}
-	trackMCPScan(context.Background(), "code_security_scan", []string{"sast", "secrets"}, result, time.Now(), 2, nil)
+	outcome := testScanOutcome(result, map[string]int64{"sast": 1200, "secrets": 50}, "sast", "secrets")
+	testTrackMCPScan(context.Background(), "code_security_scan", []string{"sast", "secrets"}, outcome, time.Now(), 2, "", "none", nil)
 	flushTelemetry()
 
 	// Expect 3 events: aggregate + sast_scan + secrets_scan.
@@ -390,8 +499,8 @@ func TestTrackMCPScan_ScanAllEmitsAggregateAndPerScanEvents(t *testing.T) {
 // is included in the aggregate event when Durations are populated.
 func TestTrackMCPScan_ScanDurationsBreakdown(t *testing.T) {
 	srv, ch := captureCmdServer(t)
-	mcpTelemetryClient = newCmdTestTelemetryClient(t, srv)
-	t.Cleanup(func() { mcpTelemetryClient = nil })
+	telemetryClient = newCmdTestTelemetryClient(t, srv)
+	t.Cleanup(func() { telemetryClient = nil })
 
 	result := &scan.ScanResult{
 		Summary: types.ScanSummary{
@@ -401,12 +510,12 @@ func TestTrackMCPScan_ScanDurationsBreakdown(t *testing.T) {
 		},
 		Results: map[types.DetectionType][]types.Violation{
 			types.DetectionTypeSAST: {{Severity: "HIGH", DetectionType: types.DetectionTypeSAST}},
-			// iac ran and found no violations; must be in Results so executedScanTypes includes it.
+			// iac ran and found no violations.
 			types.DetectionTypeIaC: {},
 		},
-		Durations: map[string]int64{"sast": 2500, "iac": 300},
 	}
-	trackMCPScan(context.Background(), "code_security_scan", []string{"sast", "iac"}, result, time.Now(), 1, nil)
+	outcome := testScanOutcome(result, map[string]int64{"sast": 2500, "iac": 300}, "sast", "iac")
+	testTrackMCPScan(context.Background(), "code_security_scan", []string{"sast", "iac"}, outcome, time.Now(), 1, "", "none", nil)
 	flushTelemetry()
 
 	// aggregate + sast_scan + iac_scan
@@ -432,8 +541,8 @@ func TestTrackMCPScan_ScanDurationsBreakdown(t *testing.T) {
 // is included in the aggregate event when some scans failed.
 func TestTrackMCPScan_PartialErrorsBreakdown(t *testing.T) {
 	srv, ch := captureCmdServer(t)
-	mcpTelemetryClient = newCmdTestTelemetryClient(t, srv)
-	t.Cleanup(func() { mcpTelemetryClient = nil })
+	telemetryClient = newCmdTestTelemetryClient(t, srv)
+	t.Cleanup(func() { telemetryClient = nil })
 
 	result := &scan.ScanResult{
 		Summary: types.ScanSummary{
@@ -450,7 +559,8 @@ func TestTrackMCPScan_PartialErrorsBreakdown(t *testing.T) {
 		Errors:        []types.ScanError{{DetectionType: "secrets", Error: "binary not found"}},
 		PartialResult: true,
 	}
-	trackMCPScan(context.Background(), "code_security_scan", []string{"sast", "secrets"}, result, time.Now(), 1, nil)
+	outcome := testScanOutcome(result, nil, "sast", "secrets")
+	testTrackMCPScan(context.Background(), "code_security_scan", []string{"sast", "secrets"}, outcome, time.Now(), 1, "", "none", nil)
 	flushTelemetry()
 
 	// aggregate + sast_scan + secrets_scan
@@ -486,13 +596,13 @@ func TestTrackCLIScan_ScanAllStandaloneFlag(t *testing.T) {
 		Results: map[types.DetectionType][]types.Violation{
 			types.DetectionTypeSAST: {{Severity: "HIGH", DetectionType: types.DetectionTypeSAST}},
 		},
-		Durations: map[string]int64{"sast": 800},
 	}
-	trackCLIScan(context.Background(), "all", result, time.Now(), 1, false, nil)
+	outcome := testScanOutcome(result, map[string]int64{"sast": 800}, "sast", "secrets")
+	testTrackCLIScan(context.Background(), "all", outcome, time.Now(), 1, false, "", "none", nil)
 	flushTelemetry()
 
-	// aggregate + sast_scan
-	events := waitNEvents(t, ch, 2)
+	// aggregate + both per-scan events
+	events := waitNEvents(t, ch, 3)
 
 	agg := eventByOperation(events, "code_security_scan")
 	if agg == nil {
@@ -518,7 +628,7 @@ func TestTrackCLIScan_StandaloneFlagSingleType(t *testing.T) {
 	telemetryClient = newCmdTestTelemetryClient(t, srv)
 	t.Cleanup(func() { telemetryClient = nil })
 
-	trackCLIScan(context.Background(), "sast", nil, time.Now(), 1, false, nil)
+	testTrackCLIScan(context.Background(), "sast", nil, time.Now(), 1, false, "", "none", nil)
 	flushTelemetry()
 
 	item := waitCmdEvent(t, ch)
@@ -539,15 +649,18 @@ func TestTrackCLIScan_AllFailedWithResult(t *testing.T) {
 	t.Cleanup(func() { telemetryClient = nil })
 
 	result := &scan.ScanResult{
-		Errors:    []types.ScanError{{DetectionType: "sast", Error: "binary not found"}},
-		Durations: map[string]int64{"sast": 10},
+		Errors: []types.ScanError{
+			{DetectionType: "sast", Error: "binary not found"},
+			{DetectionType: "secrets", Error: "binary not found"},
+		},
 	}
 	scanErr := errors.New("all scans failed")
-	trackCLIScan(context.Background(), "all", result, time.Now(), 1, false, scanErr)
+	outcome := testScanOutcome(result, map[string]int64{"sast": 10}, "sast", "secrets")
+	testTrackCLIScan(context.Background(), "all", outcome, time.Now(), 1, false, "", "none", scanErr)
 	flushTelemetry()
 
-	// aggregate (error) + sast_scan (error)
-	events := waitNEvents(t, ch, 2)
+	// aggregate (error) + both per-scan errors
+	events := waitNEvents(t, ch, 3)
 
 	agg := eventByOperation(events, "code_security_scan")
 	if agg == nil {
@@ -574,8 +687,8 @@ func TestTrackCLIScan_AllFailedWithResult(t *testing.T) {
 // carry a batch_id at all.
 func TestTrackMCPScan_BatchIDSharedAcrossBatch(t *testing.T) {
 	srv, ch := captureCmdServer(t)
-	mcpTelemetryClient = newCmdTestTelemetryClient(t, srv)
-	t.Cleanup(func() { mcpTelemetryClient = nil })
+	telemetryClient = newCmdTestTelemetryClient(t, srv)
+	t.Cleanup(func() { telemetryClient = nil })
 
 	result := &scan.ScanResult{
 		Summary: types.ScanSummary{
@@ -586,10 +699,10 @@ func TestTrackMCPScan_BatchIDSharedAcrossBatch(t *testing.T) {
 		Results: map[types.DetectionType][]types.Violation{
 			types.DetectionTypeSAST: {{Severity: "HIGH", DetectionType: types.DetectionTypeSAST}},
 		},
-		Errors:    []types.ScanError{{DetectionType: "secrets", Error: "binary not found"}},
-		Durations: map[string]int64{"sast": 500, "secrets": 10},
+		Errors: []types.ScanError{{DetectionType: "secrets", Error: "binary not found"}},
 	}
-	trackMCPScan(context.Background(), "code_security_scan", []string{"sast", "secrets"}, result, time.Now(), 1, nil)
+	outcome := testScanOutcome(result, map[string]int64{"sast": 500, "secrets": 10}, "sast", "secrets")
+	testTrackMCPScan(context.Background(), "code_security_scan", []string{"sast", "secrets"}, outcome, time.Now(), 1, "", "none", nil)
 	flushTelemetry()
 
 	// aggregate + sast_scan + secrets_scan
@@ -619,10 +732,10 @@ func TestTrackMCPScan_BatchIDSharedAcrossBatch(t *testing.T) {
 // scans do not carry a batch_id (there is no batch to correlate).
 func TestTrackMCPScan_NoBatchIDForSingleType(t *testing.T) {
 	srv, ch := captureCmdServer(t)
-	mcpTelemetryClient = newCmdTestTelemetryClient(t, srv)
-	t.Cleanup(func() { mcpTelemetryClient = nil })
+	telemetryClient = newCmdTestTelemetryClient(t, srv)
+	t.Cleanup(func() { telemetryClient = nil })
 
-	trackMCPScan(context.Background(), "sast_scan", []string{"sast"}, nil, time.Now(), 1, nil)
+	testTrackMCPScan(context.Background(), "sast_scan", []string{"sast"}, nil, time.Now(), 1, "", "none", nil)
 	flushTelemetry()
 
 	item := waitCmdEvent(t, ch)
@@ -650,10 +763,10 @@ func TestTrackCLIScan_BatchIDSharedAcrossBatch(t *testing.T) {
 				{Severity: "HIGH", DetectionType: types.DetectionTypeSAST},
 			},
 		},
-		Errors:    []types.ScanError{{DetectionType: "iac", Error: "binary not found"}},
-		Durations: map[string]int64{"sast": 600, "iac": 20},
+		Errors: []types.ScanError{{DetectionType: "iac", Error: "binary not found"}},
 	}
-	trackCLIScan(context.Background(), "all", result, time.Now(), 1, false, nil)
+	outcome := testScanOutcome(result, map[string]int64{"sast": 600, "iac": 20}, "sast", "iac")
+	testTrackCLIScan(context.Background(), "all", outcome, time.Now(), 1, false, "", "none", nil)
 	flushTelemetry()
 
 	// aggregate + sast_scan + iac_scan
@@ -685,7 +798,7 @@ func TestTrackCLIScan_NoBatchIDForSingleType(t *testing.T) {
 	telemetryClient = newCmdTestTelemetryClient(t, srv)
 	t.Cleanup(func() { telemetryClient = nil })
 
-	trackCLIScan(context.Background(), "iac", nil, time.Now(), 1, false, nil)
+	testTrackCLIScan(context.Background(), "iac", nil, time.Now(), 1, false, "", "none", nil)
 	flushTelemetry()
 
 	item := waitCmdEvent(t, ch)
@@ -694,47 +807,46 @@ func TestTrackCLIScan_NoBatchIDForSingleType(t *testing.T) {
 	}
 }
 
-// ── helpers unit tests ────────────────────────────────────────────────────────
+// TestTrackCLIScan_WorkspaceAndAuthAttrs verifies that workspace attributes,
+// auth_method, and binary_versions are present in the emitted telemetry event.
+func TestTrackCLIScan_WorkspaceAndAuthAttrs(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	srv, ch := captureCmdServer(t)
+	telemetryClient = newCmdTestTelemetryClient(t, srv)
+	t.Cleanup(func() { telemetryClient = nil })
+	scannerVersionCache = binary.NewBinaryVersionCache()
+	scannerVersionCache.Refresh()
+	t.Cleanup(func() {
+		scannerVersionCache.Close()
+		scannerVersionCache = nil
+	})
 
-// TestExecutedScanTypes verifies canonical ordering and union of results+errors.
-func TestExecutedScanTypes(t *testing.T) {
-	result := &scan.ScanResult{
-		Results: map[types.DetectionType][]types.Violation{
-			types.DetectionTypeSAST: {},
-		},
-		Errors: []types.ScanError{
-			{DetectionType: "secrets", Error: "fail"},
-			{DetectionType: "iac", Error: "fail"},
-		},
+	testTrackCLIScan(context.Background(), "sast", nil, time.Now(), 1, false, ".", "env_var", nil)
+	flushTelemetry()
+
+	item := waitCmdEvent(t, ch)
+
+	if _, ok := item["is_git_repo"]; !ok {
+		t.Error("is_git_repo must be present in event")
 	}
-	got := executedScanTypes(result)
-	// canonical order: sast, secrets, iac (sca absent)
-	want := []string{"sast", "secrets", "iac"}
-	if len(got) != len(want) {
-		t.Fatalf("executedScanTypes len = %d, want %d; got %v", len(got), len(want), got)
+	if _, ok := item["is_worktree"]; !ok {
+		t.Error("is_worktree must be present in event")
 	}
-	for i, w := range want {
-		if got[i] != w {
-			t.Errorf("executedScanTypes[%d] = %q, want %q", i, got[i], w)
+	if item["auth_method"] != "env_var" {
+		t.Errorf("auth_method = %v, want env_var", item["auth_method"])
+	}
+	if item["binary_versions"] == nil {
+		t.Error("binary_versions must be present in event")
+	}
+	versions, ok := item["binary_versions"].(map[string]any)
+	if !ok {
+		t.Errorf("binary_versions has wrong type: %T", item["binary_versions"])
+	}
+	for _, config := range binary.BinaryConfigs {
+		if _, ok := versions[config.TelemetryKey]; !ok {
+			t.Errorf("binary_versions missing %q: %v", config.TelemetryKey, versions)
 		}
-	}
-}
-
-// TestSeverityBreakdownFor verifies per-violation severity counting.
-func TestSeverityBreakdownFor(t *testing.T) {
-	violations := []types.Violation{
-		{Severity: "HIGH"},
-		{Severity: "HIGH"},
-		{Severity: "MEDIUM"},
-	}
-	bd := severityBreakdownFor(violations)
-	if bd["HIGH"] != 2 {
-		t.Errorf("HIGH = %d, want 2", bd["HIGH"])
-	}
-	if bd["MEDIUM"] != 1 {
-		t.Errorf("MEDIUM = %d, want 1", bd["MEDIUM"])
-	}
-	if len(bd) != 2 {
-		t.Errorf("breakdown has %d entries, want 2", len(bd))
 	}
 }

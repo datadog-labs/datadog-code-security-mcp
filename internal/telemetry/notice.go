@@ -1,6 +1,7 @@
 package telemetry
 
 import (
+	"context"
 	"fmt"
 	"os"
 )
@@ -8,10 +9,12 @@ import (
 const noticeText = `
 Datadog Code Security MCP collects anonymous usage telemetry to improve the tool.
 
-What is collected: tool name, version, OS/arch, run duration, success/failure,
-  finding counts (numbers only), and a random anonymous install ID.
-What is NOT collected: source code, file paths, scan findings, secrets,
-  usernames, repo names, or any identifying information.
+What is collected: tool and scanner versions, OS/arch, run duration,
+  success/failure, aggregate counts, coarse auth/workspace metadata, categorized
+  error kinds with a short curated (path-free) description, and a random
+  anonymous install ID.
+What is NOT collected: source code, absolute paths or directory structure,
+  scan finding contents, secrets, usernames, repo names, or raw error messages.
 
 To opt out, set DD_CODE_SECURITY_TELEMETRY_DISABLED=1 or use --no-telemetry.
 More information: https://github.com/datadog-labs/datadog-code-security-mcp/blob/main/docs/TELEMETRY.md
@@ -25,18 +28,23 @@ More information: https://github.com/datadog-labs/datadog-code-security-mcp/blob
 // captured into the client's log files (not directly user-visible); the primary
 // disclosure for MCP users is the documentation.
 func (c *Client) MaybeShowFirstRunNotice() {
-	if !c.enabled {
+	if !c.Enabled() || !c.firstRun {
 		return
 	}
-
-	result := loadOrCreateConfig()
-	if result.config.FirstRunNoticeShown {
-		return
-	}
-
-	fmt.Fprint(os.Stderr, noticeText)
-
-	cfg := result.config
-	cfg.FirstRunNoticeShown = true
-	persistConfig(cfg)
+	c.noticeOnce.Do(func() {
+		fmt.Fprint(os.Stderr, noticeText)
+		result := updateConfig(func(cfg *persistedConfig) {
+			cfg.FirstRunNoticeShown = true
+		})
+		if !result.updated {
+			c.Track(context.Background(), Event{
+				Status: StatusWarn,
+				Attributes: map[string]any{
+					"operation":     "telemetry_config_update_failed",
+					"interface":     "cli",
+					"config_errors": result.errors,
+				},
+			})
+		}
+	})
 }

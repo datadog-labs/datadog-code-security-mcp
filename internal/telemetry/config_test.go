@@ -1,18 +1,18 @@
 package telemetry
 
 import (
+	"bytes"
+	"encoding/json"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
+	"strings"
+	"sync"
 	"testing"
+	"time"
 )
-
-// withTempHome redirects os.UserHomeDir by changing $HOME to a temp dir.
-func withTempHome(t *testing.T) string {
-	t.Helper()
-	dir := t.TempDir()
-	t.Setenv("HOME", dir)
-	return dir
-}
 
 // TestInstallID_StableAcrossLoads verifies the same install_id is returned
 // on subsequent loads (unique-per-installation requirement).
@@ -38,10 +38,10 @@ func TestInstallID_UniquePerInstall(t *testing.T) {
 	dir1 := t.TempDir()
 	dir2 := t.TempDir()
 
-	t.Setenv("HOME", dir1)
+	setTestHome(t, dir1)
 	r1 := loadOrCreateConfig()
 
-	t.Setenv("HOME", dir2)
+	setTestHome(t, dir2)
 	r2 := loadOrCreateConfig()
 
 	if r1.config.InstallID == r2.config.InstallID {
@@ -49,7 +49,7 @@ func TestInstallID_UniquePerInstall(t *testing.T) {
 	}
 }
 
-// TestAtomicWrite verifies that saveConfig writes to a temp file and renames atomically.
+// TestAtomicWrite verifies that saveConfig writes to a unique temp file and replaces atomically.
 func TestAtomicWrite_NoTempFileLeft(t *testing.T) {
 	home := withTempHome(t)
 
@@ -62,10 +62,12 @@ func TestAtomicWrite_NoTempFileLeft(t *testing.T) {
 		t.Fatalf("saveConfig: %v", err)
 	}
 
-	// The .tmp file must not exist after a successful write.
-	tmp := path + ".tmp"
-	if _, err := os.Stat(tmp); !os.IsNotExist(err) {
-		t.Errorf("temp file %q should not exist after atomic write", tmp)
+	temps, err := filepath.Glob(filepath.Join(filepath.Dir(path), "."+configFileName+".tmp-*"))
+	if err != nil {
+		t.Fatalf("glob temp files: %v", err)
+	}
+	if len(temps) != 0 {
+		t.Errorf("temporary config files left after atomic write: %v", temps)
 	}
 
 	// The real config file must exist.
@@ -75,8 +77,34 @@ func TestAtomicWrite_NoTempFileLeft(t *testing.T) {
 	}
 }
 
+func TestAtomicWrite_CleansTempFileOnFailure(t *testing.T) {
+	home := withTempHome(t)
+	configDir := filepath.Join(home, configDirName)
+	if err := os.MkdirAll(configDir, 0o700); err != nil {
+		t.Fatalf("create config dir: %v", err)
+	}
+	destination := filepath.Join(configDir, "destination-directory")
+	if err := os.Mkdir(destination, 0o700); err != nil {
+		t.Fatalf("create invalid destination: %v", err)
+	}
+
+	if err := saveConfig(newConfig(), destination); err == nil {
+		t.Fatal("saveConfig succeeded with a directory as its destination")
+	}
+	temps, err := filepath.Glob(filepath.Join(configDir, "."+filepath.Base(destination)+".tmp-*"))
+	if err != nil {
+		t.Fatalf("glob temporary files: %v", err)
+	}
+	if len(temps) != 0 {
+		t.Errorf("temporary config files left after failed save: %v", temps)
+	}
+}
+
 // TestConfigDir_Permissions verifies the config dir is created with mode 0700.
 func TestConfigDir_Permissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows does not expose Unix directory permission bits")
+	}
 	home := withTempHome(t)
 
 	result := loadOrCreateConfig()
@@ -103,9 +131,12 @@ func TestFirstRunNoticeFlag_Persisted(t *testing.T) {
 		t.Fatal("first_run_notice_shown should be false on first load")
 	}
 
-	cfg := r.config
-	cfg.FirstRunNoticeShown = true
-	persistConfig(cfg)
+	result := updateConfig(func(cfg *persistedConfig) {
+		cfg.FirstRunNoticeShown = true
+	})
+	if !result.updated {
+		t.Fatalf("update config: %v", result.errors)
+	}
 
 	reloaded := loadOrCreateConfig()
 	if !reloaded.config.FirstRunNoticeShown {
@@ -163,7 +194,11 @@ func TestLoadOrCreate_NoErrorsOnHappyPath(t *testing.T) {
 // TestLoadOrCreate_ErrorsWhenDirUnavailable verifies config_dir_unavailable is reported
 // when HOME is unset/invalid so the config directory cannot be created.
 func TestLoadOrCreate_ErrorsWhenDirUnavailable(t *testing.T) {
-	t.Setenv("HOME", "/nonexistent-path-that-cannot-be-created-xyz")
+	blocker := filepath.Join(t.TempDir(), "not-a-directory")
+	if err := os.WriteFile(blocker, []byte("file"), 0o600); err != nil {
+		t.Fatalf("create blocking file: %v", err)
+	}
+	setTestHome(t, filepath.Join(blocker, "home"))
 	r := loadOrCreateConfig()
 	if len(r.errors) == 0 {
 		t.Error("expected config errors when home dir is unavailable")
@@ -174,6 +209,330 @@ func TestLoadOrCreate_ErrorsWhenDirUnavailable(t *testing.T) {
 	if r.config.InstallID == "" {
 		t.Error("should still have an ephemeral install_id even on failure")
 	}
+}
+
+func TestConcurrentFirstLoadConvergesAcrossProcesses(t *testing.T) {
+	home := t.TempDir()
+	const processCount = 8
+
+	commands := make([]*exec.Cmd, processCount)
+	outputs := make([]bytes.Buffer, processCount)
+	for i := range commands {
+		cmd := configHelperCommand(t, home, "load")
+		cmd.Stdout = &outputs[i]
+		commands[i] = cmd
+		if err := cmd.Start(); err != nil {
+			t.Fatalf("start helper %d: %v", i, err)
+		}
+	}
+	for i, cmd := range commands {
+		if err := cmd.Wait(); err != nil {
+			t.Fatalf("wait for helper %d: %v; output=%q", i, err, outputs[i].String())
+		}
+	}
+
+	want := firstOutputLine(outputs[0].String())
+	if want == "" {
+		t.Fatal("first helper returned an empty install ID")
+	}
+	for i := 1; i < processCount; i++ {
+		if got := firstOutputLine(outputs[i].String()); got != want {
+			t.Errorf("helper %d install ID = %q, want %q", i, got, want)
+		}
+	}
+
+	setTestHome(t, home)
+	persisted := loadOrCreateConfig()
+	if persisted.config.InstallID != want {
+		t.Errorf("persisted install ID = %q, want %q", persisted.config.InstallID, want)
+	}
+}
+
+func TestConcurrentTargetedUpdatesPreserveOptOut(t *testing.T) {
+	home := t.TempDir()
+	setTestHome(t, home)
+	initial := loadOrCreateConfig()
+	installID := initial.config.InstallID
+
+	optOut := configHelperCommand(t, home, "opt-out")
+	notice := configHelperCommand(t, home, "notice")
+	var optOutOutput, noticeOutput bytes.Buffer
+	optOut.Stdout = &optOutOutput
+	notice.Stdout = &noticeOutput
+	if err := optOut.Start(); err != nil {
+		t.Fatalf("start opt-out helper: %v", err)
+	}
+	if err := notice.Start(); err != nil {
+		t.Fatalf("start notice helper: %v", err)
+	}
+	if err := optOut.Wait(); err != nil {
+		t.Fatalf("opt-out helper: %v; output=%q", err, optOutOutput.String())
+	}
+	if err := notice.Wait(); err != nil {
+		t.Fatalf("notice helper: %v; output=%q", err, noticeOutput.String())
+	}
+
+	got := loadOrCreateConfig()
+	if got.config.InstallID != installID {
+		t.Errorf("targeted updates changed install ID: got %q, want %q", got.config.InstallID, installID)
+	}
+	if got.config.TelemetryEnabled == nil || *got.config.TelemetryEnabled {
+		t.Error("targeted notice update overwrote telemetry opt-out")
+	}
+	if !got.config.FirstRunNoticeShown {
+		t.Error("targeted opt-out update overwrote first-run notice")
+	}
+}
+
+func TestTargetedUpdatePreservesUnknownFields(t *testing.T) {
+	home := withTempHome(t)
+	configDir := filepath.Join(home, configDirName)
+	if err := os.MkdirAll(configDir, 0o700); err != nil {
+		t.Fatalf("create config dir: %v", err)
+	}
+	path := filepath.Join(configDir, configFileName)
+	const original = `{"install_id":"stable","telemetry_enabled":false,"future_setting":{"value":42}}`
+	if err := os.WriteFile(path, []byte(original), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	result := updateConfig(func(cfg *persistedConfig) {
+		cfg.FirstRunNoticeShown = true
+	})
+	if !result.updated {
+		t.Fatalf("targeted update: %v", result.errors)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	var document map[string]json.RawMessage
+	if err := json.Unmarshal(data, &document); err != nil {
+		t.Fatalf("parse config: %v", err)
+	}
+	var futureSetting struct {
+		Value int `json:"value"`
+	}
+	if err := json.Unmarshal(document["future_setting"], &futureSetting); err != nil {
+		t.Fatalf("parse unknown field: %v", err)
+	}
+	if futureSetting.Value != 42 {
+		t.Errorf("unknown field value = %d, want 42", futureSetting.Value)
+	}
+}
+
+func TestNoticeUpdatePreservesNewerOptOut(t *testing.T) {
+	withTempHome(t)
+	if result := loadOrCreateConfig(); len(result.errors) != 0 {
+		t.Fatalf("initialize config: %v", result.errors)
+	}
+	disabled := false
+	optOut := updateConfig(func(cfg *persistedConfig) {
+		cfg.TelemetryEnabled = &disabled
+	})
+	if !optOut.updated {
+		t.Fatalf("persist opt-out: %v", optOut.errors)
+	}
+
+	client := &Client{enabled: true, firstRun: true}
+	client.MaybeShowFirstRunNotice()
+
+	got := loadOrCreateConfig()
+	if got.config.TelemetryEnabled == nil || *got.config.TelemetryEnabled {
+		t.Error("notice update overwrote newer telemetry opt-out")
+	}
+	if !got.config.FirstRunNoticeShown {
+		t.Error("notice flag was not persisted")
+	}
+}
+
+func TestConcurrentUpdatesLeaveNoTemporaryFiles(t *testing.T) {
+	home := withTempHome(t)
+	if result := loadOrCreateConfig(); len(result.errors) != 0 {
+		t.Fatalf("initialize config: %v", result.errors)
+	}
+
+	const updateCount = 20
+	var wg sync.WaitGroup
+	errs := make(chan []string, updateCount)
+	for i := 0; i < updateCount; i++ {
+		wg.Add(1)
+		go func(shown bool) {
+			defer wg.Done()
+			result := updateConfig(func(cfg *persistedConfig) {
+				cfg.FirstRunNoticeShown = shown
+			})
+			if !result.updated {
+				errs <- result.errors
+			}
+		}(i%2 == 0)
+	}
+	wg.Wait()
+	close(errs)
+	for updateErrs := range errs {
+		t.Errorf("concurrent update failed: %v", updateErrs)
+	}
+
+	configDir := filepath.Join(home, configDirName)
+	temps, err := filepath.Glob(filepath.Join(configDir, "."+configFileName+".tmp-*"))
+	if err != nil {
+		t.Fatalf("glob temporary files: %v", err)
+	}
+	if len(temps) != 0 {
+		t.Errorf("temporary config files left behind: %v", temps)
+	}
+	if _, err := os.Stat(filepath.Join(configDir, configLockName)); !os.IsNotExist(err) {
+		t.Errorf("config lock left behind: %v", err)
+	}
+}
+
+func TestStaleLockRecovery(t *testing.T) {
+	withTempHome(t)
+	path, err := configPath()
+	if err != nil {
+		t.Fatalf("configPath: %v", err)
+	}
+	lockPath := filepath.Join(filepath.Dir(path), configLockName)
+	if err := os.Mkdir(lockPath, 0o700); err != nil {
+		t.Fatalf("create stale lock: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(lockPath, "abandoned-owner"), []byte("1"), 0o600); err != nil {
+		t.Fatalf("create stale lock owner: %v", err)
+	}
+	old := time.Now().Add(-time.Hour)
+	if err := os.Chtimes(lockPath, old, old); err != nil {
+		t.Fatalf("age stale lock: %v", err)
+	}
+
+	lock, err := acquireConfigLock(lockPath, 200*time.Millisecond, time.Second)
+	if err != nil {
+		t.Fatalf("recover stale lock: %v", err)
+	}
+	lock.release()
+	if _, err := os.Stat(lockPath); !os.IsNotExist(err) {
+		t.Errorf("recovered lock was not released: %v", err)
+	}
+}
+
+func TestActiveLockWaitIsBounded(t *testing.T) {
+	withTempHome(t)
+	path, err := configPath()
+	if err != nil {
+		t.Fatalf("configPath: %v", err)
+	}
+	lockPath := filepath.Join(filepath.Dir(path), configLockName)
+	held, err := acquireConfigLock(lockPath, time.Second, time.Hour)
+	if err != nil {
+		t.Fatalf("acquire held lock: %v", err)
+	}
+	defer held.release()
+
+	start := time.Now()
+	if _, err := acquireConfigLock(lockPath, 30*time.Millisecond, time.Hour); err == nil {
+		t.Fatal("second lock acquisition unexpectedly succeeded")
+	}
+	if elapsed := time.Since(start); elapsed > 500*time.Millisecond {
+		t.Errorf("bounded lock wait took %v", elapsed)
+	}
+}
+
+func TestLoadOrCreate_CorruptConfigRemainsUntouched(t *testing.T) {
+	home := withTempHome(t)
+	configDir := filepath.Join(home, configDirName)
+	if err := os.MkdirAll(configDir, 0o700); err != nil {
+		t.Fatalf("create config dir: %v", err)
+	}
+	path := filepath.Join(configDir, configFileName)
+	const corrupt = `{"install_id":`
+	if err := os.WriteFile(path, []byte(corrupt), 0o600); err != nil {
+		t.Fatalf("write corrupt config: %v", err)
+	}
+
+	result := loadOrCreateConfig()
+	if !containsString(result.errors, "config_parse_failed") {
+		t.Errorf("errors = %v, want config_parse_failed", result.errors)
+	}
+	if !result.idEphemeral {
+		t.Error("corrupt config should produce an ephemeral install ID")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read corrupt config: %v", err)
+	}
+	if string(data) != corrupt {
+		t.Errorf("corrupt config was overwritten: %q", data)
+	}
+}
+
+func TestConfigPathUsesIsolatedHome(t *testing.T) {
+	home := withTempHome(t)
+	path, err := configPath()
+	if err != nil {
+		t.Fatalf("configPath: %v", err)
+	}
+	want := filepath.Join(home, configDirName, configFileName)
+	if path != want {
+		t.Errorf("config path = %q, want %q", path, want)
+	}
+}
+
+func TestConfigHelperProcess(t *testing.T) {
+	if os.Getenv("TELEMETRY_CONFIG_HELPER") != "1" {
+		return
+	}
+
+	switch os.Getenv("TELEMETRY_CONFIG_ACTION") {
+	case "load":
+		result := loadOrCreateConfig()
+		if len(result.errors) != 0 {
+			t.Fatalf("load errors: %v", result.errors)
+		}
+		fmt.Fprintln(os.Stdout, result.config.InstallID)
+	case "opt-out":
+		disabled := false
+		result := updateConfig(func(cfg *persistedConfig) {
+			cfg.TelemetryEnabled = &disabled
+		})
+		if !result.updated {
+			t.Fatalf("opt-out update: %v", result.errors)
+		}
+	case "notice":
+		result := updateConfig(func(cfg *persistedConfig) {
+			cfg.FirstRunNoticeShown = true
+		})
+		if !result.updated {
+			t.Fatalf("notice update: %v", result.errors)
+		}
+	default:
+		t.Fatalf("unknown helper action %q", os.Getenv("TELEMETRY_CONFIG_ACTION"))
+	}
+}
+
+func configHelperCommand(t *testing.T, home, action string) *exec.Cmd {
+	t.Helper()
+	cmd := exec.Command(os.Args[0], "-test.run=^TestConfigHelperProcess$")
+	cmd.Env = append(os.Environ(),
+		"TELEMETRY_CONFIG_HELPER=1",
+		"TELEMETRY_CONFIG_ACTION="+action,
+		"HOME="+home,
+		"USERPROFILE="+home,
+	)
+	return cmd
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}
+
+func firstOutputLine(output string) string {
+	line, _, _ := strings.Cut(output, "\n")
+	return strings.TrimSpace(line)
 }
 
 // TestIsTruthy covers the truthy/falsy helper.

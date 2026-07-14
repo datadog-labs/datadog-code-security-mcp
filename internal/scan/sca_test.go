@@ -14,17 +14,17 @@ func TestSCAScanner_ConvertToViolations(t *testing.T) {
 
 	vulns := []types.Vulnerability{
 		{
-			CVE:       "CVE-2021-44228",
-			Severity:  "CRITICAL",
-			Component: "log4j-core",
-			Version:   "2.14.1",
+			CVE:         "CVE-2021-44228",
+			Severity:    "CRITICAL",
+			Component:   "log4j-core",
+			Version:     "2.14.1",
 			Description: "Remote code execution via JNDI lookups",
 		},
 		{
-			CVE:       "CVE-2023-1234",
-			Severity:  "HIGH",
-			Component: "some-lib",
-			Version:   "1.0.0",
+			CVE:         "CVE-2023-1234",
+			Severity:    "HIGH",
+			Component:   "some-lib",
+			Version:     "1.0.0",
 			Description: "Buffer overflow",
 		},
 	}

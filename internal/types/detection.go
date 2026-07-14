@@ -22,6 +22,18 @@ func AllowedDetectionTypes() []string {
 	}
 }
 
+// SecurityScanTypes returns the canonical set and order used by "scan all".
+// SBOM generation is intentionally excluded because it is not a vulnerability
+// scan and has its own command/tool.
+func SecurityScanTypes() []string {
+	return []string{
+		string(DetectionTypeSAST),
+		string(DetectionTypeSecrets),
+		string(DetectionTypeSCA),
+		string(DetectionTypeIaC),
+	}
+}
+
 // Supported package managers by datadog-sbom-generator
 // These are documented for Claude to know when to use the tool vs manual analysis
 const (

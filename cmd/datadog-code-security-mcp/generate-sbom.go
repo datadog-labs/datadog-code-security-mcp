@@ -62,40 +62,32 @@ Examples:
 
 func runGenerateSBOM(path string, workingDir string, outputJSON bool) error {
 	ctx := context.Background()
-	start := time.Now()
+	event := telemetry.OperationEvent{
+		Operation: "generate_sbom",
+		StartedAt: time.Now(),
+	}
+	defer func() { trackCLIOperation(ctx, event) }()
 
-	// Build SBOM args
+	fail := func(err error) error {
+		event.Failure = err
+		return err
+	}
+
 	sbomArgs := types.SBOMArgs{
 		Path:       path,
 		WorkingDir: workingDir,
 	}
 
-	// Generate SBOM
 	generator := sbom.NewGenerator()
 	result, err := generator.Generate(ctx, sbomArgs)
-
-	// Track before returning.
-	if telemetryClient != nil {
-		attrs := telemetry.CommonAttrs()
-		attrs["operation"] = "generate_sbom"
-		attrs["interface"] = "cli"
-		attrs["duration_ms"] = time.Since(start).Milliseconds()
-		attrs["success"] = err == nil
-		if result != nil {
-			attrs["findings_count"] = result.Summary.TotalComponents
-		}
-		if err != nil {
-			telemetryClient.TrackError(ctx, err, "generate sbom failed", attrs)
-		} else {
-			telemetryClient.TrackInfo(ctx, "generate sbom completed", attrs)
-		}
+	if result != nil {
+		findingsCount := result.Summary.TotalComponents
+		event.FindingsCount = &findingsCount
 	}
-
 	if err != nil {
-		return err
+		return fail(err)
 	}
 
-	// Output results
 	if outputJSON {
 		return outputSBOMResultsJSON(result)
 	}

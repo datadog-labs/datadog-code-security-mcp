@@ -16,18 +16,10 @@ type Scanner interface {
 
 // ExecuteParallelScans runs multiple scan types in parallel
 // Returns partial results if some scans fail but others succeed
-func ExecuteParallelScans(ctx context.Context, args ScanArgs, binaryMgr *binary.BinaryManager) (*ScanResult, error) {
-	// Result channel
-	type scanResult struct {
-		scanType string
-		findings []types.Violation
-		err      error
-		duration time.Duration // wall-clock time for this scan type
-	}
-
+func ExecuteParallelScans(ctx context.Context, args ScanArgs, binaryMgr *binary.BinaryManager) *ScanOutcome {
 	// Buffered channel sized to number of scan types
 	// This ensures goroutines never block on send, even if collection is slow
-	results := make(chan scanResult, len(args.ScanTypes))
+	results := make(chan ScanExecution, len(args.ScanTypes))
 	var wg sync.WaitGroup
 
 	// Launch all scans in parallel
@@ -40,14 +32,22 @@ func ExecuteParallelScans(ctx context.Context, args ScanArgs, binaryMgr *binary.
 
 			scannerInst := getScannerFor(st, binaryMgr)
 			if scannerInst == nil {
-				results <- scanResult{st, nil, fmt.Errorf("unknown scan type: %s", st), 0}
+				results <- ScanExecution{
+					DetectionType: types.DetectionType(st),
+					Err:           fmt.Errorf("unknown scan type: %s", st),
+				}
 				return
 			}
 
 			// Execute scan (may take several seconds) and record wall time
 			scanStart := time.Now()
 			findings, err := scannerInst.Execute(ctx, args)
-			results <- scanResult{st, findings, err, time.Since(scanStart)}
+			results <- ScanExecution{
+				DetectionType: types.DetectionType(st),
+				Findings:      findings,
+				Err:           err,
+				Duration:      time.Since(scanStart),
+			}
 		}(scanType)
 	}
 
@@ -58,39 +58,23 @@ func ExecuteParallelScans(ctx context.Context, args ScanArgs, binaryMgr *binary.
 		close(results)
 	}()
 
-	// Collect all results (even if some failed)
-	// This enables partial success: if SAST fails but Secrets succeeds,
-	// we still return the Secrets findings with an error for SAST
-	allFindings := make([]types.Violation, 0)
-	resultsByType := make(map[types.DetectionType][]types.Violation)
-	durations := make(map[string]int64)
-	var errors []ScanError
-
+	// Collect all results (even if some failed). The channel completes in
+	// nondeterministic order, so store by type and project in request order below.
+	collected := make(map[string]ScanExecution, len(args.ScanTypes))
 	for result := range results {
-		durations[result.scanType] = result.duration.Milliseconds()
-		if result.err != nil {
-			errors = append(errors, ScanError{
-				DetectionType: result.scanType,
-				Error:         result.err.Error(),
-			})
-		} else {
-			allFindings = append(allFindings, result.findings...)
-			// Convert string to DetectionType
-			detectionType := types.DetectionType(result.scanType)
-			resultsByType[detectionType] = result.findings
-		}
+		collected[string(result.DetectionType)] = result
 	}
 
-	// Build summary
-	summary := buildSummary(allFindings)
+	return assembleOutcome(args.ScanTypes, collected)
+}
 
-	return &ScanResult{
-		Summary:       summary,
-		Results:       resultsByType,
-		Errors:        errors,
-		PartialResult: len(errors) > 0 && len(allFindings) > 0,
-		Durations:     durations,
-	}, nil
+// assembleOutcome preserves request order after concurrent scanner completion.
+func assembleOutcome(scanTypes []string, collected map[string]ScanExecution) *ScanOutcome {
+	executions := make([]ScanExecution, 0, len(scanTypes))
+	for _, scanType := range scanTypes {
+		executions = append(executions, collected[scanType])
+	}
+	return NewCompletedOutcome(executions)
 }
 
 // getScannerFor returns the appropriate scanner for the given scan type

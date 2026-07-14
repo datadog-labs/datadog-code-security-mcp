@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"runtime"
+	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/datadog-labs/datadog-code-security-mcp/internal/binary"
+	"github.com/datadog-labs/datadog-code-security-mcp/internal/telemetry"
 )
 
 func newVersionCmd() *cobra.Command {
@@ -31,7 +33,16 @@ Examples:
   # Detailed version info with scanner status
   datadog-code-security-mcp version --detailed`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return printVersion(detailed)
+			ctx := cmd.Context()
+			start := time.Now()
+			err := printVersion(ctx, detailed)
+			trackCLIOperation(ctx, telemetry.OperationEvent{
+				Operation: "version",
+				StartedAt: start,
+				Detailed:  &detailed,
+				Failure:   err,
+			})
+			return err
 		},
 	}
 
@@ -40,7 +51,7 @@ Examples:
 	return cmd
 }
 
-func printVersion(detailed bool) error {
+func printVersion(ctx context.Context, detailed bool) error {
 	// Basic version info
 	fmt.Printf("datadog-code-security-mcp version: %s\n", version)
 	fmt.Printf("commit: %s\n", commit)
@@ -63,7 +74,7 @@ func printVersion(detailed bool) error {
 
 	// Check if datadog-static-analyzer is installed
 	bm := binary.NewBinaryManager()
-	binaryPath, err := bm.GetBinaryPath(context.Background())
+	binaryPath, err := bm.GetBinaryPath(ctx)
 
 	if err != nil {
 		fmt.Println("  datadog-static-analyzer: ❌ NOT INSTALLED")

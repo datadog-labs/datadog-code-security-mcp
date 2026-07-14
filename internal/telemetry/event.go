@@ -3,10 +3,8 @@ package telemetry
 import (
 	"context"
 	"errors"
-	"os"
-	"path/filepath"
+	"fmt"
 	"regexp"
-	"runtime/debug"
 	"strings"
 
 	"github.com/datadog-labs/datadog-code-security-mcp/internal/constants"
@@ -39,18 +37,13 @@ type Event struct {
 
 // ErrorInfo is the error object included in the payload when status == "error".
 //
-// It carries the categorised Kind, a scrubbed stack trace, and a sanitised
-// Message. The Message is NOT the raw error string: it is passed through
-// sanitizeErrorMessage, which collapses absolute filesystem paths to their
-// basenames, scrubs the user's home directory, flattens whitespace, and caps
-// the length. This gives enough detail to understand *why* a scan failed
-// (e.g. "remote not found", "not a directory") — which coarse categorisation
-// alone cannot capture for errors bubbling up from external scanner binaries —
-// without leaking usernames, repo paths, or scan content.
+// Kind is always a categorized constant. Message is a short, hardcoded
+// description so the error can be grouped in Datadog Error Tracking: a per-kind
+// default, or a more specific curated string for known sub-cases (optionally
+// suffixed with the process exit code). The raw error text is never emitted.
 type ErrorInfo struct {
 	Kind    string `json:"kind"`
 	Message string `json:"message,omitempty"`
-	Stack   string `json:"stack,omitempty"`
 }
 
 // ErrorKind constants used as the error.kind field.
@@ -62,191 +55,147 @@ const (
 	ErrKindTimeout          = "Timeout"
 	ErrKindScanError        = "ScanError"
 	ErrKindNetwork          = "Network"
+	ErrKindGitError         = "GitError"
 	ErrKindUnknown          = "Unknown"
 )
 
-// CategorizeError maps an error to one of the ErrKind* constants.
-// It uses errors.Is / errors.As first (unwraps %w chains), then falls back to
-// substring matching on err.Error() for the current codebase's string-constant style.
-func CategorizeError(err error) string {
+// kindDescriptions is the default, path-free error.message emitted for each
+// kind so every error is groupable in Error Tracking. Rules may override it
+// with a more specific curated string for known sub-cases.
+var kindDescriptions = map[string]string{
+	ErrKindBinaryNotFound:   "scanner binary not found",
+	ErrKindAuthRequired:     "authentication required",
+	ErrKindInvalidArguments: "invalid arguments",
+	ErrKindPathNotFound:     "path not found",
+	ErrKindTimeout:          "operation timed out",
+	ErrKindScanError:        "scan execution failed",
+	ErrKindNetwork:          "network error",
+	ErrKindGitError:         "git error",
+	ErrKindUnknown:          "unknown error",
+}
+
+// errorRule maps required substrings in the raw error text to a safe
+// classification. A rule matches when every substring in contains is present.
+// message, when set, overrides the per-kind default with a curated constant
+// safe to emit as error.message.
+type errorRule struct {
+	kind     string
+	contains []string
+	message  string
+}
+
+func (r errorRule) matches(msg string) bool {
+	for _, sub := range r.contains {
+		if !strings.Contains(msg, sub) {
+			return false
+		}
+	}
+	return len(r.contains) > 0
+}
+
+// errorRules is evaluated in order; the first matching rule wins. More specific
+// rules (e.g. Git failures surfaced by scanner subprocesses) come first so they
+// are not swallowed by the broader ScanError fallback.
+var errorRules = []errorRule{
+	{kind: ErrKindGitError, contains: []string{"remote not found"}, message: "remote not found"},
+	{kind: ErrKindGitError, contains: []string{"Unable to parse git ignores"}, message: "unable to parse .git"},
+
+	{kind: ErrKindAuthRequired, contains: []string{constants.ErrAuthRequired}},
+	{kind: ErrKindAuthRequired, contains: []string{constants.ErrAPIKeyRequired}},
+	{kind: ErrKindAuthRequired, contains: []string{"Authentication required"}},
+	{kind: ErrKindAuthRequired, contains: []string{"DD_API_KEY"}},
+
+	{kind: ErrKindBinaryNotFound, contains: []string{"not found in PATH"}},
+	{kind: ErrKindBinaryNotFound, contains: []string{"executable file not found"}},
+	{kind: ErrKindBinaryNotFound, contains: []string{"binary validation failed"}},
+
+	{kind: ErrKindPathNotFound, contains: []string{"path does not exist"}},
+	{kind: ErrKindPathNotFound, contains: []string{"no such file or directory"}},
+	{kind: ErrKindPathNotFound, contains: []string{"cannot find the path"}},
+
+	{kind: ErrKindInvalidArguments, contains: []string{constants.ErrInvalidArguments}},
+	{kind: ErrKindInvalidArguments, contains: []string{"is required"}},
+	{kind: ErrKindInvalidArguments, contains: []string{"invalid"}},
+	{kind: ErrKindInvalidArguments, contains: []string{"must be"}},
+
+	{kind: ErrKindNetwork, contains: []string{"connection refused"}},
+	{kind: ErrKindNetwork, contains: []string{"no such host"}},
+	{kind: ErrKindNetwork, contains: []string{"dial tcp"}},
+	{kind: ErrKindNetwork, contains: []string{"network"}},
+
+	{kind: ErrKindScanError, contains: []string{"scan"}},
+	{kind: ErrKindScanError, contains: []string{"failed"}},
+}
+
+var exitStatusRe = regexp.MustCompile(`exit status (\d+)`)
+
+// errorClassification is the privacy-preserving projection of an error:
+// a categorized kind and, for known errors, a curated safe message.
+type errorClassification struct {
+	kind    string
+	message string
+}
+
+func classifyError(err error) errorClassification {
 	if err == nil {
-		return ""
+		return errorClassification{}
 	}
 
+	kind, override := matchErrorRule(err)
+	message := override
+	if message == "" {
+		message = kindDescriptions[kind]
+	}
+	return errorClassification{kind: kind, message: decorateMessage(message, err.Error())}
+}
+
+// matchErrorRule resolves the error kind and any rule-specific message override.
+func matchErrorRule(err error) (kind, message string) {
 	// Typed / sentinel checks (prefer these).
 	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-		return ErrKindTimeout
+		return ErrKindTimeout, ""
 	}
-
-	// Check for net timeout interface.
 	var netErr interface{ Timeout() bool }
 	if errors.As(err, &netErr) && netErr.Timeout() {
-		return ErrKindTimeout
+		return ErrKindTimeout, ""
 	}
 
 	msg := err.Error()
-
-	// Auth errors.
-	if strings.Contains(msg, constants.ErrAuthRequired) ||
-		strings.Contains(msg, constants.ErrAPIKeyRequired) ||
-		strings.Contains(msg, "Authentication required") ||
-		strings.Contains(msg, "DD_API_KEY") {
-		return ErrKindAuthRequired
+	for _, rule := range errorRules {
+		if rule.matches(msg) {
+			return rule.kind, rule.message
+		}
 	}
-
-	// Binary-not-found errors (static-analyzer, sbom-generator, etc.).
-	if strings.Contains(msg, "not found in PATH") ||
-		strings.Contains(msg, "executable file not found") ||
-		strings.Contains(msg, "binary validation failed") {
-		return ErrKindBinaryNotFound
-	}
-
-	// Path / file-not-found errors from user-supplied scan targets.
-	if strings.Contains(msg, "path does not exist") ||
-		strings.Contains(msg, "no such file or directory") ||
-		strings.Contains(msg, "cannot find the path") {
-		return ErrKindPathNotFound
-	}
-
-	// Argument / validation errors.
-	if strings.Contains(msg, constants.ErrInvalidArguments) ||
-		strings.Contains(msg, "is required") ||
-		strings.Contains(msg, "invalid") ||
-		strings.Contains(msg, "must be") {
-		return ErrKindInvalidArguments
-	}
-
-	// Network errors.
-	if strings.Contains(msg, "connection refused") ||
-		strings.Contains(msg, "no such host") ||
-		strings.Contains(msg, "dial tcp") ||
-		strings.Contains(msg, "network") {
-		return ErrKindNetwork
-	}
-
-	// Fallback.
-	if strings.Contains(msg, "scan") || strings.Contains(msg, "failed") {
-		return ErrKindScanError
-	}
-
-	return ErrKindUnknown
+	return ErrKindUnknown, ""
 }
 
-// ErrorInfoFromError builds an ErrorInfo from an error, including the categorised
-// kind, a sanitised message, and a scrubbed stack trace. The message is passed
-// through sanitizeErrorMessage so that file paths, usernames, and repo names are
-// removed before the message is sent. Returns nil for a nil error.
+// decorateMessage appends the process exit code to a curated message when the
+// raw error carries one. It only ever combines constants we control with a
+// numeric exit code, so no raw error text leaks into telemetry.
+func decorateMessage(message, raw string) string {
+	if message == "" {
+		return ""
+	}
+	if m := exitStatusRe.FindStringSubmatch(raw); m != nil {
+		return fmt.Sprintf("%s (exit status %s)", message, m[1])
+	}
+	return message
+}
+
+// CategorizeError maps an error to one of the ErrKind* constants.
+func CategorizeError(err error) string {
+	return classifyError(err).kind
+}
+
+// ErrorInfoFromError builds the telemetry error object: a categorized kind and
+// a short curated description, so every error is groupable in Error Tracking.
 func ErrorInfoFromError(err error) *ErrorInfo {
 	if err == nil {
 		return nil
 	}
+	c := classifyError(err)
 	return &ErrorInfo{
-		Kind:    CategorizeError(err),
-		Message: sanitizeErrorMessage(err.Error()),
-		Stack:   scrubPaths(filterStack(string(debug.Stack()))),
+		Kind:    c.kind,
+		Message: c.message,
 	}
-}
-
-// maxErrorMessageLen caps the sanitised error message. Scanner failures can
-// append large multi-line stderr/stdout dumps; this bounds the payload while
-// keeping enough of the message to be actionable.
-const maxErrorMessageLen = 500
-
-// absPathPattern matches absolute filesystem paths so they can be collapsed to a
-// basename. It handles Unix ("/a/b/c") and Windows ("C:\a\b\c" or "C:/a/b/c")
-// forms with at least one intermediate separator. Path segments exclude
-// whitespace and ":" so a trailing ": message" (as in "open /a/b: not a dir")
-// is not swallowed into the path.
-var absPathPattern = regexp.MustCompile(`(?:[A-Za-z]:)?(?:/|\\)(?:[^\s/\\:]+(?:/|\\))+[^\s/\\:]*`)
-
-// sanitizeErrorMessage returns a privacy-scrubbed, length-capped version of an
-// error message suitable for telemetry. It:
-//   - collapses absolute filesystem paths to their basename (drops usernames,
-//     repo paths, and directory structure)
-//   - scrubs the user's home directory as a final safety net
-//   - flattens all whitespace runs (including newlines) to single spaces so the
-//     multi-line scanner dumps become one readable line
-//   - trims to maxErrorMessageLen runes
-func sanitizeErrorMessage(msg string) string {
-	// Collapse absolute paths to their basename before whitespace flattening so
-	// the regex sees intact path tokens.
-	msg = absPathPattern.ReplaceAllStringFunc(msg, func(p string) string {
-		// Normalise separators for basename extraction, keep a leading marker so
-		// it is obvious a path was elided.
-		base := p
-		if i := strings.LastIndexAny(base, `/\`); i >= 0 && i < len(base)-1 {
-			base = base[i+1:]
-		} else if i >= 0 {
-			// Trailing separator (e.g. "/a/b/"): take the last non-empty segment.
-			trimmed := strings.TrimRight(base, `/\`)
-			if j := strings.LastIndexAny(trimmed, `/\`); j >= 0 {
-				base = trimmed[j+1:]
-			}
-		}
-		if base == "" {
-			return ".../"
-		}
-		return ".../" + base
-	})
-
-	// Flatten whitespace (newlines, tabs, repeated spaces) to single spaces.
-	msg = strings.Join(strings.Fields(msg), " ")
-
-	// Home-dir safety net for any path form the regex did not catch.
-	msg = scrubPaths(msg)
-
-	// Cap length (rune-safe).
-	if len([]rune(msg)) > maxErrorMessageLen {
-		msg = string([]rune(msg)[:maxErrorMessageLen]) + "…"
-	}
-	return msg
-}
-
-// scrubPaths removes the user's home directory from a string so that file paths
-// are not sent in telemetry. It handles both native path separators (e.g.
-// C:\Users\foo on Windows) and forward-slash variants (C:/Users/foo) because Go
-// stdlib and third-party libraries sometimes normalise separators inconsistently.
-func scrubPaths(s string) string {
-	home, err := os.UserHomeDir()
-	if err != nil || home == "" {
-		return s
-	}
-
-	// Replace native-separator form (always correct on Unix; correct on Windows too
-	// when the error originates from os/filepath-aware code).
-	s = strings.ReplaceAll(s, home, "~")
-
-	// On Windows, also replace the forward-slash variant in case the path was
-	// normalised by Go internals or a third-party library.
-	forwardSlashHome := filepath.ToSlash(home)
-	if forwardSlashHome != home {
-		s = strings.ReplaceAll(s, forwardSlashHome, "~")
-	}
-
-	return s
-}
-
-// filterStack keeps only frames that belong to our own module and the Go runtime,
-// dropping third-party and standard library frames to keep the payload small.
-func filterStack(stack string) string {
-	lines := strings.Split(stack, "\n")
-	var out []string
-	keep := false
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "goroutine") {
-			out = append(out, line)
-			keep = true
-			continue
-		}
-		if keep {
-			out = append(out, line)
-		}
-		// Limit total stack output.
-		if len(out) > 30 {
-			out = append(out, "... (truncated)")
-			break
-		}
-	}
-	return strings.Join(out, "\n")
 }

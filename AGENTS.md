@@ -596,7 +596,9 @@ Build-time ldflags (set via CI secrets):
 Config file: `~/.datadog-code-security-mcp/config.json` (install_id, opt-out, notice flag).
 See `docs/TELEMETRY.md` for the full privacy policy.
 
-**Event model**: Single-type scans emit one per-scan event (`standalone=true`). Multi-type (`scan all`) emits an aggregate `code_security_scan` event **plus** one per-scan event per type (`standalone=false`). The aggregate carries `scan_durations_breakdown` and `partial_errors_breakdown` (error kinds only). Helpers for this logic live in `cmd/datadog-code-security-mcp/handlers.go` (`emitPerScanEvents`, `emitPerScanEvent`, `executedScanTypes`, `buildErrorKindBreakdown`, `severityBreakdownFor`).
+**Event model**: Single-type scans emit one per-scan event (`standalone=true`). Multi-type (`scan all`) emits an aggregate `code_security_scan` event **plus** one per-scan event per type (`standalone=false`). The aggregate carries `scan_durations_breakdown` and `partial_errors_breakdown` (error kinds only). Typed event shaping lives in `internal/telemetry`; `scan.ScanOutcome` is the canonical source for per-scanner findings, durations, and errors.
+
+**Privacy contract**: Error events contain a categorized kind plus a hardcoded, path-free `error.message` description for Error Tracking—a per-kind default (`kindDescriptions`) or a more specific string for known sub-cases (optionally suffixed with the process exit code), never raw error text. Stack traces are not collected. Scanner versions are collected once per process for both CLI and MCP and are not persisted. Keep `README.md`, `docs/TELEMETRY.md`, and the first-run notice synchronized whenever telemetry fields change. New known errors are added to `errorRules` in `internal/telemetry/event.go`.
 
 ### Updating Dependencies
 ```bash

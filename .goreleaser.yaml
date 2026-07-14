@@ -30,7 +30,7 @@ builds:
       - -X main.commit={{.Commit}}
       - -X main.buildTime={{.Date}}
       - -X main.telemetryClientToken={{.Env.TELEMETRY_CLIENT_TOKEN}}
-      - -X main.telemetryEnv=production
+      - -X main.telemetryEnv={{ if .IsSnapshot }}development{{ else }}production{{ end }}
 
 archives:
   - id: default
