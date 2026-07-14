@@ -914,3 +914,53 @@ func TestTrackCLIScan_WorkspaceAndAuthAttrs(t *testing.T) {
 		}
 	}
 }
+
+// TestTrackScan_UsedBinaryVersionsScoped verifies that per-scan events carry a
+// used_binary_versions map scoped to only the binaries that scan type uses,
+// while the full binary_versions inventory remains present. This is what lets
+// per-binary version distributions avoid double-counting.
+func TestTrackScan_UsedBinaryVersionsScoped(t *testing.T) {
+	tests := []struct {
+		scanType string
+		wantKeys []string
+	}{
+		{"sast", []string{"static_analyzer"}},
+		{"secrets", []string{"static_analyzer"}},
+		{"sca", []string{"sbom_generator", "security_cli"}},
+		{"iac", []string{"iac_scanner"}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.scanType, func(t *testing.T) {
+			srv, ch := captureCmdServer(t)
+			telemetryClient = newCmdTestTelemetryClient(t, srv)
+			t.Cleanup(func() { telemetryClient = nil })
+			scannerVersionCache = binary.NewBinaryVersionCache()
+			scannerVersionCache.Refresh()
+			t.Cleanup(func() {
+				scannerVersionCache.Close()
+				scannerVersionCache = nil
+			})
+
+			testTrackCLIScan(context.Background(), tc.scanType, nil, time.Now(), 1, false, ".", "none", nil)
+			flushTelemetry()
+
+			item := waitCmdEvent(t, ch)
+			scoped, ok := item["used_binary_versions"].(map[string]any)
+			if !ok {
+				t.Fatalf("used_binary_versions missing or wrong type: %T (%v)", item["used_binary_versions"], item["used_binary_versions"])
+			}
+			if len(scoped) != len(tc.wantKeys) {
+				t.Errorf("used_binary_versions = %v, want exactly keys %v", scoped, tc.wantKeys)
+			}
+			for _, key := range tc.wantKeys {
+				if _, ok := scoped[key]; !ok {
+					t.Errorf("used_binary_versions missing %q: %v", key, scoped)
+				}
+			}
+			// Full inventory is still present and a superset of the scoped map.
+			if _, ok := item["binary_versions"].(map[string]any); !ok {
+				t.Errorf("binary_versions must still be present alongside used_binary_versions")
+			}
+		})
+	}
+}

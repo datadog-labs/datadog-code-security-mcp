@@ -4,9 +4,35 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"testing"
 )
+
+func TestScanTypeBinaryMapping(t *testing.T) {
+	tests := []struct {
+		scanType     string
+		wantBinaries []BinaryType
+		wantKeys     []string
+	}{
+		{"sast", []BinaryType{BinaryTypeStaticAnalyzer}, []string{"static_analyzer"}},
+		{"secrets", []BinaryType{BinaryTypeStaticAnalyzer}, []string{"static_analyzer"}},
+		{"sca", []BinaryType{BinaryTypeSBOMGenerator, BinaryTypeSecurity}, []string{"sbom_generator", "security_cli"}},
+		{"iac", []BinaryType{BinaryTypeIaC}, []string{"iac_scanner"}},
+		{"sbom", []BinaryType{BinaryTypeSBOMGenerator}, []string{"sbom_generator"}},
+		{"unknown", nil, []string{}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.scanType, func(t *testing.T) {
+			if got := BinariesForScanType(tc.scanType); !reflect.DeepEqual(got, tc.wantBinaries) {
+				t.Errorf("BinariesForScanType(%q) = %v, want %v", tc.scanType, got, tc.wantBinaries)
+			}
+			if got := TelemetryKeysForScanType(tc.scanType); !reflect.DeepEqual(got, tc.wantKeys) {
+				t.Errorf("TelemetryKeysForScanType(%q) = %v, want %v", tc.scanType, got, tc.wantKeys)
+			}
+		})
+	}
+}
 
 func TestGetVersionUsesBinaryVersionArgs(t *testing.T) {
 	if runtime.GOOS == "windows" {

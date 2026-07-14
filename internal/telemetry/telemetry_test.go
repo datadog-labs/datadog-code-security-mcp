@@ -384,6 +384,66 @@ func TestTrackInfo_OperationFieldInPayload(t *testing.T) {
 	}
 }
 
+// TestTrackOperation_NoticeAttr verifies that a curated notice on an operation
+// event (e.g. a zero-component generate_sbom) is forwarded to the intake, and
+// that it is omitted when empty.
+func TestTrackOperation_NoticeAttr(t *testing.T) {
+	srv, ch := captureServer(t)
+	c := newTestClient(t, srv)
+
+	c.TrackOperation(context.Background(), OperationEvent{
+		Operation: "generate_sbom",
+		Interface: InterfaceCLI,
+		StartedAt: time.Now(),
+		Notice:    "no components detected",
+	})
+
+	items := waitEvent(t, ch)
+	if got := items[0]["notice"]; got != "no components detected" {
+		t.Errorf("notice = %v, want %q", got, "no components detected")
+	}
+
+	c.TrackOperation(context.Background(), OperationEvent{
+		Operation: "generate_sbom",
+		Interface: InterfaceCLI,
+		StartedAt: time.Now(),
+	})
+
+	items = waitEvent(t, ch)
+	if _, ok := items[0]["notice"]; ok {
+		t.Error("notice field should be omitted when empty")
+	}
+}
+
+// TestTrackOperation_UsedBinaryVersions verifies that generate_sbom carries a
+// used_binary_versions attribute scoped to only the SBOM generator, not the
+// full binary_versions inventory.
+func TestTrackOperation_UsedBinaryVersions(t *testing.T) {
+	srv, ch := captureServer(t)
+	c := newTestClient(t, srv)
+
+	c.TrackOperation(context.Background(), OperationEvent{
+		Operation: "generate_sbom",
+		Interface: InterfaceCLI,
+		StartedAt: time.Now(),
+		ScanType:  "sbom",
+		BinaryVersions: map[string]string{
+			"sbom_generator":  "1.17.3",
+			"static_analyzer": "0.8.9",
+			"security_cli":    "0.0.10",
+		},
+	})
+
+	items := waitEvent(t, ch)
+	scoped, ok := items[0]["used_binary_versions"].(map[string]any)
+	if !ok {
+		t.Fatalf("used_binary_versions missing or wrong type: %v", items[0]["used_binary_versions"])
+	}
+	if len(scoped) != 1 || scoped["sbom_generator"] != "1.17.3" {
+		t.Errorf("used_binary_versions = %v, want {sbom_generator: 1.17.3}", scoped)
+	}
+}
+
 func contains(s, sub string) bool {
 	return strings.Contains(s, sub)
 }

@@ -111,6 +111,36 @@ var BinaryConfigs = map[BinaryType]BinaryConfig{
 	},
 }
 
+// scanTypeBinaries is the single source of truth for which binaries each scan
+// type invokes. SCA is the only two-binary type (it generates an SBOM, then
+// scans it); standalone SBOM generation uses just the generator. Consumed by
+// prerequisite validation and per-scan/operation version telemetry.
+var scanTypeBinaries = map[string][]BinaryType{
+	"sast":    {BinaryTypeStaticAnalyzer},
+	"secrets": {BinaryTypeStaticAnalyzer},
+	"sca":     {BinaryTypeSBOMGenerator, BinaryTypeSecurity},
+	"iac":     {BinaryTypeIaC},
+	"sbom":    {BinaryTypeSBOMGenerator},
+}
+
+// BinariesForScanType returns the binary types a scan type depends on, in the
+// order they are invoked. Unknown scan types return nil.
+func BinariesForScanType(scanType string) []BinaryType {
+	return scanTypeBinaries[scanType]
+}
+
+// TelemetryKeysForScanType returns the telemetry keys of the binaries a scan
+// type depends on, for scoping per-scan version telemetry to only the scanners
+// that scan type actually uses.
+func TelemetryKeysForScanType(scanType string) []string {
+	binaries := scanTypeBinaries[scanType]
+	keys := make([]string, 0, len(binaries))
+	for _, binaryType := range binaries {
+		keys = append(keys, BinaryConfigs[binaryType].TelemetryKey)
+	}
+	return keys
+}
+
 // BinaryManager manages scanner binaries
 type BinaryManager struct {
 	config BinaryConfig

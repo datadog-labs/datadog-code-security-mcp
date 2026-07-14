@@ -85,6 +85,7 @@ func handleGenerateSBOM(ctx context.Context, request mcp.CallToolRequest) (*mcp.
 		Operation:  "generate_sbom",
 		StartedAt:  time.Now(),
 		AuthMethod: detectAuthMethod(),
+		ScanType:   string(types.DetectionTypeSBOM),
 	}
 	defer func() { trackMCPEvent(ctx, event) }()
 
@@ -111,6 +112,9 @@ func handleGenerateSBOM(ctx context.Context, request mcp.CallToolRequest) (*mcp.
 
 	findingsCount := result.Summary.TotalComponents
 	event.FindingsCount = &findingsCount
+	if result.Notice != nil {
+		event.Notice = result.Notice.Message
+	}
 	return formatSBOMResult(result), nil
 }
 

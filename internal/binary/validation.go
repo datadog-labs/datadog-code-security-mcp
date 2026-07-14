@@ -16,42 +16,16 @@ func ValidateScanBinaries(ctx context.Context, scanTypes []string) error {
 	})
 
 	for _, scanType := range scanTypes {
-		switch scanType {
-		case "sast", "secrets":
-			// Both use datadog-static-analyzer
-			entry := binaryChecks[BinaryTypeStaticAnalyzer]
+		// scanTypeBinaries (in manager.go) is the single source of truth for the
+		// scan-type→binary mapping; dedup shared binaries (e.g. static-analyzer
+		// for sast+secrets) via the map key.
+		for _, binaryType := range BinariesForScanType(scanType) {
+			entry := binaryChecks[binaryType]
 			if entry.manager == nil {
-				entry.manager = NewManager(BinaryTypeStaticAnalyzer)
+				entry.manager = NewManager(binaryType)
 			}
 			entry.scanTypes = append(entry.scanTypes, scanType)
-			binaryChecks[BinaryTypeStaticAnalyzer] = entry
-
-		case "sca":
-			// Uses datadog-security-cli for vulnerability scanning
-			binaryChecks[BinaryTypeSecurity] = struct {
-				manager   *BinaryManager
-				scanTypes []string
-			}{
-				manager:   NewManager(BinaryTypeSecurity),
-				scanTypes: []string{"sca"},
-			}
-			// Also requires datadog-sbom-generator for SBOM generation (step 1 of SCA)
-			binaryChecks[BinaryTypeSBOMGenerator] = struct {
-				manager   *BinaryManager
-				scanTypes []string
-			}{
-				manager:   NewManager(BinaryTypeSBOMGenerator),
-				scanTypes: []string{"sca"},
-			}
-
-		case "iac":
-			binaryChecks[BinaryTypeIaC] = struct {
-				manager   *BinaryManager
-				scanTypes []string
-			}{
-				manager:   NewManager(BinaryTypeIaC),
-				scanTypes: []string{"iac"},
-			}
+			binaryChecks[binaryType] = entry
 		}
 	}
 

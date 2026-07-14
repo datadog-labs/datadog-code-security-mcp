@@ -39,12 +39,14 @@ Every scan emits **one telemetry event per scan type** plus, when multiple types
 | -------------------------- | ------------------------------------------------------------------------------------------------ |
 | `auth_method`              | Authentication source category (`none`, `env_var`, or `auth_provider`); never credentials         |
 | `binary_versions`          | Installed scanner version/status by scanner (`X.Y.Z`, `not_found`, or `unknown`)                 |
+| `used_binary_versions`     | Installed version/status of only the binaries this scan type or operation actually invokes (e.g. `{"static_analyzer":"1.2.3"}` for SAST; `{"sbom_generator":"…","security_cli":"…"}` for SCA; `{"sbom_generator":"…"}` for `generate_sbom`). A scoped subset of `binary_versions` — use this for per-binary version distributions to avoid double-counting the full inventory carried on every event. Present on per-scan events and on the `generate_sbom` operation event |
 | `first_run`                | Whether this is the installation's first recorded invocation                                     |
 | `is_git_repo`              | Whether the target is inside a Git repository                                                     |
 | `is_worktree`              | Whether the target is inside a Git worktree                                                       |
 | `auth_configured`          | Whether the MCP server started with authentication configured                                    |
 | `libraries_count`          | Number of package coordinates submitted to a library scan                                        |
 | `detailed`                 | Whether the non-sensitive `version --detailed` display mode was selected                          |
+| `notice`                   | Curated message for a non-fatal informational signal from a successful operation (e.g. a zero-component SBOM generation, or a scan that had nothing to check). Present only when surfaced; appears on per-scan events and on `generate_sbom`. A hardcoded, path-free string — never raw error text |
 | `config_errors`            | Category names for telemetry-config initialization failures; never raw error text or paths        |
 | `id_ephemeral`             | Whether the anonymous install ID could not be persisted                                           |
 
@@ -55,7 +57,6 @@ Every scan emits **one telemetry event per scan type** plus, when multiple types
 | `standalone`               | `true` when the scan type was invoked on its own; `false` when part of a `scan all` batch        |
 | `findings_count`           | **Number** of findings for this scan type — no content or details                               |
 | `severity_breakdown`       | Per-severity finding counts for this type (e.g. `{"HIGH":2,"MEDIUM":2}`)                        |
-| `notice`                   | Curated message for a non-fatal informational signal from a successful scan (e.g. a zero-component SBOM scan that had nothing to check). Present only when the scan surfaced a notice; a hardcoded, path-free string — never raw error text |
 | `paths_count`              | Number of file paths passed to the scan                                                          |
 | `output_format`            | `human` or `json` — CLI events only                                                              |
 

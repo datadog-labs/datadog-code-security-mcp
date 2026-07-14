@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/datadog-labs/datadog-code-security-mcp/internal/binary"
 	"github.com/datadog-labs/datadog-code-security-mcp/internal/scan"
 	"github.com/datadog-labs/datadog-code-security-mcp/internal/types"
 )
@@ -192,6 +193,12 @@ func (c *Client) trackPerScan(ctx context.Context, iface Interface, base scanBas
 	attrs := baseOperationAttrs(operation, iface, report.duration, report.err)
 	attrs["standalone"] = report.standalone
 	addScanBaseAttrs(attrs, base)
+	// used_binary_versions scopes binary_versions down to only the binaries this
+	// scan type actually invokes, so per-binary version distributions aren't
+	// inflated by the full inventory carried on every event.
+	if scoped := usedBinaryVersions(report.scanType, base.binaryVersions); len(scoped) > 0 {
+		attrs["used_binary_versions"] = scoped
+	}
 	if report.executed && report.err == nil {
 		attrs["findings_count"] = len(report.findings)
 		attrs["severity_breakdown"] = severityBreakdown(report.findings)
@@ -242,6 +249,23 @@ func scanNoticeBreakdown(outcome *scan.ScanOutcome) map[string]string {
 	return notices
 }
 
+// usedBinaryVersions returns the subset of the full binary-version snapshot
+// relevant to scanType, keyed by telemetry key. Returns nil when the scan type
+// maps to no binaries or no versions are available, so the attribute is omitted.
+func usedBinaryVersions(scanType string, allVersions map[string]string) map[string]string {
+	keys := binary.TelemetryKeysForScanType(scanType)
+	if len(keys) == 0 || len(allVersions) == 0 {
+		return nil
+	}
+	scoped := make(map[string]string, len(keys))
+	for _, key := range keys {
+		if version, ok := allVersions[key]; ok {
+			scoped[key] = version
+		}
+	}
+	return scoped
+}
+
 func severityBreakdown(findings []types.Violation) map[string]int {
 	counts := make(map[string]int)
 	for _, finding := range findings {
@@ -262,6 +286,13 @@ type OperationEvent struct {
 	FindingsCount   *int
 	LibrariesCount  *int
 	Detailed        *bool
+	// Notice is a curated, non-fatal informational message (e.g. a
+	// zero-component SBOM generation). Empty when there is nothing to surface.
+	// Always a hardcoded, path-free string — never raw error text.
+	Notice string
+	// ScanType, when set (e.g. "sbom"), scopes used_binary_versions down to only
+	// the binaries this operation actually invokes, mirroring per-scan events.
+	ScanType string
 }
 
 func (c *Client) TrackOperation(ctx context.Context, event OperationEvent) {
@@ -270,6 +301,12 @@ func (c *Client) TrackOperation(ctx context.Context, event OperationEvent) {
 	}
 	attrs := baseOperationAttrs(event.Operation, event.Interface, time.Since(event.StartedAt), event.Failure)
 	attrs["binary_versions"] = event.BinaryVersions
+	// used_binary_versions scopes binary_versions down to only the binaries this
+	// operation actually invokes, matching per-scan events so version
+	// distributions aren't inflated by the full inventory carried on every event.
+	if scoped := usedBinaryVersions(event.ScanType, event.BinaryVersions); len(scoped) > 0 {
+		attrs["used_binary_versions"] = scoped
+	}
 	if event.IncludeFirstRun {
 		attrs["first_run"] = c.IsFirstRun()
 	}
@@ -284,6 +321,9 @@ func (c *Client) TrackOperation(ctx context.Context, event OperationEvent) {
 	}
 	if event.Detailed != nil {
 		attrs["detailed"] = *event.Detailed
+	}
+	if event.Notice != "" {
+		attrs["notice"] = event.Notice
 	}
 	c.trackOperationResult(ctx, event.Operation, attrs, event.Failure)
 }

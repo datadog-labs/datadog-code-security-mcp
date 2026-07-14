@@ -65,6 +65,7 @@ func runGenerateSBOM(path string, workingDir string, outputJSON bool) error {
 	event := telemetry.OperationEvent{
 		Operation: "generate_sbom",
 		StartedAt: time.Now(),
+		ScanType:  string(types.DetectionTypeSBOM),
 	}
 	defer func() { trackCLIOperation(ctx, event) }()
 
@@ -83,6 +84,9 @@ func runGenerateSBOM(path string, workingDir string, outputJSON bool) error {
 	if result != nil {
 		findingsCount := result.Summary.TotalComponents
 		event.FindingsCount = &findingsCount
+		if result.Notice != nil {
+			event.Notice = result.Notice.Message
+		}
 	}
 	if err != nil {
 		return fail(err)
