@@ -16,7 +16,8 @@ func formatScanResult(result *scan.ScanResult) *mcp.CallToolResult {
 	output := "# 🛡️ Security Scan Results\n\n"
 
 	// Show errors if present
-	if len(result.Errors) > 0 {
+	hasErrors := len(result.Errors) > 0
+	if hasErrors {
 		output += "⚠️ **Errors encountered:**\n\n"
 		for _, err := range result.Errors {
 			output += fmt.Sprintf("- **%s**: %s\n", err.DetectionType, err.Error)
@@ -41,8 +42,9 @@ func formatScanResult(result *scan.ScanResult) *mcp.CallToolResult {
 		output += "\n"
 	}
 
-	if len(result.Errors) > 0 {
-		// If there were errors but we have some results, continue showing them
+	// When errors were surfaced, decide once what follows: with no findings
+	// there is nothing more to show; otherwise separate them from the summary.
+	if hasErrors {
 		if result.Summary.Total == 0 {
 			return mcp.NewToolResultText(output)
 		}

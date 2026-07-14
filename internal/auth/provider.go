@@ -7,6 +7,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/datadog-labs/datadog-code-security-mcp/internal/constants"
 )
 
 // Credentials holds authentication credentials
@@ -111,11 +113,11 @@ func (p *Provider) getDDAuthCredentials(ctx context.Context) (*Credentials, erro
 
 		key, value := parts[0], parts[1]
 		switch key {
-		case "DD_API_KEY":
+		case constants.EnvAPIKey:
 			creds.APIKey = value
-		case "DD_APP_KEY":
+		case constants.EnvAPPKey:
 			creds.APPKey = value
-		case "DD_SITE":
+		case constants.EnvSite:
 			creds.Site = value
 		}
 	}

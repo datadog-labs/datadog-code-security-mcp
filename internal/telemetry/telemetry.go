@@ -216,31 +216,6 @@ func (c *Client) TrackError(ctx context.Context, err error, message string, attr
 	})
 }
 
-// TrackRaw sends an event with a preassembled attributes blob (json.RawMessage).
-// The blob is validated; if invalid it is silently dropped. Prefer the typed API.
-func (c *Client) TrackRaw(ctx context.Context, status Status, message string, rawAttrs json.RawMessage) {
-	if c == nil || !c.enabled {
-		return
-	}
-	if rawAttrs != nil && !json.Valid(rawAttrs) {
-		fmt.Fprintf(os.Stderr, "[telemetry] TrackRaw: invalid JSON attributes, dropping event\n")
-		return
-	}
-
-	var attrs map[string]any
-	if rawAttrs != nil {
-		if err := json.Unmarshal(rawAttrs, &attrs); err != nil {
-			return
-		}
-	}
-
-	c.Track(ctx, Event{
-		Status:     status,
-		Message:    message,
-		Attributes: attrs,
-	})
-}
-
 // buildLogObject merges the client's invariant fields with the per-call event.
 func (c *Client) buildLogObject(e Event) map[string]any {
 	status := e.Status

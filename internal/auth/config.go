@@ -5,6 +5,8 @@ import (
 	"os"
 	"regexp"
 	"strings"
+
+	"github.com/datadog-labs/datadog-code-security-mcp/internal/constants"
 )
 
 // Config holds authentication configuration
@@ -37,10 +39,10 @@ var domainRegex = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9](
 // LoadConfig loads authentication configuration from environment variables
 func LoadConfig() (*Config, error) {
 	cfg := &Config{
-		APIKey:       os.Getenv("DD_API_KEY"),
-		APPKey:       os.Getenv("DD_APP_KEY"),
-		Site:         os.Getenv("DD_SITE"),
-		DDAuthDomain: os.Getenv("DD_AUTH_DOMAIN"),
+		APIKey:       os.Getenv(constants.EnvAPIKey),
+		APPKey:       os.Getenv(constants.EnvAPPKey),
+		Site:         os.Getenv(constants.EnvSite),
+		DDAuthDomain: os.Getenv(constants.EnvAuthDomain),
 	}
 
 	// Default site

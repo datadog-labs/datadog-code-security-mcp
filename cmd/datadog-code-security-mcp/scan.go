@@ -82,34 +82,31 @@ Examples:
 	return cmd
 }
 
-// loadAuthToEnv attempts to load Datadog credentials from the auth provider and
-// sets them as environment variables. Errors are silently ignored so callers can
-// fall back to env vars already set by the user.
-//
-// TODO(refactor): this duplicates the credential-loading logic in auth.go's
-// setAuthCredentials. Both should be consolidated into internal/auth so the CLI
-// and MCP paths share a single implementation. Track in a follow-up PR.
+// loadAuthToEnv attempts to load Datadog credentials and export them as
+// environment variables for the scanner subprocess. Unlike the MCP path, errors
+// are intentionally ignored so the CLI can fall back to env vars the user may
+// have already set. The shared logic lives in internal/auth.
 func loadAuthToEnv(ctx context.Context) {
-	authConfig, err := auth.LoadConfig()
-	if err != nil || !authConfig.IsConfigured() {
-		return
-	}
-	provider, err := auth.NewProvider(authConfig)
-	if err != nil {
-		return
-	}
-	creds, err := provider.GetCredentials(ctx)
-	if err != nil || creds == nil {
-		return
-	}
-	if creds.APIKey != "" {
-		_ = os.Setenv("DD_API_KEY", creds.APIKey)
-	}
-	if creds.APPKey != "" {
-		_ = os.Setenv("DD_APP_KEY", creds.APPKey)
-	}
-	if creds.Site != "" {
-		_ = os.Setenv("DD_SITE", creds.Site)
+	_, _ = auth.LoadAndApplyToEnv(ctx)
+}
+
+// resolveScanTypes maps a CLI scan-type argument to the concrete detection
+// types to run. "all" expands to every security scan type. It is the single
+// source of truth for this mapping.
+func resolveScanTypes(scanType string) ([]string, error) {
+	switch scanType {
+	case "all":
+		return types.SecurityScanTypes(), nil
+	case "sast":
+		return []string{string(types.DetectionTypeSAST)}, nil
+	case "secrets":
+		return []string{string(types.DetectionTypeSecrets)}, nil
+	case "sca":
+		return []string{string(types.DetectionTypeSCA)}, nil
+	case "iac":
+		return []string{string(types.DetectionTypeIaC)}, nil
+	default:
+		return nil, fmt.Errorf("invalid scan type: %s (valid options: all, sast, secrets, sca, iac)", scanType)
 	}
 }
 
@@ -119,10 +116,9 @@ func runDirectScan(scanType string, paths []string, workingDir string, outputJSO
 	authMethod := detectAuthMethod()
 	loadAuthToEnv(ctx)
 	scanType = strings.ToLower(scanType)
-	scanTypes := []string{scanType}
-	if scanType == "all" {
-		scanTypes = types.SecurityScanTypes()
-	}
+	// resolveScanTypes is the single source of truth for the scan-type → concrete
+	// detection-types mapping; both telemetry and the scan args derive from it.
+	scanTypes, scanTypesErr := resolveScanTypes(scanType)
 	outputFormat := telemetry.OutputFormatHuman
 	if outputJSON {
 		outputFormat = telemetry.OutputFormatJSON
@@ -135,11 +131,24 @@ func runDirectScan(scanType string, paths []string, workingDir string, outputJSO
 	}
 	defer func() { trackCLIScan(ctx, tracking) }()
 
+	// telemetryTypes attributes a pre-execution failure. For an unrecognized
+	// scan type we fall back to the raw argument so the event still reflects
+	// what the user asked for.
+	telemetryTypes := scanTypes
+	if scanTypesErr != nil {
+		telemetryTypes = []string{scanType}
+	}
+
 	// fail records a pre-execution failure as the canonical outcome. The
 	// deferred emit above sends exactly one event on every return path.
 	fail := func(err error) error {
-		tracking.Outcome = scan.NewFailedOutcome(scanTypes, err)
+		tracking.Outcome = scan.NewFailedOutcome(telemetryTypes, err)
 		return err
+	}
+
+	if scanTypesErr != nil {
+		tracking.PathsCount = len(paths)
+		return fail(scanTypesErr)
 	}
 
 	if len(paths) == 0 {
@@ -149,22 +158,7 @@ func runDirectScan(scanType string, paths []string, workingDir string, outputJSO
 	scanArgs := scan.ScanArgs{
 		FilePaths:  paths,
 		WorkingDir: workingDir,
-	}
-
-	switch scanType {
-	case "all":
-		scanArgs.ScanTypes = types.SecurityScanTypes()
-	case "sast":
-		scanArgs.ScanTypes = []string{string(types.DetectionTypeSAST)}
-	case "secrets":
-		scanArgs.ScanTypes = []string{string(types.DetectionTypeSecrets)}
-	case "sca":
-		scanArgs.ScanTypes = []string{string(types.DetectionTypeSCA)}
-	case "iac":
-		scanArgs.ScanTypes = []string{string(types.DetectionTypeIaC)}
-	default:
-		tracking.PathsCount = len(paths)
-		return fail(fmt.Errorf("invalid scan type: %s (valid options: all, sast, secrets, sca, iac)", scanType))
+		ScanTypes:  scanTypes,
 	}
 
 	outcome := scan.ExecuteScan(ctx, scanArgs)

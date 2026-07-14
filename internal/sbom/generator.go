@@ -126,7 +126,7 @@ func (g *Generator) Generate(ctx context.Context, args types.SBOMArgs) (*types.S
 		result.Notice = &types.ScanNotice{
 			DetectionType: string(types.DetectionTypeSBOM),
 			Message:       types.NoComponentsDetectedMessage,
-			Hint:          getManualSBOMSuggestion(),
+			Hint:          types.ManualSBOMSuggestion,
 		}
 	}
 
@@ -230,11 +230,6 @@ func retryHintFromError(err error) string {
 
 	// Default hint
 	return ""
-}
-
-func getManualSBOMSuggestion() string {
-	return "The package manager may not be supported. Supported: .NET (NuGet), C++ (Conan), Go (modules), Java (Gradle/Maven), JavaScript (NPM/PNPM/Yarn), PHP (Composer), Python (pdm/pipenv/poetry/requirements/uv), Ruby (Bundler), Rust (Cargo). " +
-		"Claude should perform manual SBOM generation by reading lock files (package.json, requirements.txt, go.mod, pom.xml, Gemfile.lock, Cargo.lock, composer.lock, etc.) and extracting dependencies."
 }
 
 // CycloneDX structs for parsing SBOM output

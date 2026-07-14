@@ -14,7 +14,6 @@ import (
 type Status string
 
 const (
-	StatusDebug Status = "debug"
 	StatusInfo  Status = "info"
 	StatusWarn  Status = "warn"
 	StatusError Status = "error"

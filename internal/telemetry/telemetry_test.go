@@ -268,33 +268,6 @@ func TestNoSensitiveFields(t *testing.T) {
 	}
 }
 
-// TestTrackRaw_InvalidJSON verifies TrackRaw drops malformed attributes silently.
-func TestTrackRaw_InvalidJSON(t *testing.T) {
-	srv, ch := captureServer(t)
-	c := newTestClient(t, srv)
-
-	c.TrackRaw(context.Background(), StatusInfo, "test", json.RawMessage(`not json`))
-
-	select {
-	case <-ch:
-		t.Error("malformed JSON raw attrs should be dropped, not sent")
-	case <-time.After(200 * time.Millisecond):
-	}
-}
-
-// TestTrackRaw_ValidJSON verifies TrackRaw sends valid JSON attrs.
-func TestTrackRaw_ValidJSON(t *testing.T) {
-	srv, ch := captureServer(t)
-	c := newTestClient(t, srv)
-
-	c.TrackRaw(context.Background(), StatusInfo, "raw test", json.RawMessage(`{"custom_key":"custom_val"}`))
-
-	items := waitEvent(t, ch)
-	if items[0]["custom_key"] != "custom_val" {
-		t.Errorf("custom_key not present in payload: %v", items[0])
-	}
-}
-
 // TestURLQueryParams verifies the intake URL contains required query parameters.
 func TestURLQueryParams(t *testing.T) {
 	withTempHome(t)

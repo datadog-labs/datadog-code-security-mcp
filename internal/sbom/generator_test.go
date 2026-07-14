@@ -168,7 +168,7 @@ func TestCreateContext_WithoutDeadline(t *testing.T) {
 }
 
 func TestGetManualSBOMSuggestion(t *testing.T) {
-	suggestion := getManualSBOMSuggestion()
+	suggestion := types.ManualSBOMSuggestion
 
 	if suggestion == "" {
 		t.Error("Expected non-empty manual SBOM suggestion")
