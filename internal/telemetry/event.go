@@ -104,6 +104,9 @@ var errorRules = []errorRule{
 	{kind: ErrKindAuthRequired, contains: []string{constants.ErrAPIKeyRequired}},
 	{kind: ErrKindAuthRequired, contains: []string{"Authentication required"}},
 	{kind: ErrKindAuthRequired, contains: []string{"DD_API_KEY"}},
+	// datadog-static-analyzer surfaces this when it cannot fetch rules from the
+	// Datadog API — in practice almost always a rejected/missing API key.
+	{kind: ErrKindAuthRequired, contains: []string{"error when reading rules from API"}, message: "failed to read security rules from API"},
 
 	{kind: ErrKindBinaryNotFound, contains: []string{"not found in PATH"}},
 	{kind: ErrKindBinaryNotFound, contains: []string{"executable file not found"}},
@@ -122,6 +125,11 @@ var errorRules = []errorRule{
 	{kind: ErrKindNetwork, contains: []string{"no such host"}},
 	{kind: ErrKindNetwork, contains: []string{"dial tcp"}},
 	{kind: ErrKindNetwork, contains: []string{"network"}},
+
+	// SCA scans generate an SBOM as their first step; when the generator finds
+	// no dependency manifests it reports this via result.Error rather than a Go
+	// error, but the SCA scanner re-wraps it into one (see internal/scan/sca.go).
+	{kind: ErrKindScanError, contains: []string{"No components detected by datadog-sbom-generator"}, message: "no components detected by SBOM generator"},
 
 	{kind: ErrKindScanError, contains: []string{"scan"}},
 	{kind: ErrKindScanError, contains: []string{"failed"}},

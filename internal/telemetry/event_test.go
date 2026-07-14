@@ -95,6 +95,8 @@ func TestCategorizeErrorKnownKinds(t *testing.T) {
 		want string
 	}{
 		{"detection failed: scanner execution failed: exit status 1\nstderr: Error: Cannot find variable DD_API_KEY", ErrKindAuthRequired},
+		{"sast: detection failed: scanner execution failed: exit status 1\nstderr: Error: error when reading rules from API", ErrKindAuthRequired},
+		{`SBOM generation error for path ".": No components detected by datadog-sbom-generator`, ErrKindScanError},
 		{"datadog-static-analyzer not found in PATH", ErrKindBinaryNotFound},
 		{"path does not exist: ./nope", ErrKindPathNotFound},
 		{"scanner execution failed: exit status 127", ErrKindScanError},
@@ -105,5 +107,39 @@ func TestCategorizeErrorKnownKinds(t *testing.T) {
 		if got := CategorizeError(fmt.Errorf("%s", tc.msg)); got != tc.want {
 			t.Errorf("CategorizeError(%q) = %q, want %q", tc.msg, got, tc.want)
 		}
+	}
+}
+
+func TestErrorInfoFromErrorRulesAPIReadFailure(t *testing.T) {
+	// datadog-static-analyzer emits this when it cannot fetch rules from the
+	// Datadog API — almost always caused by a rejected or missing API key.
+	raw := "sast: detection failed: scanner execution failed: exit status 1\nstderr: Error: error when reading rules from API"
+	info := ErrorInfoFromError(fmt.Errorf("%s", raw))
+	if info == nil {
+		t.Fatal("expected non-nil ErrorInfo")
+	}
+	if info.Kind != ErrKindAuthRequired {
+		t.Errorf("kind = %q, want %q", info.Kind, ErrKindAuthRequired)
+	}
+	wantMessage := "failed to read security rules from API (exit status 1)"
+	if info.Message != wantMessage {
+		t.Errorf("message = %q, want %q", info.Message, wantMessage)
+	}
+}
+
+func TestErrorInfoFromErrorRulesNoComponentsDetected(t *testing.T) {
+	// internal/scan/sca.go wraps this into a real error when the SBOM
+	// generator finds no dependency manifests during an SCA scan.
+	raw := `SBOM generation error for path ".": No components detected by datadog-sbom-generator`
+	info := ErrorInfoFromError(fmt.Errorf("%s", raw))
+	if info == nil {
+		t.Fatal("expected non-nil ErrorInfo")
+	}
+	if info.Kind != ErrKindScanError {
+		t.Errorf("kind = %q, want %q", info.Kind, ErrKindScanError)
+	}
+	wantMessage := "no components detected by SBOM generator"
+	if info.Message != wantMessage {
+		t.Errorf("message = %q, want %q", info.Message, wantMessage)
 	}
 }
