@@ -3,6 +3,7 @@ package scan
 import (
 	"context"
 	"errors"
+	"os/exec"
 	"testing"
 
 	"github.com/datadog-labs/datadog-code-security-mcp/internal/binary"
@@ -98,8 +99,13 @@ func TestGetScannerFor_KnownTypes(t *testing.T) {
 }
 
 // TestExecuteParallelScans_SCABinaryMissing tests that SCA gracefully errors
-// when required binaries (datadog-sbom-generator, datadog-security-cli) are not in PATH.
+// when required binaries (datadog-sbom-generator, datadog-security-cli) are
+// not in PATH. PATH is cleared so this is deterministic even on machines that
+// have the binaries installed locally (otherwise this would instead exercise
+// the "no components detected" notice path, which is not an error).
 func TestExecuteParallelScans_SCABinaryMissing(t *testing.T) {
+	t.Setenv("PATH", "")
+
 	ctx := context.Background()
 	args := ScanArgs{
 		FilePaths:  []string{"."},
@@ -121,6 +127,45 @@ func TestExecuteParallelScans_SCABinaryMissing(t *testing.T) {
 
 	if result.PartialResult {
 		t.Error("Expected PartialResult=false when all scans fail")
+	}
+}
+
+// TestExecuteParallelScans_SCANoComponents verifies that when the SBOM
+// generator runs successfully but finds no components (e.g. a directory with
+// no recognized dependency manifests), SCA completes successfully with a
+// notice rather than an error.
+func TestExecuteParallelScans_SCANoComponents(t *testing.T) {
+	if _, err := exec.LookPath("datadog-sbom-generator"); err != nil {
+		t.Skip("datadog-sbom-generator not installed; skipping")
+	}
+
+	ctx := context.Background()
+	args := ScanArgs{
+		// This test file's own directory has no dependency manifest (go.mod
+		// lives at the repo root), so it reliably yields zero components.
+		FilePaths:  []string{"."},
+		WorkingDir: ".",
+		ScanTypes:  []string{"sca"},
+	}
+
+	binMgr := binary.NewBinaryManager()
+	outcome := ExecuteParallelScans(ctx, args, binMgr)
+	result := outcome.Result()
+
+	if len(result.Errors) != 0 {
+		t.Errorf("Expected 0 errors for zero components, got %d: %v", len(result.Errors), result.Errors)
+	}
+	if len(result.Notices) != 1 {
+		t.Fatalf("Expected 1 notice for zero components, got %d", len(result.Notices))
+	}
+	if result.Notices[0].DetectionType != "sca" {
+		t.Errorf("Expected notice for sca, got %q", result.Notices[0].DetectionType)
+	}
+	if result.Summary.Total != 0 {
+		t.Errorf("Expected 0 findings, got %d", result.Summary.Total)
+	}
+	if result.PartialResult {
+		t.Error("Expected PartialResult=false; a notice is not a failure")
 	}
 }
 

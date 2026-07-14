@@ -3,6 +3,7 @@ package scan
 import (
 	"context"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/datadog-labs/datadog-code-security-mcp/internal/binary"
@@ -234,6 +235,71 @@ func TestDeduplicateComponents_PreservesOrder(t *testing.T) {
 	}
 	if result[2].Name != "third" {
 		t.Errorf("expected third component to be 'third', got %q", result[2].Name)
+	}
+}
+
+func TestClassifySBOMResult_GenuineFailure(t *testing.T) {
+	result := &types.SBOMResult{
+		Error: &types.ScanError{
+			DetectionType: "sbom",
+			Error:         "binary validation failed",
+		},
+	}
+
+	notice, err := classifySBOMResult(".", result)
+	if err == nil {
+		t.Fatal("expected an error for a genuine SBOM generation failure")
+	}
+	if notice != nil {
+		t.Errorf("expected nil notice alongside an error, got %+v", notice)
+	}
+	if !strings.Contains(err.Error(), "binary validation failed") {
+		t.Errorf("expected error to include the underlying message, got: %v", err)
+	}
+}
+
+func TestClassifySBOMResult_NoComponentsNotice(t *testing.T) {
+	result := &types.SBOMResult{
+		Notice: &types.ScanNotice{
+			DetectionType: "sbom",
+			Message:       types.NoComponentsDetectedMessage,
+			Hint:          "some hint",
+		},
+	}
+
+	notice, err := classifySBOMResult(".", result)
+	if err != nil {
+		t.Fatalf("expected no error for a zero-components notice, got: %v", err)
+	}
+	if notice == nil {
+		t.Fatal("expected a non-nil notice")
+	}
+	if notice.DetectionType != string(types.DetectionTypeSCA) {
+		t.Errorf("expected notice to be re-tagged as %q, got %q", types.DetectionTypeSCA, notice.DetectionType)
+	}
+	if notice.Message != types.NoComponentsDetectedMessage {
+		t.Errorf("unexpected notice message: %q", notice.Message)
+	}
+}
+
+func TestClassifySBOMResult_Success(t *testing.T) {
+	result := &types.SBOMResult{
+		Components: []types.Library{{Name: "lodash", Version: "4.17.21"}},
+	}
+
+	notice, err := classifySBOMResult(".", result)
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+	if notice != nil {
+		t.Errorf("expected no notice for a successful result with components, got %+v", notice)
+	}
+}
+
+func TestSCAScanner_LastNotice_DefaultsToNil(t *testing.T) {
+	s := &SCAScanner{}
+	if s.LastNotice() != nil {
+		t.Error("expected LastNotice to be nil before any Execute call")
 	}
 }
 

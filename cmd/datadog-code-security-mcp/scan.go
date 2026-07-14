@@ -227,60 +227,75 @@ func outputResultsHuman(result *scan.ScanResult, scanType string) error {
 		fmt.Println()
 	}
 
-	// No violations found
+	// Violations (or lack thereof). Errors/Notices are printed below
+	// regardless, so a clean scan doesn't hide a partial failure or notice
+	// from another scan type.
 	if result.Summary.Total == 0 {
 		fmt.Println("✅ No security issues found!")
-		return nil
-	}
-
-	// Detailed violations
-	fmt.Println("─────────────────────────────────────────────────────────────────")
-	fmt.Println("Detailed Violations:")
-	fmt.Println("─────────────────────────────────────────────────────────────────")
-	fmt.Println()
-
-	// Group and display violations by detection type
-	for detType, violations := range result.Results {
-		if len(violations) == 0 {
-			continue
-		}
-
-		fmt.Printf("▼ %s (%d issues)\n", strings.ToUpper(string(detType)), len(violations))
+	} else {
+		fmt.Println("─────────────────────────────────────────────────────────────────")
+		fmt.Println("Detailed Violations:")
+		fmt.Println("─────────────────────────────────────────────────────────────────")
 		fmt.Println()
 
-		for i, v := range violations {
-			// Severity icon
-			icon := getSeverityIcon(v.Severity)
-
-			// Print violation header
-			fmt.Printf("%d. %s [%s] %s\n", i+1, icon, v.Severity, v.Rule)
-
-			// Location
-			fmt.Printf("   Location: %s:%d\n", v.File, v.Line)
-
-			// Message
-			if v.Message != "" {
-				fmt.Printf("   Message: %s\n", v.Message)
+		// Group and display violations by detection type
+		for detType, violations := range result.Results {
+			if len(violations) == 0 {
+				continue
 			}
 
-			// Rule URL
-			if v.RuleURL != "" {
-				fmt.Printf("   Documentation: %s\n", v.RuleURL)
-			}
-
+			fmt.Printf("▼ %s (%d issues)\n", strings.ToUpper(string(detType)), len(violations))
 			fmt.Println()
+
+			for i, v := range violations {
+				// Severity icon
+				icon := getSeverityIcon(v.Severity)
+
+				// Print violation header
+				fmt.Printf("%d. %s [%s] %s\n", i+1, icon, v.Severity, v.Rule)
+
+				// Location
+				fmt.Printf("   Location: %s:%d\n", v.File, v.Line)
+
+				// Message
+				if v.Message != "" {
+					fmt.Printf("   Message: %s\n", v.Message)
+				}
+
+				// Rule URL
+				if v.RuleURL != "" {
+					fmt.Printf("   Documentation: %s\n", v.RuleURL)
+				}
+
+				fmt.Println()
+			}
 		}
 	}
 
 	// Errors if any
 	if len(result.Errors) > 0 {
 		fmt.Println("─────────────────────────────────────────────────────────────────")
-		fmt.Println("⚠️  Warnings:")
+		fmt.Println("⚠️  Errors encountered:")
 		fmt.Println("─────────────────────────────────────────────────────────────────")
 		for _, scanErr := range result.Errors {
 			fmt.Printf("  • %s: %s\n", scanErr.DetectionType, scanErr.Error)
 			if scanErr.Hint != "" {
 				fmt.Printf("    Hint: %s\n", scanErr.Hint)
+			}
+		}
+		fmt.Println()
+	}
+
+	// Non-fatal notices (e.g. no components detected). Unlike errors, these
+	// come from scans that completed successfully.
+	if len(result.Notices) > 0 {
+		fmt.Println("─────────────────────────────────────────────────────────────────")
+		fmt.Println("ℹ️  Notices:")
+		fmt.Println("─────────────────────────────────────────────────────────────────")
+		for _, notice := range result.Notices {
+			fmt.Printf("  • %s: %s\n", notice.DetectionType, notice.Message)
+			if notice.Hint != "" {
+				fmt.Printf("    Hint: %s\n", notice.Hint)
 			}
 		}
 		fmt.Println()

@@ -69,6 +69,7 @@ func (c *Client) TrackScan(ctx context.Context, event ScanEvent) {
 			report.duration = execution.Duration
 			report.err = execution.Err
 			report.findings = execution.Findings
+			report.notice = execution.Notice
 		}
 		c.trackPerScan(ctx, event.Interface, base, report)
 		return
@@ -92,6 +93,10 @@ func (c *Client) TrackScan(ctx context.Context, event ScanEvent) {
 		if failures := scanErrorKindBreakdown(event.Outcome); len(failures) > 0 {
 			attrs["partial_errors_breakdown"] = failures
 		}
+		attrs["notices_count"] = len(result.Notices)
+		if notices := scanNoticeBreakdown(event.Outcome); len(notices) > 0 {
+			attrs["notices_breakdown"] = notices
+		}
 	}
 	c.trackOperationResult(ctx, operation, attrs, invocationErr)
 
@@ -107,6 +112,7 @@ func (c *Client) TrackScan(ctx context.Context, event ScanEvent) {
 			findings:   execution.Findings,
 			executed:   true,
 			err:        execution.Err,
+			notice:     execution.Notice,
 		})
 	}
 }
@@ -176,6 +182,9 @@ type perScanReport struct {
 	findings   []types.Violation
 	executed   bool
 	err        error
+	// notice is a non-fatal, informational note (e.g. no components
+	// detected). It never affects success/failure status.
+	notice *scan.ScanNotice
 }
 
 func (c *Client) trackPerScan(ctx context.Context, iface Interface, base scanBaseAttributes, report perScanReport) {
@@ -186,6 +195,11 @@ func (c *Client) trackPerScan(ctx context.Context, iface Interface, base scanBas
 	if report.executed && report.err == nil {
 		attrs["findings_count"] = len(report.findings)
 		attrs["severity_breakdown"] = severityBreakdown(report.findings)
+	}
+	if report.notice != nil {
+		// Notice messages are fixed, curated strings (never raw error text),
+		// so they're safe to log verbatim.
+		attrs["notice"] = report.notice.Message
 	}
 	c.trackOperationResult(ctx, operation, attrs, report.err)
 }
@@ -213,6 +227,19 @@ func scanErrorKindBreakdown(outcome *scan.ScanOutcome) map[string]string {
 		}
 	}
 	return failures
+}
+
+// scanNoticeBreakdown maps detection type to its curated notice message, for
+// scanners that completed successfully but have something non-fatal worth
+// surfacing (e.g. no components detected).
+func scanNoticeBreakdown(outcome *scan.ScanOutcome) map[string]string {
+	notices := make(map[string]string)
+	for _, execution := range outcome.Executions() {
+		if execution.Notice != nil {
+			notices[string(execution.DetectionType)] = execution.Notice.Message
+		}
+	}
+	return notices
 }
 
 func severityBreakdown(findings []types.Violation) map[string]int {

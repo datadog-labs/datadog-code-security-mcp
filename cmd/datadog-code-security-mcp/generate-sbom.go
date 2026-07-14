@@ -120,6 +120,19 @@ func outputSBOMResultsHuman(result *types.SBOMResult) error {
 		}
 	}
 
+	// Check for non-fatal notices (e.g. no components detected)
+	if result.Notice != nil {
+		fmt.Printf("ℹ️  %s\n", result.Notice.Message)
+		if result.Notice.Hint != "" {
+			fmt.Printf("Hint: %s\n", result.Notice.Hint)
+		}
+		fmt.Println()
+
+		if len(result.Components) == 0 {
+			return nil
+		}
+	}
+
 	// Summary
 	fmt.Printf("Total Components: %d\n", result.Summary.TotalComponents)
 	fmt.Println()

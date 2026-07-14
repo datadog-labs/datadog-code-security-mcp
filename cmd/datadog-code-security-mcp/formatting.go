@@ -25,6 +25,23 @@ func formatScanResult(result *scan.ScanResult) *mcp.CallToolResult {
 			}
 		}
 		output += "\n"
+	}
+
+	// Show non-fatal notices (e.g. no components detected). Unlike errors,
+	// these come from scans that completed successfully and never affect
+	// success/failure status.
+	if len(result.Notices) > 0 {
+		output += "ℹ️ **Notices:**\n\n"
+		for _, notice := range result.Notices {
+			output += fmt.Sprintf("- **%s**: %s\n", notice.DetectionType, notice.Message)
+			if notice.Hint != "" {
+				output += fmt.Sprintf("  - *Hint:* %s\n", notice.Hint)
+			}
+		}
+		output += "\n"
+	}
+
+	if len(result.Errors) > 0 {
 		// If there were errors but we have some results, continue showing them
 		if result.Summary.Total == 0 {
 			return mcp.NewToolResultText(output)
@@ -100,6 +117,17 @@ func formatSBOMResult(result *scan.SBOMResult) *mcp.CallToolResult {
 			output += fmt.Sprintf("**Hint:** %s\n\n", result.Error.Hint)
 		}
 		// If there are no components, return early
+		if len(result.Components) == 0 {
+			return mcp.NewToolResultText(output)
+		}
+	}
+
+	// Check for non-fatal notices (e.g. no components detected)
+	if result.Notice != nil {
+		output += fmt.Sprintf("ℹ️ **%s**\n\n", result.Notice.Message)
+		if result.Notice.Hint != "" {
+			output += fmt.Sprintf("**Hint:** %s\n\n", result.Notice.Hint)
+		}
 		if len(result.Components) == 0 {
 			return mcp.NewToolResultText(output)
 		}

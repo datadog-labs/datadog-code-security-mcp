@@ -19,6 +19,7 @@ type (
 	ScanSummary      = types.ScanSummary
 	ScanResult       = types.ScanResult
 	ScanError        = types.ScanError
+	ScanNotice       = types.ScanNotice
 	GenerateSBOMArgs = types.SBOMArgs
 	SBOMSummary      = types.SBOMSummary
 	SBOMResult       = types.SBOMResult
@@ -33,6 +34,10 @@ type ScanExecution struct {
 	Findings      []types.Violation
 	Duration      time.Duration
 	Err           error
+	// Notice is a non-fatal, informational note about the execution (e.g. no
+	// components detected by the SBOM generator). It is orthogonal to Err:
+	// a successful execution (Err == nil) may still carry a Notice.
+	Notice *types.ScanNotice
 }
 
 // ScanOutcome owns the complete state of a scan invocation. Public results,
@@ -167,6 +172,18 @@ func (o *ScanOutcome) scanErrors() []ScanError {
 	return errors
 }
 
+// scanNotices collects per-scanner non-fatal notices without projecting the
+// full result. Unlike scanErrors, these come from successful executions.
+func (o *ScanOutcome) scanNotices() []ScanNotice {
+	notices := make([]ScanNotice, 0)
+	for _, execution := range o.executions {
+		if execution.Notice != nil {
+			notices = append(notices, *execution.Notice)
+		}
+	}
+	return notices
+}
+
 // Result projects the user-facing result from the canonical execution records.
 func (o *ScanOutcome) Result() *ScanResult {
 	if o == nil || len(o.executions) == 0 {
@@ -187,6 +204,7 @@ func (o *ScanOutcome) Result() *ScanResult {
 		Summary:       buildSummary(allFindings),
 		Results:       resultsByType,
 		Errors:        o.scanErrors(),
+		Notices:       o.scanNotices(),
 		PartialResult: o.HasSuccessfulExecution() && o.HasFailedExecution(),
 	}
 }

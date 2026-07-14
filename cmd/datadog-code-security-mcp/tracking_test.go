@@ -90,9 +90,13 @@ func eventByOperation(events []map[string]any, op string) map[string]any {
 
 func testScanOutcome(result *scan.ScanResult, durations map[string]int64, scanTypes ...string) *scan.ScanOutcome {
 	errorsByType := make(map[string]error)
+	noticesByType := make(map[string]scan.ScanNotice)
 	if result != nil {
 		for _, scanErr := range result.Errors {
 			errorsByType[scanErr.DetectionType] = errors.New(scanErr.Error)
+		}
+		for _, notice := range result.Notices {
+			noticesByType[notice.DetectionType] = notice
 		}
 	}
 	executions := make([]scan.ScanExecution, 0, len(scanTypes))
@@ -101,11 +105,16 @@ func testScanOutcome(result *scan.ScanResult, durations map[string]int64, scanTy
 		if result != nil {
 			findings = result.Results[types.DetectionType(scanType)]
 		}
+		var notice *scan.ScanNotice
+		if n, ok := noticesByType[scanType]; ok {
+			notice = &n
+		}
 		executions = append(executions, scan.ScanExecution{
 			DetectionType: types.DetectionType(scanType),
 			Findings:      findings,
 			Duration:      time.Duration(durations[scanType]) * time.Millisecond,
 			Err:           errorsByType[scanType],
+			Notice:        notice,
 		})
 	}
 	return scan.NewCompletedOutcome(executions)
@@ -576,6 +585,61 @@ func TestTrackMCPScan_PartialErrorsBreakdown(t *testing.T) {
 	}
 	if bd["secrets"] == nil {
 		t.Error("partial_errors_breakdown must contain an entry for the failed scan type")
+	}
+}
+
+// TestTrackMCPScan_NoticesBreakdown verifies that a non-fatal notice (e.g. no
+// components detected during an SCA scan) shows up as notices_breakdown on
+// the aggregate event and as a "notice" attribute on the per-scan event,
+// without affecting success/failure status.
+func TestTrackMCPScan_NoticesBreakdown(t *testing.T) {
+	srv, ch := captureCmdServer(t)
+	telemetryClient = newCmdTestTelemetryClient(t, srv)
+	t.Cleanup(func() { telemetryClient = nil })
+
+	result := &scan.ScanResult{
+		Summary: types.ScanSummary{
+			Total:           1,
+			BySeverity:      map[string]int{"HIGH": 1},
+			ByDetectionType: map[string]int{"sast": 1},
+		},
+		Results: map[types.DetectionType][]types.Violation{
+			types.DetectionTypeSAST: {{Severity: "HIGH", DetectionType: types.DetectionTypeSAST}},
+			types.DetectionTypeSCA:  {},
+		},
+		Notices: []types.ScanNotice{{DetectionType: "sca", Message: types.NoComponentsDetectedMessage}},
+	}
+	outcome := testScanOutcome(result, nil, "sast", "sca")
+	testTrackMCPScan(context.Background(), "code_security_scan", []string{"sast", "sca"}, outcome, time.Now(), 1, "", "none", nil)
+	flushTelemetry()
+
+	// aggregate + sast_scan + sca_scan
+	events := waitNEvents(t, ch, 3)
+
+	agg := eventByOperation(events, "code_security_scan")
+	if agg == nil {
+		t.Fatal("expected aggregate event")
+	}
+	if agg["success"] != true {
+		t.Errorf("aggregate success = %v, want true (a notice is not a failure)", agg["success"])
+	}
+	bd, ok := agg["notices_breakdown"].(map[string]any)
+	if !ok || bd == nil {
+		t.Fatalf("notices_breakdown missing or wrong type: %v", agg["notices_breakdown"])
+	}
+	if bd["sca"] != types.NoComponentsDetectedMessage {
+		t.Errorf("notices_breakdown[sca] = %v, want %q", bd["sca"], types.NoComponentsDetectedMessage)
+	}
+
+	sca := eventByOperation(events, "sca_scan")
+	if sca == nil {
+		t.Fatal("expected sca_scan per-scan event")
+	}
+	if sca["success"] != true {
+		t.Errorf("sca_scan success = %v, want true (a notice is not a failure)", sca["success"])
+	}
+	if sca["notice"] != types.NoComponentsDetectedMessage {
+		t.Errorf("sca_scan notice = %v, want %q", sca["notice"], types.NoComponentsDetectedMessage)
 	}
 }
 

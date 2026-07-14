@@ -96,7 +96,6 @@ func TestCategorizeErrorKnownKinds(t *testing.T) {
 	}{
 		{"detection failed: scanner execution failed: exit status 1\nstderr: Error: Cannot find variable DD_API_KEY", ErrKindAuthRequired},
 		{"sast: detection failed: scanner execution failed: exit status 1\nstderr: Error: error when reading rules from API", ErrKindAuthRequired},
-		{`SBOM generation error for path ".": No components detected by datadog-sbom-generator`, ErrKindScanError},
 		{"datadog-static-analyzer not found in PATH", ErrKindBinaryNotFound},
 		{"path does not exist: ./nope", ErrKindPathNotFound},
 		{"scanner execution failed: exit status 127", ErrKindScanError},
@@ -122,23 +121,6 @@ func TestErrorInfoFromErrorRulesAPIReadFailure(t *testing.T) {
 		t.Errorf("kind = %q, want %q", info.Kind, ErrKindAuthRequired)
 	}
 	wantMessage := "failed to read security rules from API (exit status 1)"
-	if info.Message != wantMessage {
-		t.Errorf("message = %q, want %q", info.Message, wantMessage)
-	}
-}
-
-func TestErrorInfoFromErrorRulesNoComponentsDetected(t *testing.T) {
-	// internal/scan/sca.go wraps this into a real error when the SBOM
-	// generator finds no dependency manifests during an SCA scan.
-	raw := `SBOM generation error for path ".": No components detected by datadog-sbom-generator`
-	info := ErrorInfoFromError(fmt.Errorf("%s", raw))
-	if info == nil {
-		t.Fatal("expected non-nil ErrorInfo")
-	}
-	if info.Kind != ErrKindScanError {
-		t.Errorf("kind = %q, want %q", info.Kind, ErrKindScanError)
-	}
-	wantMessage := "no components detected by SBOM generator"
 	if info.Message != wantMessage {
 		t.Errorf("message = %q, want %q", info.Message, wantMessage)
 	}

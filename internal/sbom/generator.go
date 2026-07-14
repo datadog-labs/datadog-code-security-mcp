@@ -119,11 +119,13 @@ func (g *Generator) Generate(ctx context.Context, args types.SBOMArgs) (*types.S
 		Components: libraries,
 	}
 
-	// Add hint if no components found
+	// Zero components is not a failure — the generator ran successfully and
+	// produced a valid (empty) result. Surface it as a non-fatal notice so
+	// callers don't mistake "nothing found" for "something broke."
 	if len(libraries) == 0 {
-		result.Error = &types.ScanError{
+		result.Notice = &types.ScanNotice{
 			DetectionType: string(types.DetectionTypeSBOM),
-			Error:         "No components detected by datadog-sbom-generator",
+			Message:       types.NoComponentsDetectedMessage,
 			Hint:          getManualSBOMSuggestion(),
 		}
 	}

@@ -126,11 +126,6 @@ var errorRules = []errorRule{
 	{kind: ErrKindNetwork, contains: []string{"dial tcp"}},
 	{kind: ErrKindNetwork, contains: []string{"network"}},
 
-	// SCA scans generate an SBOM as their first step; when the generator finds
-	// no dependency manifests it reports this via result.Error rather than a Go
-	// error, but the SCA scanner re-wraps it into one (see internal/scan/sca.go).
-	{kind: ErrKindScanError, contains: []string{"No components detected by datadog-sbom-generator"}, message: "no components detected by SBOM generator"},
-
 	{kind: ErrKindScanError, contains: []string{"scan"}},
 	{kind: ErrKindScanError, contains: []string{"failed"}},
 }
