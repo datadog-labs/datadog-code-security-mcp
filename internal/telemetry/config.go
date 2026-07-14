@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -209,12 +210,32 @@ func saveConfig(cfg persistedConfig, path string) error {
 	if err := tmp.Close(); err != nil {
 		return fmt.Errorf("close temp config: %w", err)
 	}
-	if err := os.Rename(tmpName, path); err != nil {
+	if err := renameWithRetry(tmpName, path); err != nil {
 		return fmt.Errorf("replace config: %w", err)
 	}
 
 	cleanup = false
 	return nil
+}
+
+// renameWithRetry renames oldpath to newpath, retrying a few times on
+// failure. Unlike POSIX rename(2), Windows' MoveFileEx can transiently fail
+// with a sharing violation when multiple processes/goroutines race to
+// replace the same destination file at nearly the same instant (there is no
+// cross-process lock around config updates by design). Retrying briefly
+// resolves that race; on POSIX this loop exits on the first attempt.
+func renameWithRetry(oldpath, newpath string) error {
+	const maxAttempts = 5
+	var err error
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		if err = os.Rename(oldpath, newpath); err == nil {
+			return nil
+		}
+		if attempt < maxAttempts-1 {
+			time.Sleep(time.Duration(attempt+1) * 5 * time.Millisecond)
+		}
+	}
+	return err
 }
 
 // updateConfig performs a targeted read-modify-write. The callback must only
