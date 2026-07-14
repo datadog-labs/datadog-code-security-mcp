@@ -77,7 +77,19 @@ func ExecuteParallelScans(ctx context.Context, args ScanArgs, binaryMgr *binary.
 func assembleOutcome(scanTypes []string, collected map[string]ScanExecution) *ScanOutcome {
 	executions := make([]ScanExecution, 0, len(scanTypes))
 	for _, scanType := range scanTypes {
-		executions = append(executions, collected[scanType])
+		execution, ok := collected[scanType]
+		if !ok {
+			// Defensive: each scan goroutine is expected to report exactly one
+			// result. If one didn't (e.g. a future early return before send),
+			// record an explicit error execution so the gap surfaces as a
+			// failure and ScanTypes() stays aligned with what was requested,
+			// instead of appending a zero-value with an empty DetectionType.
+			execution = ScanExecution{
+				DetectionType: types.DetectionType(scanType),
+				Err:           fmt.Errorf("no result reported for scan type: %s", scanType),
+			}
+		}
+		executions = append(executions, execution)
 	}
 	return NewCompletedOutcome(executions)
 }
