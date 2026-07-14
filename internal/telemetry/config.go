@@ -3,6 +3,7 @@ package telemetry
 import (
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"time"
@@ -218,21 +219,24 @@ func saveConfig(cfg persistedConfig, path string) error {
 	return nil
 }
 
-// renameWithRetry renames oldpath to newpath, retrying a few times on
-// failure. Unlike POSIX rename(2), Windows' MoveFileEx can transiently fail
-// with a sharing violation when multiple processes/goroutines race to
-// replace the same destination file at nearly the same instant (there is no
-// cross-process lock around config updates by design). Retrying briefly
-// resolves that race; on POSIX this loop exits on the first attempt.
+// renameWithRetry renames oldpath to newpath, retrying on failure. Unlike POSIX
+// rename(2), Windows' MoveFileEx can transiently fail with a sharing violation
+// when multiple processes/goroutines race to replace the same destination file
+// at nearly the same instant (there is no cross-process lock around config
+// updates by design). Retrying with backoff plus jitter — to desynchronize the
+// racing writers — resolves that contention; on POSIX this loop exits on the
+// first attempt.
 func renameWithRetry(oldpath, newpath string) error {
-	const maxAttempts = 5
+	const maxAttempts = 10
 	var err error
 	for attempt := 0; attempt < maxAttempts; attempt++ {
 		if err = os.Rename(oldpath, newpath); err == nil {
 			return nil
 		}
 		if attempt < maxAttempts-1 {
-			time.Sleep(time.Duration(attempt+1) * 5 * time.Millisecond)
+			backoff := time.Duration(attempt+1) * 5 * time.Millisecond
+			jitter := time.Duration(rand.Int63n(int64(5 * time.Millisecond)))
+			time.Sleep(backoff + jitter)
 		}
 	}
 	return err
