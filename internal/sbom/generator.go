@@ -65,7 +65,7 @@ func (g *Generator) Generate(ctx context.Context, args types.SBOMArgs) (*types.S
 			},
 		}, nil
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	// Create output file inside the secure directory
 	outputPath := filepath.Join(tempDir, "sbom.json")

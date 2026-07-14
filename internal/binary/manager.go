@@ -216,7 +216,7 @@ func (bm *BinaryManager) formatMissingBinaryError() error {
 			"1. Run the installation command above\n"+
 			"2. Retry the comprehensive security scan\n"+
 			"3. If installation fails, you may run partial scans as fallback\n\n"+
-			"This is a RECOVERABLE error. Install the binary and retry.",
+			"This is a RECOVERABLE error. Install the binary and retry",
 		bm.config.BinaryName,
 		purpose,
 		separator,
@@ -425,14 +425,14 @@ func (bm *BinaryManager) isPlatformSupported(os, arch string) bool {
 
 func (bm *BinaryManager) generateUnsupportedPlatformMessage(os, arch string) string {
 	var supportedList strings.Builder
-	supportedList.WriteString(fmt.Sprintf("# Binary not available for %s/%s\n\n", os, arch))
+	fmt.Fprintf(&supportedList, "# Binary not available for %s/%s\n\n", os, arch)
 	supportedList.WriteString("# Supported platforms:\n")
 
 	for _, platform := range bm.config.SupportedPlatforms {
-		supportedList.WriteString(fmt.Sprintf("#   - %s/%s\n", platform.OS, platform.Arch))
+		fmt.Fprintf(&supportedList, "#   - %s/%s\n", platform.OS, platform.Arch)
 	}
 
-	supportedList.WriteString(fmt.Sprintf("\n# For more information, visit: https://github.com/%s/releases", bm.config.GitHubRepo))
+	fmt.Fprintf(&supportedList, "\n# For more information, visit: https://github.com/%s/releases", bm.config.GitHubRepo)
 	return supportedList.String()
 }
 

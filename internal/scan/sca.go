@@ -42,7 +42,7 @@ func (s *SCAScanner) Execute(ctx context.Context, args ScanArgs) ([]types.Violat
 		// nothing to check for vulnerabilities.
 		return []types.Violation{}, notice, nil
 	}
-	defer os.Remove(sbomFile)
+	defer func() { _ = os.Remove(sbomFile) }()
 
 	if err := s.validateSBOMFile(sbomFile); err != nil {
 		return nil, nil, fmt.Errorf("validation failed: %w", err)
@@ -169,7 +169,7 @@ func (s *SCAScanner) writeSBOMToTempFile(result *types.SBOMResult) (string, erro
 	if err != nil {
 		return "", err
 	}
-	defer tempFile.Close()
+	defer func() { _ = tempFile.Close() }()
 
 	// Convert to CycloneDX format
 	cycloneDX := convertToCycloneDX(result)
@@ -178,7 +178,7 @@ func (s *SCAScanner) writeSBOMToTempFile(result *types.SBOMResult) (string, erro
 	encoder := json.NewEncoder(tempFile)
 	encoder.SetIndent("", "  ")
 	if err := encoder.Encode(cycloneDX); err != nil {
-		os.Remove(tempFile.Name())
+		_ = os.Remove(tempFile.Name())
 		return "", err
 	}
 

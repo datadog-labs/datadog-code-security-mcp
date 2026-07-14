@@ -116,31 +116,29 @@ func (o *ScanOutcome) Execution(scanType string) (ScanExecution, bool) {
 	return ScanExecution{}, false
 }
 
-// HasSuccessfulExecution reports whether at least one requested scanner
-// completed successfully, even when it found no violations.
-func (o *ScanOutcome) HasSuccessfulExecution() bool {
+// EachExecution calls fn for every execution in request order. The execution is
+// passed by value but shares the underlying Findings slice, so fn must treat it
+// as read-only. This lets read-only consumers (e.g. telemetry) iterate without
+// paying the defensive deep-copy that Executions() makes.
+func (o *ScanOutcome) EachExecution(fn func(ScanExecution)) {
 	if o == nil {
-		return false
+		return
 	}
 	for _, execution := range o.executions {
-		if execution.Err == nil {
-			return true
-		}
+		fn(execution)
 	}
-	return false
 }
 
-// HasFailedExecution reports whether at least one requested scanner failed.
-func (o *ScanOutcome) HasFailedExecution() bool {
-	if o == nil {
-		return false
-	}
-	for _, execution := range o.executions {
-		if execution.Err != nil {
-			return true
+// executionStates reports success/failure presence in a single pass.
+func (o *ScanOutcome) executionStates() (hasSuccess, hasFailure bool) {
+	for i := range o.executions {
+		if o.executions[i].Err != nil {
+			hasFailure = true
+		} else {
+			hasSuccess = true
 		}
 	}
-	return false
+	return hasSuccess, hasFailure
 }
 
 // Err returns the invocation-level failure. Scanner failures become fatal only
@@ -152,7 +150,8 @@ func (o *ScanOutcome) Err() error {
 	if o.invocationErr != nil {
 		return o.invocationErr
 	}
-	if o.HasSuccessfulExecution() || !o.HasFailedExecution() {
+	hasSuccess, hasFailure := o.executionStates()
+	if hasSuccess || !hasFailure {
 		return nil
 	}
 	return allScansFailedError(o.scanErrors())
@@ -184,6 +183,42 @@ func (o *ScanOutcome) scanNotices() []ScanNotice {
 	return notices
 }
 
+// OutcomeBreakdowns holds per-detection-type reductions over the executions,
+// keyed by detection type. All three maps are built in a single pass without
+// cloning findings.
+type OutcomeBreakdowns struct {
+	Durations  map[string]int64  // wall time in ms per detection type
+	ErrorKinds map[string]string // categorized failure kind per failed type
+	Notices    map[string]string // curated notice message per type that has one
+}
+
+// AggregateBreakdowns reduces the executions into telemetry-friendly maps in a
+// single pass. errorKind categorizes a scanner error into a stable kind; it is
+// injected so this package need not depend on the telemetry classifier. Maps
+// are always non-nil; callers should gate emission on len().
+func (o *ScanOutcome) AggregateBreakdowns(errorKind func(error) string) OutcomeBreakdowns {
+	breakdowns := OutcomeBreakdowns{
+		Durations:  make(map[string]int64),
+		ErrorKinds: make(map[string]string),
+		Notices:    make(map[string]string),
+	}
+	if o == nil {
+		return breakdowns
+	}
+	for i := range o.executions {
+		execution := &o.executions[i]
+		detectionType := string(execution.DetectionType)
+		breakdowns.Durations[detectionType] = execution.Duration.Milliseconds()
+		if execution.Err != nil && errorKind != nil {
+			breakdowns.ErrorKinds[detectionType] = errorKind(execution.Err)
+		}
+		if execution.Notice != nil {
+			breakdowns.Notices[detectionType] = execution.Notice.Message
+		}
+	}
+	return breakdowns
+}
+
 // Result projects the user-facing result from the canonical execution records.
 func (o *ScanOutcome) Result() *ScanResult {
 	if o == nil || len(o.executions) == 0 {
@@ -200,12 +235,13 @@ func (o *ScanOutcome) Result() *ScanResult {
 		resultsByType[execution.DetectionType] = append([]types.Violation(nil), execution.Findings...)
 	}
 
+	hasSuccess, hasFailure := o.executionStates()
 	return &ScanResult{
 		Summary:       buildSummary(allFindings),
 		Results:       resultsByType,
 		Errors:        o.scanErrors(),
 		Notices:       o.scanNotices(),
-		PartialResult: o.HasSuccessfulExecution() && o.HasFailedExecution(),
+		PartialResult: hasSuccess && hasFailure,
 	}
 }
 

@@ -43,7 +43,6 @@ func trackMCPScan(ctx context.Context, event telemetry.ScanEvent) {
 func trackMCPEvent(ctx context.Context, event telemetry.OperationEvent) {
 	event.Interface = telemetry.InterfaceMCP
 	event.BinaryVersions = binaryVersionsForEvent(ctx)
-	event.IncludeFirstRun = true
 	telemetryClient.TrackOperation(ctx, event)
 }
 

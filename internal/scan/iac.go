@@ -48,7 +48,7 @@ func (s *IaCScanner) Execute(ctx context.Context, args ScanArgs) ([]types.Violat
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create temp directory: %w", err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	// Build command arguments: datadog-iac-scanner scan -p <path> [-p <path>...] -o <outputdir>
 	cmdArgs := []string{"scan"}

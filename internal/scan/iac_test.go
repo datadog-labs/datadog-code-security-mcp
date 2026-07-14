@@ -52,7 +52,7 @@ func TestIaCScanner_Execute_MissingBinary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	args := ScanArgs{
 		FilePaths:  []string{"."},

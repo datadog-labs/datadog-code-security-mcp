@@ -37,15 +37,21 @@ func setAuthCredentials(ctx context.Context) error {
 
 	// Set environment variables for scanner subprocess
 	if creds.APIKey != "" {
-		os.Setenv(constants.EnvAPIKey, creds.APIKey)
+		if err := os.Setenv(constants.EnvAPIKey, creds.APIKey); err != nil {
+			return fmt.Errorf("set %s: %w", constants.EnvAPIKey, err)
+		}
 		fmt.Fprintf(os.Stderr, "%s set from auth provider\n", constants.EnvAPIKey)
 	}
 	if creds.APPKey != "" {
-		os.Setenv(constants.EnvAPPKey, creds.APPKey)
+		if err := os.Setenv(constants.EnvAPPKey, creds.APPKey); err != nil {
+			return fmt.Errorf("set %s: %w", constants.EnvAPPKey, err)
+		}
 		fmt.Fprintf(os.Stderr, "%s set from auth provider\n", constants.EnvAPPKey)
 	}
 	if creds.Site != "" {
-		os.Setenv(constants.EnvSite, creds.Site)
+		if err := os.Setenv(constants.EnvSite, creds.Site); err != nil {
+			return fmt.Errorf("set %s: %w", constants.EnvSite, err)
+		}
 		fmt.Fprintf(os.Stderr, "%s set to: %s\n", constants.EnvSite, creds.Site)
 	}
 

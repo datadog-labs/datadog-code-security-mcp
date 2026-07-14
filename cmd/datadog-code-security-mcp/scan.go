@@ -103,13 +103,13 @@ func loadAuthToEnv(ctx context.Context) {
 		return
 	}
 	if creds.APIKey != "" {
-		os.Setenv("DD_API_KEY", creds.APIKey)
+		_ = os.Setenv("DD_API_KEY", creds.APIKey)
 	}
 	if creds.APPKey != "" {
-		os.Setenv("DD_APP_KEY", creds.APPKey)
+		_ = os.Setenv("DD_APP_KEY", creds.APPKey)
 	}
 	if creds.Site != "" {
-		os.Setenv("DD_SITE", creds.Site)
+		_ = os.Setenv("DD_SITE", creds.Site)
 	}
 }
 

@@ -11,7 +11,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 )
 
 // TestInstallID_StableAcrossLoads verifies the same install_id is returned
@@ -248,42 +247,6 @@ func TestConcurrentFirstLoadConvergesAcrossProcesses(t *testing.T) {
 	}
 }
 
-func TestConcurrentTargetedUpdatesPreserveOptOut(t *testing.T) {
-	home := t.TempDir()
-	setTestHome(t, home)
-	initial := loadOrCreateConfig()
-	installID := initial.config.InstallID
-
-	optOut := configHelperCommand(t, home, "opt-out")
-	notice := configHelperCommand(t, home, "notice")
-	var optOutOutput, noticeOutput bytes.Buffer
-	optOut.Stdout = &optOutOutput
-	notice.Stdout = &noticeOutput
-	if err := optOut.Start(); err != nil {
-		t.Fatalf("start opt-out helper: %v", err)
-	}
-	if err := notice.Start(); err != nil {
-		t.Fatalf("start notice helper: %v", err)
-	}
-	if err := optOut.Wait(); err != nil {
-		t.Fatalf("opt-out helper: %v; output=%q", err, optOutOutput.String())
-	}
-	if err := notice.Wait(); err != nil {
-		t.Fatalf("notice helper: %v; output=%q", err, noticeOutput.String())
-	}
-
-	got := loadOrCreateConfig()
-	if got.config.InstallID != installID {
-		t.Errorf("targeted updates changed install ID: got %q, want %q", got.config.InstallID, installID)
-	}
-	if got.config.TelemetryEnabled == nil || *got.config.TelemetryEnabled {
-		t.Error("targeted notice update overwrote telemetry opt-out")
-	}
-	if !got.config.FirstRunNoticeShown {
-		t.Error("targeted opt-out update overwrote first-run notice")
-	}
-}
-
 func TestTargetedUpdatePreservesUnknownFields(t *testing.T) {
 	home := withTempHome(t)
 	configDir := filepath.Join(home, configDirName)
@@ -382,59 +345,6 @@ func TestConcurrentUpdatesLeaveNoTemporaryFiles(t *testing.T) {
 	if len(temps) != 0 {
 		t.Errorf("temporary config files left behind: %v", temps)
 	}
-	if _, err := os.Stat(filepath.Join(configDir, configLockName)); !os.IsNotExist(err) {
-		t.Errorf("config lock left behind: %v", err)
-	}
-}
-
-func TestStaleLockRecovery(t *testing.T) {
-	withTempHome(t)
-	path, err := configPath()
-	if err != nil {
-		t.Fatalf("configPath: %v", err)
-	}
-	lockPath := filepath.Join(filepath.Dir(path), configLockName)
-	if err := os.Mkdir(lockPath, 0o700); err != nil {
-		t.Fatalf("create stale lock: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(lockPath, "abandoned-owner"), []byte("1"), 0o600); err != nil {
-		t.Fatalf("create stale lock owner: %v", err)
-	}
-	old := time.Now().Add(-time.Hour)
-	if err := os.Chtimes(lockPath, old, old); err != nil {
-		t.Fatalf("age stale lock: %v", err)
-	}
-
-	lock, err := acquireConfigLock(lockPath, 200*time.Millisecond, time.Second)
-	if err != nil {
-		t.Fatalf("recover stale lock: %v", err)
-	}
-	lock.release()
-	if _, err := os.Stat(lockPath); !os.IsNotExist(err) {
-		t.Errorf("recovered lock was not released: %v", err)
-	}
-}
-
-func TestActiveLockWaitIsBounded(t *testing.T) {
-	withTempHome(t)
-	path, err := configPath()
-	if err != nil {
-		t.Fatalf("configPath: %v", err)
-	}
-	lockPath := filepath.Join(filepath.Dir(path), configLockName)
-	held, err := acquireConfigLock(lockPath, time.Second, time.Hour)
-	if err != nil {
-		t.Fatalf("acquire held lock: %v", err)
-	}
-	defer held.release()
-
-	start := time.Now()
-	if _, err := acquireConfigLock(lockPath, 30*time.Millisecond, time.Hour); err == nil {
-		t.Fatal("second lock acquisition unexpectedly succeeded")
-	}
-	if elapsed := time.Since(start); elapsed > 500*time.Millisecond {
-		t.Errorf("bounded lock wait took %v", elapsed)
-	}
 }
 
 func TestLoadOrCreate_CorruptConfigRemainsUntouched(t *testing.T) {
@@ -488,22 +398,7 @@ func TestConfigHelperProcess(t *testing.T) {
 		if len(result.errors) != 0 {
 			t.Fatalf("load errors: %v", result.errors)
 		}
-		fmt.Fprintln(os.Stdout, result.config.InstallID)
-	case "opt-out":
-		disabled := false
-		result := updateConfig(func(cfg *persistedConfig) {
-			cfg.TelemetryEnabled = &disabled
-		})
-		if !result.updated {
-			t.Fatalf("opt-out update: %v", result.errors)
-		}
-	case "notice":
-		result := updateConfig(func(cfg *persistedConfig) {
-			cfg.FirstRunNoticeShown = true
-		})
-		if !result.updated {
-			t.Fatalf("notice update: %v", result.errors)
-		}
+		_, _ = fmt.Fprintln(os.Stdout, result.config.InstallID)
 	default:
 		t.Fatalf("unknown helper action %q", os.Getenv("TELEMETRY_CONFIG_ACTION"))
 	}

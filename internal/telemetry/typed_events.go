@@ -51,7 +51,7 @@ func (e ScanEvent) err() error {
 
 // TrackScan emits the aggregate and per-scanner events for an invocation.
 func (c *Client) TrackScan(ctx context.Context, event ScanEvent) {
-	if c == nil || !c.Enabled() {
+	if c == nil || !c.Enabled() || event.Outcome == nil {
 		return
 	}
 
@@ -84,28 +84,28 @@ func (c *Client) TrackScan(ctx context.Context, event ScanEvent) {
 	attrs["batch_id"] = batchID
 	addScanBaseAttrs(attrs, base)
 	if result != nil {
+		// One pass over the executions yields all three breakdowns without
+		// cloning findings.
+		breakdowns := event.Outcome.AggregateBreakdowns(CategorizeError)
 		attrs["findings_count"] = result.Summary.Total
 		attrs["scan_types_breakdown"] = result.Summary.ByDetectionType
 		attrs["severity_breakdown"] = result.Summary.BySeverity
 		attrs["partial_errors_count"] = len(result.Errors)
-		if durations := scanDurationBreakdown(event.Outcome); len(durations) > 0 {
-			attrs["scan_durations_breakdown"] = durations
+		if len(breakdowns.Durations) > 0 {
+			attrs["scan_durations_breakdown"] = breakdowns.Durations
 		}
-		if failures := scanErrorKindBreakdown(event.Outcome); len(failures) > 0 {
-			attrs["partial_errors_breakdown"] = failures
+		if len(breakdowns.ErrorKinds) > 0 {
+			attrs["partial_errors_breakdown"] = breakdowns.ErrorKinds
 		}
 		attrs["notices_count"] = len(result.Notices)
-		if notices := scanNoticeBreakdown(event.Outcome); len(notices) > 0 {
-			attrs["notices_breakdown"] = notices
+		if len(breakdowns.Notices) > 0 {
+			attrs["notices_breakdown"] = breakdowns.Notices
 		}
 	}
 	c.trackOperationResult(ctx, operation, attrs, invocationErr)
 
-	if event.Outcome == nil {
-		return
-	}
 	base.batchID = batchID
-	for _, execution := range event.Outcome.Executions() {
+	event.Outcome.EachExecution(func(execution scan.ScanExecution) {
 		c.trackPerScan(ctx, event.Interface, base, perScanReport{
 			scanType:   string(execution.DetectionType),
 			standalone: false,
@@ -115,7 +115,7 @@ func (c *Client) TrackScan(ctx context.Context, event ScanEvent) {
 			err:        execution.Err,
 			notice:     execution.Notice,
 		})
-	}
+	})
 }
 
 type scanBaseAttributes struct {
@@ -218,37 +218,6 @@ func scanOperation(scanTypes []string) string {
 	return "code_security_scan"
 }
 
-func scanDurationBreakdown(outcome *scan.ScanOutcome) map[string]int64 {
-	durations := make(map[string]int64)
-	for _, execution := range outcome.Executions() {
-		durations[string(execution.DetectionType)] = execution.Duration.Milliseconds()
-	}
-	return durations
-}
-
-func scanErrorKindBreakdown(outcome *scan.ScanOutcome) map[string]string {
-	failures := make(map[string]string)
-	for _, execution := range outcome.Executions() {
-		if execution.Err != nil {
-			failures[string(execution.DetectionType)] = CategorizeError(execution.Err)
-		}
-	}
-	return failures
-}
-
-// scanNoticeBreakdown maps detection type to its curated notice message, for
-// scanners that completed successfully but have something non-fatal worth
-// surfacing (e.g. no components detected).
-func scanNoticeBreakdown(outcome *scan.ScanOutcome) map[string]string {
-	notices := make(map[string]string)
-	for _, execution := range outcome.Executions() {
-		if execution.Notice != nil {
-			notices[string(execution.DetectionType)] = execution.Notice.Message
-		}
-	}
-	return notices
-}
-
 // usedBinaryVersions returns the subset of the full binary-version snapshot
 // relevant to scanType, keyed by telemetry key. Returns nil when the scan type
 // maps to no binaries or no versions are available, so the attribute is omitted.
@@ -276,16 +245,15 @@ func severityBreakdown(findings []types.Violation) map[string]int {
 
 // OperationEvent is the typed schema for non-scan command and MCP operations.
 type OperationEvent struct {
-	Operation       string
-	Interface       Interface
-	StartedAt       time.Time
-	Failure         error
-	BinaryVersions  map[string]string
-	IncludeFirstRun bool
-	AuthMethod      string
-	FindingsCount   *int
-	LibrariesCount  *int
-	Detailed        *bool
+	Operation      string
+	Interface      Interface
+	StartedAt      time.Time
+	Failure        error
+	BinaryVersions map[string]string
+	AuthMethod     string
+	FindingsCount  *int
+	LibrariesCount *int
+	Detailed       *bool
 	// Notice is a curated, non-fatal informational message (e.g. a
 	// zero-component SBOM generation). Empty when there is nothing to surface.
 	// Always a hardcoded, path-free string — never raw error text.
@@ -307,9 +275,10 @@ func (c *Client) TrackOperation(ctx context.Context, event OperationEvent) {
 	if scoped := usedBinaryVersions(event.ScanType, event.BinaryVersions); len(scoped) > 0 {
 		attrs["used_binary_versions"] = scoped
 	}
-	if event.IncludeFirstRun {
-		attrs["first_run"] = c.IsFirstRun()
-	}
+	// first_run is a property of the client, not the call site — attach it
+	// uniformly so operation events aren't biased by interface (CLI vs MCP),
+	// matching per-scan events.
+	attrs["first_run"] = c.IsFirstRun()
 	if event.AuthMethod != "" {
 		attrs["auth_method"] = event.AuthMethod
 	}

@@ -62,7 +62,7 @@ func (s *BaseStaticAnalyzerScanner) runDetection(ctx context.Context, filePaths 
 	if err != nil {
 		return nil, fmt.Errorf("failed to create temp directory: %w", err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	outputPath := filepath.Join(tempDir, "output.sarif")
 

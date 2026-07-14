@@ -77,7 +77,7 @@ func TestLoadConfig(t *testing.T) {
 
 			// Set test environment variables
 			for k, v := range tt.envVars {
-				os.Setenv(k, v)
+				_ = os.Setenv(k, v)
 			}
 
 			cfg, err := LoadConfig()
@@ -172,7 +172,7 @@ func TestLoadConfig_SecurityValidation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			os.Clearenv()
-			os.Setenv("DD_SITE", tt.site)
+			_ = os.Setenv("DD_SITE", tt.site)
 
 			_, err := LoadConfig()
 			if (err != nil) != tt.wantErr {

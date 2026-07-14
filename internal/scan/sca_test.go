@@ -129,8 +129,8 @@ func TestSCAScanner_ValidateSBOMFile(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer os.Remove(f.Name())
-		f.Close()
+		defer func() { _ = os.Remove(f.Name()) }()
+		_ = f.Close()
 
 		if err := s.validateSBOMFile(f.Name()); err != nil {
 			t.Errorf("Expected no error for valid file, got: %v", err)
@@ -142,7 +142,7 @@ func TestSCAScanner_ValidateSBOMFile(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer os.RemoveAll(dir)
+		defer func() { _ = os.RemoveAll(dir) }()
 
 		if err := s.validateSBOMFile(dir); err == nil {
 			t.Error("Expected error for directory, got nil")
