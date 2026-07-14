@@ -80,9 +80,11 @@ For more information, visit: https://github.com/datadog-labs/datadog-code-securi
 			}
 			telemetryClient.MaybeShowFirstRunNotice()
 		},
-		// Flush waits up to 500 ms for any in-flight telemetry POST before the
-		// process exits. This keeps Track non-blocking (output is shown first)
-		// while still delivering the event in the common case.
+		// Flush waits up to flushTimeout (see internal/telemetry) for any
+		// in-flight telemetry POST before the process exits, but typically
+		// returns as soon as the POST completes. This keeps Track non-blocking
+		// (output is shown first) while still delivering the event in the
+		// common case.
 		PersistentPostRun: func(cmd *cobra.Command, args []string) {
 			flushTelemetry()
 		},
