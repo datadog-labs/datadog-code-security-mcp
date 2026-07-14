@@ -49,6 +49,7 @@ Every scan emits **one telemetry event per scan type** plus, when multiple types
 | `notice`                   | Curated message for a non-fatal informational signal from a successful operation (e.g. a zero-component SBOM generation, or a scan that had nothing to check). Present only when surfaced; appears on per-scan events and on `generate_sbom`. A hardcoded, path-free string — never raw error text |
 | `config_errors`            | Category names for telemetry-config initialization failures; never raw error text or paths        |
 | `id_ephemeral`             | Whether the anonymous install ID could not be persisted                                           |
+| `config_rename_attempts`   | **Number** of atomic-rename attempts the config write needed (`1` on a clean write, `> 1` under cross-process write contention, seen almost exclusively on Windows). Present on config-persistence events, including the standalone `telemetry_config_rename_contended` signal emitted when a write succeeded only after retries |
 
 **Per-scan events only** (`sast_scan`, `secrets_scan`, `sca_scan`, `iac_scan`):
 

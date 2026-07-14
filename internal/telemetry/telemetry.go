@@ -114,21 +114,50 @@ func New(opts Options) *Client {
 		httpClient: &http.Client{Timeout: httpTimeout},
 	}
 
-	// Emit a single warn event only when config errors were accumulated.
+	// Surface config persistence problems (and Windows write contention) so the
+	// team can track how many installs have broken or contended config paths.
 	// Uses context.Background() since no caller context is available at construction.
 	if len(result.errors) > 0 {
-		c.Track(context.Background(), Event{
-			Status: StatusWarn,
-			Attributes: map[string]any{
-				"operation":     "telemetry_init_with_errors",
-				"interface":     "cli",
-				"config_errors": result.errors,
-				"id_ephemeral":  result.idEphemeral,
-			},
-		})
+		attrs := CommonAttrs()
+		attrs["operation"] = "telemetry_init_with_errors"
+		attrs["interface"] = string(c.iface())
+		attrs["config_errors"] = result.errors
+		attrs["id_ephemeral"] = result.idEphemeral
+		if result.renameAttempts > 0 {
+			attrs["config_rename_attempts"] = result.renameAttempts
+		}
+		c.Track(context.Background(), Event{Status: StatusWarn, Attributes: attrs})
+	} else {
+		c.trackRenameContention(context.Background(), result.renameAttempts)
 	}
 
 	return c
+}
+
+// iface returns the invocation interface for this client: MCP when a session ID
+// is present (server mode), CLI otherwise.
+func (c *Client) iface() Interface {
+	if c.sessionID != "" {
+		return InterfaceMCP
+	}
+	return InterfaceCLI
+}
+
+// trackRenameContention emits a warn event when an atomic config write succeeded
+// but needed more than one rename attempt. This is the leading indicator for
+// cross-process write races (seen almost exclusively on Windows): the retry loop
+// recovers, so no error is surfaced, and without this signal production telemetry
+// would look silent even under heavy contention. Nothing is emitted for a clean,
+// single-attempt write. Attributes are counts/OS only — no paths or raw errors.
+func (c *Client) trackRenameContention(ctx context.Context, attempts int) {
+	if attempts <= 1 {
+		return
+	}
+	attrs := CommonAttrs()
+	attrs["operation"] = "telemetry_config_rename_contended"
+	attrs["interface"] = string(c.iface())
+	attrs["config_rename_attempts"] = attempts
+	c.Track(ctx, Event{Status: StatusWarn, Attributes: attrs})
 }
 
 // newWithBaseURL creates a Client with an explicit base URL for tests.

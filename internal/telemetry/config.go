@@ -70,6 +70,11 @@ type configLoadResult struct {
 	config      persistedConfig
 	errors      []string // categorized problem kinds, e.g. "config_dir_unavailable"
 	idEphemeral bool     // true when install_id could not be persisted to disk
+	// renameAttempts is the number of atomic-rename attempts the last persistence
+	// operation needed (1 on a clean write). Values > 1 indicate cross-process
+	// write contention (seen almost exclusively on Windows); 0 means no write
+	// was attempted or it failed before the rename step.
+	renameAttempts int
 }
 
 // configUpdateResult reports a best-effort targeted persistence operation.
@@ -78,6 +83,8 @@ type configLoadResult struct {
 type configUpdateResult struct {
 	errors  []string
 	updated bool
+	// renameAttempts mirrors configLoadResult.renameAttempts for update writes.
+	renameAttempts int
 }
 
 // loadOrCreateConfig reads the config file from ~/.datadog-code-security-mcp/config.json,
@@ -104,13 +111,16 @@ func loadOrCreateConfig() configLoadResult {
 		// Repair missing install_id (corrupted file).
 		if cfg.InstallID == "" {
 			cfg.InstallID = uuid.New().String()
-			if saveErr := saveConfig(cfg, path); saveErr != nil {
+			attempts, saveErr := saveConfig(cfg, path)
+			if saveErr != nil {
 				return configLoadResult{
-					config:      cfg,
-					errors:      []string{"config_save_failed"},
-					idEphemeral: true,
+					config:         cfg,
+					errors:         []string{"config_save_failed"},
+					idEphemeral:    true,
+					renameAttempts: attempts,
 				}
 			}
+			return configLoadResult{config: cfg, renameAttempts: attempts}
 		}
 		return configLoadResult{config: cfg}
 	}
@@ -177,16 +187,19 @@ func readConfig(path string) (persistedConfig, error) {
 }
 
 // saveConfig atomically writes cfg to path via a temp file and rename, so
-// readers never observe a partial write.
-func saveConfig(cfg persistedConfig, path string) error {
+// readers never observe a partial write. It returns the number of atomic-rename
+// attempts made (1 on a clean write, > 1 under contention, 0 when it failed
+// before reaching the rename step) so callers can surface write contention in
+// telemetry.
+func saveConfig(cfg persistedConfig, path string) (int, error) {
 	data, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
-		return fmt.Errorf("marshal config: %w", err)
+		return 0, fmt.Errorf("marshal config: %w", err)
 	}
 
 	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".tmp-*")
 	if err != nil {
-		return fmt.Errorf("create temp config: %w", err)
+		return 0, fmt.Errorf("create temp config: %w", err)
 	}
 	tmpName := tmp.Name()
 	cleanup := true
@@ -198,25 +211,26 @@ func saveConfig(cfg persistedConfig, path string) error {
 
 	if err := tmp.Chmod(0o600); err != nil {
 		_ = tmp.Close()
-		return fmt.Errorf("chmod temp config: %w", err)
+		return 0, fmt.Errorf("chmod temp config: %w", err)
 	}
 	if _, err := tmp.Write(data); err != nil {
 		_ = tmp.Close()
-		return fmt.Errorf("write temp config: %w", err)
+		return 0, fmt.Errorf("write temp config: %w", err)
 	}
 	if err := tmp.Sync(); err != nil {
 		_ = tmp.Close()
-		return fmt.Errorf("sync temp config: %w", err)
+		return 0, fmt.Errorf("sync temp config: %w", err)
 	}
 	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("close temp config: %w", err)
+		return 0, fmt.Errorf("close temp config: %w", err)
 	}
-	if err := renameWithRetry(tmpName, path); err != nil {
-		return fmt.Errorf("replace config: %w", err)
+	attempts, err := renameWithRetry(tmpName, path)
+	if err != nil {
+		return attempts, fmt.Errorf("replace config: %w", err)
 	}
 
 	cleanup = false
-	return nil
+	return attempts, nil
 }
 
 // renameWithRetry renames oldpath to newpath, retrying on failure. Unlike POSIX
@@ -226,12 +240,15 @@ func saveConfig(cfg persistedConfig, path string) error {
 // updates by design). Retrying with backoff plus jitter — to desynchronize the
 // racing writers — resolves that contention; on POSIX this loop exits on the
 // first attempt.
-func renameWithRetry(oldpath, newpath string) error {
+//
+// It returns the number of attempts made (1 when the first rename succeeds) so
+// callers can distinguish a clean write from a contended-but-recovered one.
+func renameWithRetry(oldpath, newpath string) (attempts int, err error) {
 	const maxAttempts = 10
-	var err error
 	for attempt := 0; attempt < maxAttempts; attempt++ {
+		attempts = attempt + 1
 		if err = os.Rename(oldpath, newpath); err == nil {
-			return nil
+			return attempts, nil
 		}
 		if attempt < maxAttempts-1 {
 			backoff := time.Duration(attempt+1) * 5 * time.Millisecond
@@ -239,7 +256,7 @@ func renameWithRetry(oldpath, newpath string) error {
 			time.Sleep(backoff + jitter)
 		}
 	}
-	return err
+	return attempts, err
 }
 
 // updateConfig performs a targeted read-modify-write. The callback must only
@@ -264,10 +281,11 @@ func updateConfig(update func(*persistedConfig)) configUpdateResult {
 	}
 
 	update(&cfg)
-	if err := saveConfig(cfg, path); err != nil {
-		return configUpdateResult{errors: []string{"config_save_failed"}}
+	attempts, saveErr := saveConfig(cfg, path)
+	if saveErr != nil {
+		return configUpdateResult{errors: []string{"config_save_failed"}, renameAttempts: attempts}
 	}
-	return configUpdateResult{updated: true}
+	return configUpdateResult{updated: true, renameAttempts: attempts}
 }
 
 // createConfigIfAbsent atomically creates path with cfg only if it does not yet

@@ -417,6 +417,47 @@ func TestTrackOperation_UsedBinaryVersions(t *testing.T) {
 	}
 }
 
+// TestTrackRenameContention_Emitted verifies that a contended-but-recovered
+// config write (rename needed more than one attempt) produces a warn event
+// carrying the attempt count and the OS dimension, so Windows write races are
+// observable even when the retry loop recovers.
+func TestTrackRenameContention_Emitted(t *testing.T) {
+	srv, ch := captureServer(t)
+	c := newTestClient(t, srv)
+
+	c.trackRenameContention(context.Background(), 3)
+
+	items := waitEvent(t, ch)
+	if got := items[0]["operation"]; got != "telemetry_config_rename_contended" {
+		t.Errorf("operation = %v, want telemetry_config_rename_contended", got)
+	}
+	if got := items[0]["config_rename_attempts"]; got != float64(3) {
+		t.Errorf("config_rename_attempts = %v, want 3", got)
+	}
+	if items[0]["os"] == nil {
+		t.Error("expected os attribute for Windows segmentation")
+	}
+	if items[0]["status"] != "warn" {
+		t.Errorf("status = %v, want warn", items[0]["status"])
+	}
+}
+
+// TestTrackRenameContention_NotEmittedOnCleanWrite verifies that a clean,
+// single-attempt write produces no telemetry (no noise on the common path).
+func TestTrackRenameContention_NotEmittedOnCleanWrite(t *testing.T) {
+	srv, ch := captureServer(t)
+	c := newTestClient(t, srv)
+
+	c.trackRenameContention(context.Background(), 1)
+	c.Flush()
+
+	select {
+	case items := <-ch:
+		t.Fatalf("unexpected telemetry for a clean write: %v", items)
+	case <-time.After(200 * time.Millisecond):
+	}
+}
+
 func contains(s, sub string) bool {
 	return strings.Contains(s, sub)
 }

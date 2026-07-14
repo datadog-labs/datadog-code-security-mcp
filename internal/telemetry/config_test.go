@@ -57,7 +57,7 @@ func TestAtomicWrite_NoTempFileLeft(t *testing.T) {
 	if err != nil {
 		t.Fatalf("configPath: %v", err)
 	}
-	if err := saveConfig(cfg, path); err != nil {
+	if _, err := saveConfig(cfg, path); err != nil {
 		t.Fatalf("saveConfig: %v", err)
 	}
 
@@ -87,7 +87,7 @@ func TestAtomicWrite_CleansTempFileOnFailure(t *testing.T) {
 		t.Fatalf("create invalid destination: %v", err)
 	}
 
-	if err := saveConfig(newConfig(), destination); err == nil {
+	if _, err := saveConfig(newConfig(), destination); err == nil {
 		t.Fatal("saveConfig succeeded with a directory as its destination")
 	}
 	temps, err := filepath.Glob(filepath.Join(configDir, "."+filepath.Base(destination)+".tmp-*"))

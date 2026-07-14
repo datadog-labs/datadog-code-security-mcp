@@ -37,14 +37,16 @@ func (c *Client) MaybeShowFirstRunNotice() {
 			cfg.FirstRunNoticeShown = true
 		})
 		if !result.updated {
-			c.Track(context.Background(), Event{
-				Status: StatusWarn,
-				Attributes: map[string]any{
-					"operation":     "telemetry_config_update_failed",
-					"interface":     "cli",
-					"config_errors": result.errors,
-				},
-			})
+			attrs := CommonAttrs()
+			attrs["operation"] = "telemetry_config_update_failed"
+			attrs["interface"] = string(c.iface())
+			attrs["config_errors"] = result.errors
+			if result.renameAttempts > 0 {
+				attrs["config_rename_attempts"] = result.renameAttempts
+			}
+			c.Track(context.Background(), Event{Status: StatusWarn, Attributes: attrs})
+		} else {
+			c.trackRenameContention(context.Background(), result.renameAttempts)
 		}
 	})
 }
