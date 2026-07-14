@@ -11,15 +11,11 @@ import (
 )
 
 type Scanner interface {
-	Execute(ctx context.Context, args ScanArgs) ([]types.Violation, error)
-}
-
-// noticeProvider is an optional interface a Scanner may implement to surface
-// a non-fatal, informational note about its own execution (e.g. "no
-// components detected") without it being treated as an error. Kept separate
-// from Scanner so scanners without this concept don't need a no-op method.
-type noticeProvider interface {
-	LastNotice() *types.ScanNotice
+	// Execute runs the scan and returns its findings. The returned notice is a
+	// non-fatal, informational note about the execution (e.g. "no components
+	// detected"); it is nil for scanners that have nothing to surface and is
+	// orthogonal to the error result.
+	Execute(ctx context.Context, args ScanArgs) ([]types.Violation, *types.ScanNotice, error)
 }
 
 // ExecuteParallelScans runs multiple scan types in parallel
@@ -49,11 +45,7 @@ func ExecuteParallelScans(ctx context.Context, args ScanArgs, binaryMgr *binary.
 
 			// Execute scan (may take several seconds) and record wall time
 			scanStart := time.Now()
-			findings, err := scannerInst.Execute(ctx, args)
-			var notice *types.ScanNotice
-			if np, ok := scannerInst.(noticeProvider); ok {
-				notice = np.LastNotice()
-			}
+			findings, notice, err := scannerInst.Execute(ctx, args)
 			results <- ScanExecution{
 				DetectionType: types.DetectionType(st),
 				Findings:      findings,

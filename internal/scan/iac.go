@@ -37,16 +37,16 @@ func NewIaCScanner(binMgr *binary.BinaryManager) *IaCScanner {
 }
 
 // Execute runs the IaC scan on the specified paths.
-func (s *IaCScanner) Execute(ctx context.Context, args ScanArgs) ([]types.Violation, error) {
+func (s *IaCScanner) Execute(ctx context.Context, args ScanArgs) ([]types.Violation, *types.ScanNotice, error) {
 	scannerPath, err := s.binaryMgr.GetBinaryPath(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Create temp directory for SARIF output
 	tempDir, err := os.MkdirTemp("", "iac-scan-")
 	if err != nil {
-		return nil, fmt.Errorf("failed to create temp directory: %w", err)
+		return nil, nil, fmt.Errorf("failed to create temp directory: %w", err)
 	}
 	defer os.RemoveAll(tempDir)
 
@@ -76,10 +76,10 @@ func (s *IaCScanner) Execute(ctx context.Context, args ScanArgs) ([]types.Violat
 			if exitCode == iacExitCodeLow || exitCode == iacExitCodeMedium || exitCode == iacExitCodeHigh {
 				// Findings exist - continue to parse output
 			} else {
-				return nil, fmt.Errorf("iac scanner execution failed: %w\nOutput: %s", err, string(output))
+				return nil, nil, fmt.Errorf("iac scanner execution failed: %w\nOutput: %s", err, string(output))
 			}
 		} else {
-			return nil, fmt.Errorf("iac scanner execution failed: %w\nOutput: %s", err, string(output))
+			return nil, nil, fmt.Errorf("iac scanner execution failed: %w\nOutput: %s", err, string(output))
 		}
 	}
 
@@ -87,14 +87,14 @@ func (s *IaCScanner) Execute(ctx context.Context, args ScanArgs) ([]types.Violat
 	sarifPath := filepath.Join(tempDir, iacSARIFOutputFile)
 	sarifData, err := os.ReadFile(sarifPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read IaC scanner SARIF output: %w", err)
+		return nil, nil, fmt.Errorf("failed to read IaC scanner SARIF output: %w", err)
 	}
 
 	// Parse SARIF using the shared parser
 	violations, err := processing.ParseSARIF(sarifData, args.WorkingDir, types.DetectionTypeIaC)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse IaC SARIF output: %w", err)
+		return nil, nil, fmt.Errorf("failed to parse IaC SARIF output: %w", err)
 	}
 
-	return violations, nil
+	return violations, nil, nil
 }

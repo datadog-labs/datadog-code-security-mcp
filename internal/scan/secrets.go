@@ -27,7 +27,7 @@ func NewSecretsScanner(binMgr *binary.BinaryManager) *SecretsScanner {
 }
 
 // Execute runs Secrets scan
-func (s *SecretsScanner) Execute(ctx context.Context, args ScanArgs) ([]types.Violation, error) {
+func (s *SecretsScanner) Execute(ctx context.Context, args ScanArgs) ([]types.Violation, *types.ScanNotice, error) {
 	// In the future, we can add secrets-specific filtering here
 	return s.base.Execute(ctx, args)
 }

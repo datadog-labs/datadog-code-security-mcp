@@ -110,7 +110,7 @@ func TestSASTScanner_Execute_ContextCancellation(t *testing.T) {
 		WorkingDir: ".",
 	}
 
-	_, err := s.Execute(ctx, args)
+	_, _, err := s.Execute(ctx, args)
 
 	// Expect an error due to context cancellation
 	// The exact error depends on whether the binary is found or not

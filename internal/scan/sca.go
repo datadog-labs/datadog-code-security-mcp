@@ -16,12 +16,6 @@ import (
 
 type SCAScanner struct {
 	binaryMgr *binary.BinaryManager // Uses BinaryTypeSecurity for datadog-security-cli
-
-	// lastNotice records a non-fatal notice from the most recent Execute call
-	// (e.g. no components detected), so the executor can surface it in
-	// telemetry/output without treating it as a failure. Safe to store on the
-	// instance: getScannerFor constructs a fresh SCAScanner per invocation.
-	lastNotice *types.ScanNotice
 }
 
 func NewSCAScanner(binMgr *binary.BinaryManager) *SCAScanner {
@@ -30,44 +24,41 @@ func NewSCAScanner(binMgr *binary.BinaryManager) *SCAScanner {
 	}
 }
 
-// LastNotice returns a non-fatal notice from the most recent Execute call, if
-// any. It implements executor.go's optional noticeProvider interface.
-func (s *SCAScanner) LastNotice() *types.ScanNotice {
-	return s.lastNotice
-}
-
 // Execute runs SCA scan
 // Takes directories as input (like SAST/Secrets), generates SBOM internally, then scans.
 // Working directory resolution is handled by ExecuteScan before this is called.
-func (s *SCAScanner) Execute(ctx context.Context, args ScanArgs) ([]types.Violation, error) {
+//
+// Returns a non-nil notice (with empty findings and a nil error) when no
+// components were found: the generator ran fine and produced a valid (empty)
+// result, so this is a non-fatal outcome the caller surfaces without treating
+// it as a scan failure.
+func (s *SCAScanner) Execute(ctx context.Context, args ScanArgs) ([]types.Violation, *types.ScanNotice, error) {
 	sbomFile, notice, err := s.generateSBOM(ctx, args.FilePaths, args.WorkingDir)
 	if err != nil {
-		return nil, fmt.Errorf("SBOM generation failed: %w", err)
+		return nil, nil, fmt.Errorf("SBOM generation failed: %w", err)
 	}
 	if notice != nil {
 		// No components were found across any requested path, so there's
-		// nothing to check for vulnerabilities. The generator ran fine and
-		// produced a valid (empty) result — this is not a scan failure.
-		s.lastNotice = notice
-		return []types.Violation{}, nil
+		// nothing to check for vulnerabilities.
+		return []types.Violation{}, notice, nil
 	}
 	defer os.Remove(sbomFile)
 
 	if err := s.validateSBOMFile(sbomFile); err != nil {
-		return nil, fmt.Errorf("validation failed: %w", err)
+		return nil, nil, fmt.Errorf("validation failed: %w", err)
 	}
 
 	rawOutput, err := s.runDetection(ctx, sbomFile, args.WorkingDir)
 	if err != nil {
-		return nil, fmt.Errorf("detection failed: %w", err)
+		return nil, nil, fmt.Errorf("detection failed: %w", err)
 	}
 
 	vulnerabilities, err := processing.ParseSCAJSON(rawOutput)
 	if err != nil {
-		return nil, fmt.Errorf("parsing failed: %w", err)
+		return nil, nil, fmt.Errorf("parsing failed: %w", err)
 	}
 
-	return s.convertToViolations(vulnerabilities), nil
+	return s.convertToViolations(vulnerabilities), nil, nil
 }
 
 // generateSBOM creates SBOM from directories using sbom.Generator.

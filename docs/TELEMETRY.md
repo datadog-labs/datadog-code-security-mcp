@@ -55,6 +55,7 @@ Every scan emits **one telemetry event per scan type** plus, when multiple types
 | `standalone`               | `true` when the scan type was invoked on its own; `false` when part of a `scan all` batch        |
 | `findings_count`           | **Number** of findings for this scan type — no content or details                               |
 | `severity_breakdown`       | Per-severity finding counts for this type (e.g. `{"HIGH":2,"MEDIUM":2}`)                        |
+| `notice`                   | Curated message for a non-fatal informational signal from a successful scan (e.g. a zero-component SBOM scan that had nothing to check). Present only when the scan surfaced a notice; a hardcoded, path-free string — never raw error text |
 | `paths_count`              | Number of file paths passed to the scan                                                          |
 | `output_format`            | `human` or `json` — CLI events only                                                              |
 
@@ -69,6 +70,8 @@ Every scan emits **one telemetry event per scan type** plus, when multiple types
 | `scan_durations_breakdown` | Per-scan-type wall time in ms (e.g. `{"sast":1200,"secrets":340}`) — sourced from goroutine timing |
 | `partial_errors_count`     | Number of scan types that failed when others succeeded (graceful degradation)                    |
 | `partial_errors_breakdown` | Per-scan-type error kind for each failed type (e.g. `{"iac":"BinaryNotFound"}`) — kinds only, no raw messages |
+| `notices_count`            | Number of scan types that emitted a non-fatal notice (e.g. a zero-component SBOM scan)           |
+| `notices_breakdown`        | Per-detection-type curated notice message for each type that surfaced a notice (e.g. `{"sca":"No components detected..."}`) — hardcoded, path-free strings only |
 | `batch_id`                 | Random UUID shared with every per-scan event in this batch — use to isolate one `scan all` execution |
 | `paths_count`              | Number of file paths passed to the scan                                                          |
 | `output_format`            | `human` or `json` — CLI events only                                                              |

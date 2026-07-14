@@ -296,13 +296,6 @@ func TestClassifySBOMResult_Success(t *testing.T) {
 	}
 }
 
-func TestSCAScanner_LastNotice_DefaultsToNil(t *testing.T) {
-	s := &SCAScanner{}
-	if s.LastNotice() != nil {
-		t.Error("expected LastNotice to be nil before any Execute call")
-	}
-}
-
 func TestSCAScanner_Execute_ContextCancellation(t *testing.T) {
 	binMgr := binary.NewManager(binary.BinaryTypeSecurity)
 	s := NewSCAScanner(binMgr)
@@ -315,7 +308,7 @@ func TestSCAScanner_Execute_ContextCancellation(t *testing.T) {
 		WorkingDir: ".",
 	}
 
-	_, err := s.Execute(ctx, args)
+	_, _, err := s.Execute(ctx, args)
 	if err == nil {
 		t.Error("Expected an error due to context cancellation, got nil")
 	}
