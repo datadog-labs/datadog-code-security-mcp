@@ -76,6 +76,12 @@ func NewCompletedOutcome(executions []ScanExecution) *ScanOutcome {
 
 func cloneExecution(execution ScanExecution) ScanExecution {
 	execution.Findings = append([]types.Violation(nil), execution.Findings...)
+	// Notice is a pointer, so copy the pointee too; otherwise the "defensive
+	// copy" contract would leak a shared pointer into (and out of) the outcome.
+	if execution.Notice != nil {
+		notice := *execution.Notice
+		execution.Notice = &notice
+	}
 	return execution
 }
 
