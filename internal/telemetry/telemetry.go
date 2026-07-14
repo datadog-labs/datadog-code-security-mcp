@@ -179,9 +179,10 @@ func (c *Client) Track(ctx context.Context, e Event) {
 }
 
 // Flush waits for any in-flight telemetry POST to finish, up to flushTimeout.
-// Call this at CLI exit so the process does not terminate before the POST
-// completes. In MCP server mode the server is long-lived, so Flush is a no-op.
-// A nil client is a no-op.
+// Call this before process exit so the process does not terminate mid-POST.
+// In MCP server mode it typically returns immediately, because events emitted
+// during the long-lived session have already completed by shutdown, but it
+// still drains any final in-flight event. A nil client is a no-op.
 func (c *Client) Flush() {
 	if c == nil {
 		return
