@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -290,7 +291,13 @@ func (c *Client) post(ctx context.Context, obj map[string]any) error {
 	if err != nil {
 		return fmt.Errorf("telemetry post: %w", err)
 	}
-	defer func() { _ = resp.Body.Close() }()
+	// Drain the (small, empty) intake response before closing so the transport
+	// can reuse the keep-alive connection for subsequent events (matters most in
+	// long-lived MCP mode). The client's Timeout still bounds the read.
+	defer func() {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
+	}()
 
 	return nil
 }
