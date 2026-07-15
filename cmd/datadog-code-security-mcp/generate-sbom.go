@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -86,6 +87,15 @@ func runGenerateSBOM(path string, workingDir string, outputJSON bool) error {
 		event.FindingsCount = &findingsCount
 		if result.Notice != nil {
 			event.Notice = result.Notice.Message
+		}
+		// Generate can report a failure via result.Error while returning a nil
+		// Go error (e.g. missing binary, exec/parse failure). Record it as a
+		// telemetry failure so these runs aren't counted as successful. The raw
+		// text is only used by the telemetry layer to pick a categorized kind;
+		// it never reaches the wire. Output/exit behavior is unchanged — the
+		// human/JSON renderers still surface result.Error to the user.
+		if err == nil && result.Error != nil {
+			event.Failure = errors.New(result.Error.Error)
 		}
 	}
 	if err != nil {

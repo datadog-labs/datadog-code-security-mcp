@@ -731,6 +731,36 @@ func TestRunDirectScan_InvalidScanTypeUsesSentinel(t *testing.T) {
 	}
 }
 
+// TestRunGenerateSBOM_ResultErrorRecordedAsFailure is the regression guard for
+// the bug where generator.Generate reporting a failure via result.Error (while
+// returning a nil Go error, e.g. missing binary or exec/parse failure) was
+// emitted as a successful telemetry event. Forcing the SBOM binary lookup to
+// fail (empty PATH) makes Generate return a result carrying Error with a nil
+// Go error; the emitted generate_sbom event must then report success=false.
+func TestRunGenerateSBOM_ResultErrorRecordedAsFailure(t *testing.T) {
+	srv, ch := captureCmdServer(t)
+	telemetryClient = newCmdTestTelemetryClient(t, srv)
+	t.Cleanup(func() { telemetryClient = nil })
+
+	// Deterministically force GetBinaryPath (exec.LookPath) to fail so Generate
+	// takes the result.Error (nil Go error) branch regardless of what's
+	// installed on the host running the tests.
+	t.Setenv("PATH", "")
+
+	// Human/JSON output is written to stdout (test noise only); we only care
+	// about the emitted telemetry. Exit behavior is intentionally unchanged.
+	_ = runGenerateSBOM(".", "", false)
+	flushTelemetry()
+
+	item := waitCmdEvent(t, ch)
+	if item["operation"] != "generate_sbom" {
+		t.Errorf("operation = %v, want generate_sbom", item["operation"])
+	}
+	if item["success"] != false {
+		t.Errorf("success = %v, want false (result.Error must be recorded as a failure)", item["success"])
+	}
+}
+
 // TestTrackCLIScan_StandaloneFlagSingleType verifies that single-type CLI scans
 // emit a per-scan event with standalone=true.
 func TestTrackCLIScan_StandaloneFlagSingleType(t *testing.T) {

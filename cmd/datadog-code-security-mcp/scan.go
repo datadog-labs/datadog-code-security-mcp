@@ -179,11 +179,22 @@ func runDirectScan(scanType string, paths []string, workingDir string, outputJSO
 		return err
 	}
 
-	result := outcome.Result()
+	return renderScanResult(outcome.Result(), scanType, outputJSON)
+}
+
+// renderScanResult writes the result in the chosen output format and then
+// applies the findings-based exit decision. The exit decision is shared across
+// both formats so CI gating behaves identically for --json and human output;
+// keeping it in one place (rather than per-format branch) is what prevents the
+// two modes from drifting. main() maps errViolationsFound to exit 1 silently
+// (findings were already rendered) and never prints it to stdout, so JSON
+// output stays clean.
+func renderScanResult(result *scan.ScanResult, scanType string, outputJSON bool) error {
 	if outputJSON {
-		return outputResultsJSON(result)
-	}
-	if err := outputResultsHuman(result, scanType); err != nil {
+		if err := outputResultsJSON(result); err != nil {
+			return err
+		}
+	} else if err := outputResultsHuman(result, scanType); err != nil {
 		return err
 	}
 	if result.Summary.Total > 0 {
@@ -404,10 +415,19 @@ func runLibraryScan(purls []string, workingDir string, outputJSON bool) error {
 	}
 	event.FindingsCount = &totalVulns
 
+	return renderLibraryScanResult(result, totalVulns, outputJSON)
+}
+
+// renderLibraryScanResult writes the library-scan result in the chosen format
+// and then applies the findings-based exit decision, mirroring
+// renderScanResult so --json and human output exit identically. See that
+// function for why the exit decision is shared rather than per-format.
+func renderLibraryScanResult(result *libraryscan.ScanResult, totalVulns int, outputJSON bool) error {
 	if outputJSON {
-		return outputLibraryScanJSON(result)
-	}
-	if err := outputLibraryScanHuman(result); err != nil {
+		if err := outputLibraryScanJSON(result); err != nil {
+			return err
+		}
+	} else if err := outputLibraryScanHuman(result); err != nil {
 		return err
 	}
 	if totalVulns > 0 {
