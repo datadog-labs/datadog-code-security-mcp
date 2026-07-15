@@ -135,12 +135,13 @@ func runDirectScan(scanType string, paths []string, workingDir string, outputJSO
 		outputFormat = telemetry.OutputFormatJSON
 	}
 	tracking := telemetry.ScanEvent{
+		Interface:    telemetry.InterfaceCLI,
 		StartedAt:    start,
 		OutputFormat: outputFormat,
 		WorkingDir:   workingDir,
 		AuthMethod:   authMethod,
 	}
-	defer func() { trackCLIScan(ctx, tracking) }()
+	defer func() { trackScan(ctx, tracking) }()
 
 	// telemetryTypes attributes a pre-execution failure. For an unrecognized
 	// scan type we deliberately record a fixed sentinel instead of the raw
@@ -385,11 +386,12 @@ func runLibraryScan(purls []string, workingDir string, outputJSON bool) error {
 	ctx := context.Background()
 	libraryCount := len(purls)
 	event := telemetry.OperationEvent{
+		Interface:      telemetry.InterfaceCLI,
 		Operation:      "library_scan",
 		StartedAt:      time.Now(),
 		LibrariesCount: &libraryCount,
 	}
-	defer func() { trackCLIOperation(ctx, event) }()
+	defer func() { trackOperation(ctx, event) }()
 
 	fail := func(err error) error {
 		event.Failure = err

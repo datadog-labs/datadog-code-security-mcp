@@ -21,10 +21,11 @@ import (
 // Generic handler that eliminates duplication across SAST/Secrets handlers
 func handleAuthenticatedScan(ctx context.Context, request mcp.CallToolRequest, scanTypes []string) (*mcp.CallToolResult, error) {
 	tracking := telemetry.ScanEvent{
+		Interface:  telemetry.InterfaceMCP,
 		StartedAt:  time.Now(),
 		AuthMethod: detectAuthMethod(),
 	}
-	defer func() { trackMCPScan(ctx, tracking) }()
+	defer func() { trackScan(ctx, tracking) }()
 
 	// fail records a pre-execution failure as the canonical outcome and returns
 	// the MCP error result. The deferred emit above sends exactly one event.
@@ -83,12 +84,13 @@ func handleSecretsScan(ctx context.Context, request mcp.CallToolRequest) (*mcp.C
 
 func handleGenerateSBOM(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	event := telemetry.OperationEvent{
+		Interface:  telemetry.InterfaceMCP,
 		Operation:  "generate_sbom",
 		StartedAt:  time.Now(),
 		AuthMethod: detectAuthMethod(),
 		ScanType:   string(types.DetectionTypeSBOM),
 	}
-	defer func() { trackMCPEvent(ctx, event) }()
+	defer func() { trackOperation(ctx, event) }()
 
 	fail := func(err error) (*mcp.CallToolResult, error) {
 		event.Failure = err
@@ -224,11 +226,12 @@ func parseLibraryArgs(argsMap map[string]any) ([]libraryscan.Library, error) {
 // handleLibraryVulnerabilityScan scans specific libraries for vulnerabilities via the Datadog API.
 func handleLibraryVulnerabilityScan(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	event := telemetry.OperationEvent{
+		Interface:  telemetry.InterfaceMCP,
 		Operation:  "library_scan",
 		StartedAt:  time.Now(),
 		AuthMethod: detectAuthMethod(),
 	}
-	defer func() { trackMCPEvent(ctx, event) }()
+	defer func() { trackOperation(ctx, event) }()
 
 	fail := func(err error) (*mcp.CallToolResult, error) {
 		event.Failure = err

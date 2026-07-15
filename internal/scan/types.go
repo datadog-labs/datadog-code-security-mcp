@@ -74,6 +74,12 @@ func NewFailedOutcome(scanTypes []string, err error) *ScanOutcome {
 
 // NewCompletedOutcome records scanner executions in deterministic request order.
 // Requested scan types are derived from those records so the two cannot drift.
+//
+// Ingest is the single defensive-copy boundary: each execution is deep-copied
+// here so later mutation of the caller's slice (or the Notice pointers it holds)
+// can never be observed through the outcome. Accessors then expose the stored
+// executions directly and treat them as read-only, so there is no second clone
+// and no asymmetry between Execution() and EachExecution().
 func NewCompletedOutcome(executions []ScanExecution) *ScanOutcome {
 	outcome := &ScanOutcome{
 		scanTypes:  make([]types.DetectionType, len(executions)),
@@ -86,10 +92,11 @@ func NewCompletedOutcome(executions []ScanExecution) *ScanOutcome {
 	return outcome
 }
 
+// cloneExecution deep-copies an execution. It runs only at the ingest boundary
+// (NewCompletedOutcome); the pointee Notice is copied too so the outcome never
+// shares a mutable pointer with the caller.
 func cloneExecution(execution ScanExecution) ScanExecution {
 	execution.Findings = append([]types.Violation(nil), execution.Findings...)
-	// Notice is a pointer, so copy the pointee too; otherwise the "defensive
-	// copy" contract would leak a shared pointer into (and out of) the outcome.
 	if execution.Notice != nil {
 		notice := *execution.Notice
 		execution.Notice = &notice
@@ -109,23 +116,25 @@ func (o *ScanOutcome) ScanTypes() []string {
 	return scanTypes
 }
 
-// Execution returns the execution metadata for scanType.
+// Execution returns the execution metadata for scanType. The returned value
+// shares the outcome's underlying Findings slice and Notice pointer (the
+// defensive copy was already made at ingest), so callers must treat it as
+// read-only — the same contract as EachExecution.
 func (o *ScanOutcome) Execution(scanType string) (ScanExecution, bool) {
 	if o == nil {
 		return ScanExecution{}, false
 	}
 	for _, execution := range o.executions {
 		if string(execution.DetectionType) == scanType {
-			return cloneExecution(execution), true
+			return execution, true
 		}
 	}
 	return ScanExecution{}, false
 }
 
 // EachExecution calls fn for every execution in request order. The execution is
-// passed by value but shares the underlying Findings slice, so fn must treat it
-// as read-only. This lets read-only consumers (e.g. telemetry) iterate without
-// paying the defensive deep-copy that Execution() makes.
+// passed by value but shares the underlying Findings slice and Notice pointer,
+// so fn must treat it as read-only — identical to Execution's contract.
 func (o *ScanOutcome) EachExecution(fn func(ScanExecution)) {
 	if o == nil {
 		return

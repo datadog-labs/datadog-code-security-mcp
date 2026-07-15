@@ -28,26 +28,16 @@ func binaryVersionsForEvent(ctx context.Context) map[string]string {
 	return scannerVersionCache.SnapshotAfterInitial(waitCtx)
 }
 
-func trackCLIScan(ctx context.Context, event telemetry.ScanEvent) {
-	event.Interface = telemetry.InterfaceCLI
+// trackScan stamps the once-per-process scanner versions onto a scan event and
+// dispatches it. Callers set event.Interface (CLI vs MCP) in the struct literal
+// at the call site, which already knows which surface it is.
+func trackScan(ctx context.Context, event telemetry.ScanEvent) {
 	event.BinaryVersions = binaryVersionsForEvent(ctx)
 	telemetryClient.TrackScan(ctx, event)
 }
 
-func trackMCPScan(ctx context.Context, event telemetry.ScanEvent) {
-	event.Interface = telemetry.InterfaceMCP
-	event.BinaryVersions = binaryVersionsForEvent(ctx)
-	telemetryClient.TrackScan(ctx, event)
-}
-
-func trackMCPEvent(ctx context.Context, event telemetry.OperationEvent) {
-	event.Interface = telemetry.InterfaceMCP
-	event.BinaryVersions = binaryVersionsForEvent(ctx)
-	telemetryClient.TrackOperation(ctx, event)
-}
-
-func trackCLIOperation(ctx context.Context, event telemetry.OperationEvent) {
-	event.Interface = telemetry.InterfaceCLI
+// trackOperation is the OperationEvent counterpart of trackScan.
+func trackOperation(ctx context.Context, event telemetry.OperationEvent) {
 	event.BinaryVersions = binaryVersionsForEvent(ctx)
 	telemetryClient.TrackOperation(ctx, event)
 }

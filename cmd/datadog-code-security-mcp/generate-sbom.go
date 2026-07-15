@@ -64,11 +64,12 @@ Examples:
 func runGenerateSBOM(path string, workingDir string, outputJSON bool) error {
 	ctx := context.Background()
 	event := telemetry.OperationEvent{
+		Interface: telemetry.InterfaceCLI,
 		Operation: "generate_sbom",
 		StartedAt: time.Now(),
 		ScanType:  string(types.DetectionTypeSBOM),
 	}
-	defer func() { trackCLIOperation(ctx, event) }()
+	defer func() { trackOperation(ctx, event) }()
 
 	fail := func(err error) error {
 		event.Failure = err

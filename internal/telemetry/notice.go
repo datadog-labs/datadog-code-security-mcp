@@ -36,17 +36,6 @@ func (c *Client) MaybeShowFirstRunNotice() {
 		result := updateConfig(func(cfg *persistedConfig) {
 			cfg.FirstRunNoticeShown = true
 		})
-		if !result.updated {
-			attrs := CommonAttrs()
-			attrs["operation"] = "telemetry_config_update_failed"
-			attrs["interface"] = string(c.iface())
-			attrs["config_errors"] = result.errors
-			if result.renameAttempts > 0 {
-				attrs["config_rename_attempts"] = result.renameAttempts
-			}
-			c.Track(context.Background(), Event{Status: StatusWarn, Attributes: attrs})
-		} else {
-			c.trackRenameContention(context.Background(), result.renameAttempts)
-		}
+		c.emitConfigResult(context.Background(), "telemetry_config_update_failed", result.errors, result.renameAttempts, nil)
 	})
 }

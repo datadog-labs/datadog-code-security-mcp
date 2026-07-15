@@ -120,19 +120,8 @@ func New(opts Options) *Client {
 	// Surface config persistence problems (and Windows write contention) so the
 	// team can track how many installs have broken or contended config paths.
 	// Uses context.Background() since no caller context is available at construction.
-	if len(result.errors) > 0 {
-		attrs := CommonAttrs()
-		attrs["operation"] = "telemetry_init_with_errors"
-		attrs["interface"] = string(c.iface())
-		attrs["config_errors"] = result.errors
-		attrs["id_ephemeral"] = result.idEphemeral
-		if result.renameAttempts > 0 {
-			attrs["config_rename_attempts"] = result.renameAttempts
-		}
-		c.Track(context.Background(), Event{Status: StatusWarn, Attributes: attrs})
-	} else {
-		c.trackRenameContention(context.Background(), result.renameAttempts)
-	}
+	c.emitConfigResult(context.Background(), "telemetry_init_with_errors", result.errors, result.renameAttempts,
+		map[string]any{"id_ephemeral": result.idEphemeral})
 
 	return c
 }
@@ -144,6 +133,31 @@ func (c *Client) iface() Interface {
 		return InterfaceMCP
 	}
 	return InterfaceCLI
+}
+
+// emitConfigResult is the single reporting path for a config-persistence
+// operation. When the operation carried categorized errors it emits one warn
+// event (operation, config_errors, and — under contention — the rename-attempt
+// count, plus any caller-specific extra attrs); when it succeeded it instead
+// emits only the rename-contention signal, if any. Both New() and
+// MaybeShowFirstRunNotice() funnel through here so the emission shape lives in
+// one place. Attributes are counts/OS/kinds only — never paths or raw errors.
+func (c *Client) emitConfigResult(ctx context.Context, operation string, errs []string, renameAttempts int, extra map[string]any) {
+	if len(errs) == 0 {
+		c.trackRenameContention(ctx, renameAttempts)
+		return
+	}
+	attrs := CommonAttrs()
+	attrs["operation"] = operation
+	attrs["interface"] = string(c.iface())
+	attrs["config_errors"] = errs
+	if renameAttempts > 0 {
+		attrs["config_rename_attempts"] = renameAttempts
+	}
+	for k, v := range extra {
+		attrs[k] = v
+	}
+	c.Track(ctx, Event{Status: StatusWarn, Attributes: attrs})
 }
 
 // trackRenameContention emits a warn event when an atomic config write succeeded

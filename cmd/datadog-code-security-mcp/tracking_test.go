@@ -133,7 +133,8 @@ func testTrackCLIScan(ctx context.Context, scanType string, outcome *scan.ScanOu
 	if outcome == nil {
 		outcome = scan.NewFailedOutcome(scanTypes, err)
 	}
-	trackCLIScan(ctx, telemetry.ScanEvent{
+	trackScan(ctx, telemetry.ScanEvent{
+		Interface:    telemetry.InterfaceCLI,
 		Outcome:      outcome,
 		StartedAt:    start,
 		PathsCount:   pathsCount,
@@ -147,7 +148,8 @@ func testTrackMCPScan(ctx context.Context, _ string, scanTypes []string, outcome
 	if outcome == nil {
 		outcome = scan.NewFailedOutcome(scanTypes, err)
 	}
-	trackMCPScan(ctx, telemetry.ScanEvent{
+	trackScan(ctx, telemetry.ScanEvent{
+		Interface:  telemetry.InterfaceMCP,
 		Outcome:    outcome,
 		StartedAt:  start,
 		PathsCount: pathsCount,

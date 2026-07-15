@@ -6,26 +6,27 @@ import (
 	"github.com/datadog-labs/datadog-code-security-mcp/internal/types"
 )
 
-// TestCloneExecution_NoticeIsDeepCopied pins the defensive-copy contract of
-// Execution(): mutating a Notice obtained from the accessor must never be
-// observable through the outcome's internal state.
-func TestCloneExecution_NoticeIsDeepCopied(t *testing.T) {
+// TestNewCompletedOutcome_NoticeDeepCopiedAtIngest pins the single
+// defensive-copy boundary: ingest deep-copies each execution (including the
+// Notice pointee), so mutating the caller's original Notice after construction
+// must never be observable through the outcome.
+func TestNewCompletedOutcome_NoticeDeepCopiedAtIngest(t *testing.T) {
+	original := &types.ScanNotice{
+		DetectionType: types.DetectionTypeSCA,
+		Message:       "original",
+	}
 	outcome := NewCompletedOutcome([]ScanExecution{
-		{
-			DetectionType: types.DetectionTypeSCA,
-			Notice: &types.ScanNotice{
-				DetectionType: types.DetectionTypeSCA,
-				Message:       "original",
-			},
-		},
+		{DetectionType: types.DetectionTypeSCA, Notice: original},
 	})
+
+	// Mutating the caller's slice/pointer after construction must not leak in.
+	original.Message = "mutated by caller"
 
 	execution, ok := outcome.Execution(string(types.DetectionTypeSCA))
 	if !ok {
 		t.Fatal("expected to find the sca execution")
 	}
-	execution.Notice.Message = "mutated via Execution"
-	if got := outcome.executions[0].Notice.Message; got != "original" {
-		t.Errorf("Execution() leaked a shared Notice pointer; internal state became %q", got)
+	if execution.Notice.Message != "original" {
+		t.Errorf("ingest did not deep-copy Notice; got %q", execution.Notice.Message)
 	}
 }

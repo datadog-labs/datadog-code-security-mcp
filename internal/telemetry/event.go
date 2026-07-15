@@ -92,10 +92,28 @@ func (r errorRule) matches(msg string) bool {
 	return len(r.contains) > 0
 }
 
-// errorRules is evaluated in order; the first matching rule wins. More specific
-// rules (e.g. Git failures surfaced by scanner subprocesses) come first so they
-// are not swallowed by the broader ScanError fallback.
+// errorRules is evaluated in order; the first matching rule wins.
+//
+// Rules are grouped into two deliberately-ordered tiers, most specific first:
+//
+//  1. Owned/known signals — fixed substrings we control, either from our own
+//     error constants (constants.Err*) or from stable phrases emitted by the
+//     scanner subprocesses (Git failures, "not found in PATH", the API-rules
+//     read failure, OS "no such file" text). These are anchored, unambiguous
+//     strings, so matching them by substring is safe.
+//
+//  2. Foreign scanner failure text — the residual "scanner execution failed" /
+//     "detection failed" phrasing that wraps a subprocess exit. This is the
+//     last resort before ErrKindUnknown.
+//
+// Deliberately absent: broad bare substrings like "invalid", "scan", or
+// "failed". They previously made classification order-sensitive (e.g. a TLS
+// "certificate is invalid" error would be mislabeled InvalidArguments, and an
+// aggregated multi-scanner blob would be categorized by whichever keyword
+// appeared first anywhere in the text). Anything not matched by an anchored
+// rule now falls through to ErrKindUnknown rather than being guessed.
 var errorRules = []errorRule{
+	// Tier 1: owned/known anchored signals.
 	{kind: ErrKindGitError, contains: []string{"remote not found"}, message: "remote not found"},
 	{kind: ErrKindGitError, contains: []string{"Unable to parse git ignores"}, message: "unable to parse .git"},
 
@@ -115,18 +133,22 @@ var errorRules = []errorRule{
 	{kind: ErrKindPathNotFound, contains: []string{"no such file or directory"}},
 	{kind: ErrKindPathNotFound, contains: []string{"cannot find the path"}},
 
-	{kind: ErrKindInvalidArguments, contains: []string{constants.ErrInvalidArguments}},
-	{kind: ErrKindInvalidArguments, contains: []string{"is required"}},
-	{kind: ErrKindInvalidArguments, contains: []string{"invalid"}},
-	{kind: ErrKindInvalidArguments, contains: []string{"must be"}},
-
+	// Network before the owned InvalidArguments rules so subprocess/transport
+	// text (e.g. a "dial tcp" failure) is never shadowed by a broader match.
 	{kind: ErrKindNetwork, contains: []string{"connection refused"}},
 	{kind: ErrKindNetwork, contains: []string{"no such host"}},
 	{kind: ErrKindNetwork, contains: []string{"dial tcp"}},
 	{kind: ErrKindNetwork, contains: []string{"network"}},
 
-	{kind: ErrKindScanError, contains: []string{"scan"}},
-	{kind: ErrKindScanError, contains: []string{"failed"}},
+	// Owned argument-validation errors, matched by the exact phrases our own
+	// error constructors use — never a bare "invalid".
+	{kind: ErrKindInvalidArguments, contains: []string{constants.ErrInvalidArguments}},
+	{kind: ErrKindInvalidArguments, contains: []string{"is required"}},
+	{kind: ErrKindInvalidArguments, contains: []string{"must be"}},
+
+	// Tier 2: residual foreign scanner failure text (last resort before Unknown).
+	{kind: ErrKindScanError, contains: []string{"scanner execution failed"}},
+	{kind: ErrKindScanError, contains: []string{"detection failed"}},
 }
 
 var exitStatusRe = regexp.MustCompile(`exit status (\d+)`)

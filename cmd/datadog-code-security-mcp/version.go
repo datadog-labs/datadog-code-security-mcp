@@ -36,7 +36,8 @@ Examples:
 			ctx := cmd.Context()
 			start := time.Now()
 			err := printVersion(ctx, detailed)
-			trackCLIOperation(ctx, telemetry.OperationEvent{
+			trackOperation(ctx, telemetry.OperationEvent{
+				Interface: telemetry.InterfaceCLI,
 				Operation: "version",
 				StartedAt: start,
 				Detailed:  &detailed,
