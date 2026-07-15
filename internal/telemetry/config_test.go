@@ -3,6 +3,7 @@ package telemetry
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -96,6 +97,69 @@ func TestAtomicWrite_CleansTempFileOnFailure(t *testing.T) {
 	}
 	if len(temps) != 0 {
 		t.Errorf("temporary config files left after failed save: %v", temps)
+	}
+}
+
+// TestRenameWithRetry_RecoversAfterTransientFailures pins the retry/backoff
+// loop itself: renameFn is faked to fail a few times before succeeding, so
+// the loop actually iterates (unlike a real POSIX rename, which succeeds on
+// the first attempt and never exercises this path in CI).
+func TestRenameWithRetry_RecoversAfterTransientFailures(t *testing.T) {
+	original := renameFn
+	defer func() { renameFn = original }()
+
+	const wantFailures = 3
+	calls := 0
+	renameFn = func(oldpath, newpath string) error {
+		calls++
+		if calls <= wantFailures {
+			return fmt.Errorf("simulated transient rename failure %d", calls)
+		}
+		return os.Rename(oldpath, newpath)
+	}
+
+	dir := t.TempDir()
+	oldpath := filepath.Join(dir, "old")
+	newpath := filepath.Join(dir, "new")
+	if err := os.WriteFile(oldpath, []byte("data"), 0o600); err != nil {
+		t.Fatalf("write source file: %v", err)
+	}
+
+	attempts, err := renameWithRetry(oldpath, newpath)
+	if err != nil {
+		t.Fatalf("renameWithRetry: %v", err)
+	}
+	if want := wantFailures + 1; attempts != want {
+		t.Errorf("attempts = %d, want %d", attempts, want)
+	}
+	if _, err := os.Stat(newpath); err != nil {
+		t.Errorf("expected file at newpath once the retry succeeds: %v", err)
+	}
+}
+
+// TestRenameWithRetry_ExhaustsAttemptsAndReturnsError verifies the loop gives
+// up after maxAttempts and surfaces the last underlying error.
+func TestRenameWithRetry_ExhaustsAttemptsAndReturnsError(t *testing.T) {
+	original := renameFn
+	defer func() { renameFn = original }()
+
+	wantErr := errors.New("permanent rename failure")
+	calls := 0
+	renameFn = func(oldpath, newpath string) error {
+		calls++
+		return wantErr
+	}
+
+	attempts, err := renameWithRetry("old", "new")
+	if !errors.Is(err, wantErr) {
+		t.Errorf("err = %v, want %v", err, wantErr)
+	}
+	const maxAttempts = 10
+	if attempts != maxAttempts {
+		t.Errorf("attempts = %d, want %d", attempts, maxAttempts)
+	}
+	if calls != maxAttempts {
+		t.Errorf("renameFn called %d times, want %d", calls, maxAttempts)
 	}
 }
 
