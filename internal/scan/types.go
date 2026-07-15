@@ -169,7 +169,7 @@ func (o *ScanOutcome) scanErrors() []ScanError {
 	for _, execution := range o.executions {
 		if execution.Err != nil {
 			errors = append(errors, ScanError{
-				DetectionType: string(execution.DetectionType),
+				DetectionType: execution.DetectionType,
 				Error:         execution.Err.Error(),
 			})
 		}

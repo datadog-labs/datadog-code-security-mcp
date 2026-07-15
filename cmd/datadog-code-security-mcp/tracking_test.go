@@ -94,10 +94,10 @@ func testScanOutcome(result *scan.ScanResult, durations map[string]int64, scanTy
 	noticesByType := make(map[string]scan.ScanNotice)
 	if result != nil {
 		for _, scanErr := range result.Errors {
-			errorsByType[scanErr.DetectionType] = errors.New(scanErr.Error)
+			errorsByType[string(scanErr.DetectionType)] = errors.New(scanErr.Error)
 		}
 		for _, notice := range result.Notices {
-			noticesByType[notice.DetectionType] = notice
+			noticesByType[string(notice.DetectionType)] = notice
 		}
 	}
 	executions := make([]scan.ScanExecution, 0, len(scanTypes))

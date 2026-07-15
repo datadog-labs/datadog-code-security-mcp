@@ -233,7 +233,7 @@ func TestExecuteParallelScans_AllScanTypes(t *testing.T) {
 		reported[string(dt)] = true
 	}
 	for _, e := range result.Errors {
-		reported[e.DetectionType] = true
+		reported[string(e.DetectionType)] = true
 	}
 	for _, expected := range []string{"sast", "secrets", "sca"} {
 		if !reported[expected] {

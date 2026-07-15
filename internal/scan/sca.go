@@ -108,7 +108,7 @@ func (s *SCAScanner) generateSBOM(ctx context.Context, filePaths []string, worki
 	if len(allComponents) == 0 {
 		if notice == nil {
 			notice = &types.ScanNotice{
-				DetectionType: string(types.DetectionTypeSCA),
+				DetectionType: types.DetectionTypeSCA,
 				Message:       types.NoComponentsDetectedMessage,
 				Hint:          types.ManualSBOMSuggestion,
 			}
@@ -139,7 +139,7 @@ func classifySBOMResult(path string, result *types.SBOMResult) (*types.ScanNotic
 		// detection type, but from the caller's perspective this notice
 		// belongs to the sca scan that's using the SBOM step internally.
 		notice := *result.Notice
-		notice.DetectionType = string(types.DetectionTypeSCA)
+		notice.DetectionType = types.DetectionTypeSCA
 		return &notice, nil
 	}
 	return nil, nil

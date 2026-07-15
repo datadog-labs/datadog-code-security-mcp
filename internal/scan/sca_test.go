@@ -274,7 +274,7 @@ func TestClassifySBOMResult_NoComponentsNotice(t *testing.T) {
 	if notice == nil {
 		t.Fatal("expected a non-nil notice")
 	}
-	if notice.DetectionType != string(types.DetectionTypeSCA) {
+	if notice.DetectionType != types.DetectionTypeSCA {
 		t.Errorf("expected notice to be re-tagged as %q, got %q", types.DetectionTypeSCA, notice.DetectionType)
 	}
 	if notice.Message != types.NoComponentsDetectedMessage {

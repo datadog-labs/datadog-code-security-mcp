@@ -48,7 +48,7 @@ func (g *Generator) Generate(ctx context.Context, args types.SBOMArgs) (*types.S
 	if err != nil {
 		return &types.SBOMResult{
 			Error: &types.ScanError{
-				DetectionType: string(types.DetectionTypeSBOM),
+				DetectionType: types.DetectionTypeSBOM,
 				Error:         err.Error(),
 				Hint:          "Install datadog-sbom-generator using the instructions above",
 			},
@@ -60,7 +60,7 @@ func (g *Generator) Generate(ctx context.Context, args types.SBOMArgs) (*types.S
 	if err != nil {
 		return &types.SBOMResult{
 			Error: &types.ScanError{
-				DetectionType: string(types.DetectionTypeSBOM),
+				DetectionType: types.DetectionTypeSBOM,
 				Error:         fmt.Sprintf("failed to create temp directory: %v", err),
 			},
 		}, nil
@@ -92,7 +92,7 @@ func (g *Generator) Generate(ctx context.Context, args types.SBOMArgs) (*types.S
 	if err != nil {
 		return &types.SBOMResult{
 			Error: &types.ScanError{
-				DetectionType: string(types.DetectionTypeSBOM),
+				DetectionType: types.DetectionTypeSBOM,
 				Error:         err.Error(),
 				Hint:          retryHintFromError(err),
 			},
@@ -104,7 +104,7 @@ func (g *Generator) Generate(ctx context.Context, args types.SBOMArgs) (*types.S
 	if err != nil {
 		return &types.SBOMResult{
 			Error: &types.ScanError{
-				DetectionType: string(types.DetectionTypeSBOM),
+				DetectionType: types.DetectionTypeSBOM,
 				Error:         fmt.Sprintf("failed to parse SBOM results: %v", err),
 			},
 		}, nil
@@ -124,7 +124,7 @@ func (g *Generator) Generate(ctx context.Context, args types.SBOMArgs) (*types.S
 	// callers don't mistake "nothing found" for "something broke."
 	if len(libraries) == 0 {
 		result.Notice = &types.ScanNotice{
-			DetectionType: string(types.DetectionTypeSBOM),
+			DetectionType: types.DetectionTypeSBOM,
 			Message:       types.NoComponentsDetectedMessage,
 			Hint:          types.ManualSBOMSuggestion,
 		}

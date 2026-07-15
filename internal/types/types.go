@@ -65,9 +65,9 @@ type ScanResult struct {
 
 // ScanError represents an error that occurred during scanning
 type ScanError struct {
-	DetectionType string `json:"detection_type" jsonschema:"description=The detection type that encountered an error"`
-	Error         string `json:"error" jsonschema:"description=Error message"`
-	Hint          string `json:"hint,omitempty" jsonschema:"description=Suggestion for how to resolve the error"`
+	DetectionType DetectionType `json:"detection_type" jsonschema:"description=The detection type that encountered an error"`
+	Error         string        `json:"error" jsonschema:"description=Error message"`
+	Hint          string        `json:"hint,omitempty" jsonschema:"description=Suggestion for how to resolve the error"`
 }
 
 // ScanNotice is a non-fatal, informational note about a scan that completed
@@ -76,9 +76,9 @@ type ScanError struct {
 // a notice never affects success/failure status, exit codes, or telemetry
 // error classification.
 type ScanNotice struct {
-	DetectionType string `json:"detection_type" jsonschema:"description=The detection type the notice applies to"`
-	Message       string `json:"message" jsonschema:"description=Short description of the notice"`
-	Hint          string `json:"hint,omitempty" jsonschema:"description=Suggested follow-up action"`
+	DetectionType DetectionType `json:"detection_type" jsonschema:"description=The detection type the notice applies to"`
+	Message       string        `json:"message" jsonschema:"description=Short description of the notice"`
+	Hint          string        `json:"hint,omitempty" jsonschema:"description=Suggested follow-up action"`
 }
 
 // SBOMArgs represents arguments for SBOM generation
