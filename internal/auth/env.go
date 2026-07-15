@@ -48,19 +48,29 @@ func (c *Credentials) applyToEnv() (bool, error) {
 
 // LoadAndApplyToEnv loads auth config from the environment, builds a provider,
 // and applies any resolved credentials to the environment. It is the entry
-// point for paths that do not already hold a Provider (e.g. the CLI). A missing
-// or unconfigured setup is a no-op that returns (false, nil).
-func LoadAndApplyToEnv(ctx context.Context) (bool, error) {
+// point for paths that do not already hold a Provider (e.g. the CLI).
+//
+// It returns the auth method (see Config.Method), computed from the config as
+// loaded here — before any credential this call resolves is exported to the
+// environment. Callers must capture this return value once and reuse it
+// (e.g. for telemetry) rather than re-deriving the method later by inspecting
+// the environment, which would by then reflect this call's own side effect.
+// A missing or unconfigured setup is a no-op that returns (MethodNone, nil).
+func LoadAndApplyToEnv(ctx context.Context) (string, error) {
 	cfg, err := LoadConfig()
 	if err != nil {
-		return false, err
+		return "", err
 	}
+	method := cfg.Method()
 	if !cfg.IsConfigured() {
-		return false, nil
+		return method, nil
 	}
 	p, err := NewProvider(cfg)
 	if err != nil {
-		return false, err
+		return method, err
 	}
-	return p.ApplyToEnv(ctx)
+	if _, err := p.ApplyToEnv(ctx); err != nil {
+		return method, err
+	}
+	return method, nil
 }

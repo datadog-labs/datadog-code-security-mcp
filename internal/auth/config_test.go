@@ -245,6 +245,39 @@ func TestConfig_HasAPIKeys(t *testing.T) {
 	}
 }
 
+// TestConfig_Method_DDAuthOnlyIsAuthProvider is the regression guard for the
+// bug where a dd-auth-only config (DD_AUTH_DOMAIN set, no DD_API_KEY) was
+// unreachable via the CLI's old global authProvider check and always fell
+// through to "none", even though this Config resolves real credentials via
+// dd-auth and the scan succeeds. Method must report MethodAuthProvider here,
+// not MethodNone.
+func TestConfig_Method_DDAuthOnlyIsAuthProvider(t *testing.T) {
+	cfg := &Config{DDAuthDomain: "app.datadoghq.com"}
+	if got := cfg.Method(); got != MethodAuthProvider {
+		t.Errorf("Method() = %q, want %q", got, MethodAuthProvider)
+	}
+}
+
+func TestConfig_Method(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  *Config
+		want string
+	}{
+		{"api key set", &Config{APIKey: "key"}, MethodEnvVar},
+		{"dd-auth only", &Config{DDAuthDomain: "app.datadoghq.com"}, MethodAuthProvider},
+		{"api key takes precedence over dd-auth", &Config{APIKey: "key", DDAuthDomain: "app.datadoghq.com"}, MethodEnvVar},
+		{"nothing configured", &Config{}, MethodNone},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.cfg.Method(); got != tt.want {
+				t.Errorf("Method() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestConfig_Validate(t *testing.T) {
 	tests := []struct {
 		name    string

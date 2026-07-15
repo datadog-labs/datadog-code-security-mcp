@@ -1,19 +1,12 @@
 package main
 
-import (
-	"os"
-
-	"github.com/datadog-labs/datadog-code-security-mcp/internal/constants"
-)
-
-// detectAuthMethod returns how credentials are configured before any auth loading.
-// Must be called before loadAuthToEnv() or setAuthCredentials() mutates the environment.
+// detectAuthMethod returns how authentication was configured for this MCP
+// server process. The value is captured once in mcpAuthMethod at server
+// startup (see runServer in start.go), before any tool call could mutate the
+// environment by exporting resolved credentials — re-deriving it from the
+// live environment on each call would misattribute that self-inflicted
+// mutation as a user-set env var for every request after the first
+// authenticated one.
 func detectAuthMethod() string {
-	if os.Getenv(constants.EnvAPIKey) != "" {
-		return "env_var"
-	}
-	if authProvider != nil && authProvider.IsConfigured() {
-		return "auth_provider"
-	}
-	return "none"
+	return mcpAuthMethod
 }

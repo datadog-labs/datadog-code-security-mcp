@@ -89,11 +89,17 @@ Examples:
 }
 
 // loadAuthToEnv attempts to load Datadog credentials and export them as
-// environment variables for the scanner subprocess. Unlike the MCP path, errors
-// are intentionally ignored so the CLI can fall back to env vars the user may
-// have already set. The shared logic lives in internal/auth.
-func loadAuthToEnv(ctx context.Context) {
-	_, _ = auth.LoadAndApplyToEnv(ctx)
+// environment variables for the scanner subprocess. It returns how auth was
+// configured (see auth.Config.Method), captured before any credential this
+// call resolves is exported to the environment — the CLI has no long-lived
+// authProvider to fall back on like the MCP server does, so this is the only
+// place that can correctly attribute a dd-auth-only setup instead of always
+// reporting "none". Unlike the MCP path, errors are intentionally ignored so
+// the CLI can fall back to env vars the user may have already set. The shared
+// logic lives in internal/auth.
+func loadAuthToEnv(ctx context.Context) string {
+	method, _ := auth.LoadAndApplyToEnv(ctx)
+	return method
 }
 
 // resolveScanTypes maps a CLI scan-type argument to the concrete detection
@@ -119,8 +125,7 @@ func resolveScanTypes(scanType string) ([]string, error) {
 func runDirectScan(scanType string, paths []string, workingDir string, outputJSON bool) error {
 	ctx := context.Background()
 	start := time.Now()
-	authMethod := detectAuthMethod()
-	loadAuthToEnv(ctx)
+	authMethod := loadAuthToEnv(ctx)
 	scanType = strings.ToLower(scanType)
 	// resolveScanTypes is the single source of truth for the scan-type → concrete
 	// detection-types mapping; both telemetry and the scan args derive from it.
@@ -391,7 +396,7 @@ func runLibraryScan(purls []string, workingDir string, outputJSON bool) error {
 		return err
 	}
 
-	loadAuthToEnv(ctx)
+	event.AuthMethod = loadAuthToEnv(ctx)
 
 	apiKey := os.Getenv("DD_API_KEY")
 	appKey := os.Getenv("DD_APP_KEY")

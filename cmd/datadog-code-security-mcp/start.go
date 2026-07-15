@@ -61,12 +61,21 @@ The server will run until terminated with Ctrl+C or SIGTERM.`,
 
 var authProvider *auth.Provider
 
+// mcpAuthMethod is how authentication was configured for this server process,
+// captured once at startup below — before any tool call has had a chance to
+// export resolved credentials into the environment. Re-deriving this on every
+// request by inspecting the live environment would misread that self-inflicted
+// mutation as a user-set env var after the very first authenticated call (see
+// detectAuthMethod in utils.go and auth.Config.Method).
+var mcpAuthMethod string
+
 func runServer() error {
 	// Load authentication configuration
 	authConfig, err := auth.LoadConfig()
 	if err != nil {
 		return fmt.Errorf("failed to load auth config: %w", err)
 	}
+	mcpAuthMethod = authConfig.Method()
 
 	// Create auth provider
 	authProvider, err = auth.NewProvider(authConfig)
