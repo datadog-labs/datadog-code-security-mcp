@@ -1,7 +1,10 @@
 // Package telemetry provides anonymous usage telemetry for the
 // datadog-code-security-mcp CLI and MCP server. It sends one log event per
-// command/tool invocation to the Datadog browser-http-intake using a
-// publicly-embeddable client token injected at build time.
+// scan type executed to the Datadog browser-http-intake using a
+// publicly-embeddable client token injected at build time. A single-type
+// invocation emits one event; a multi-type invocation (e.g. "scan all")
+// emits one per-scan event per type plus an additional aggregate event
+// summarizing the whole run — see docs/TELEMETRY.md for the full event model.
 //
 // Privacy guarantees:
 //   - No source code, scan findings, secrets, or user identifiers.

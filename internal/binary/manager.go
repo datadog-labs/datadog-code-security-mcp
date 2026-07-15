@@ -229,7 +229,7 @@ func (bm *BinaryManager) formatMissingBinaryError() error {
 
 // GetVersion returns the semver (X.Y.Z) reported by the binary's version command.
 // Returns "not_found" if the binary is not in PATH, "unknown" if the version
-// string cannot be parsed.
+// command fails to run or its output cannot be parsed as a semver.
 func (bm *BinaryManager) GetVersion(ctx context.Context) string {
 	path, err := exec.LookPath(bm.config.BinaryName)
 	if err != nil {

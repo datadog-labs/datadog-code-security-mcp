@@ -31,9 +31,10 @@ var (
 // Initialised once in main() before any subcommand runs.
 var telemetryClient *telemetry.Client
 
-// flushTelemetry drains any in-flight telemetry POST before the process exits.
-// Call this immediately before os.Exit so the goroutine has a chance to finish.
-// Flush is nil-safe, so this works even if the client was never constructed.
+// flushTelemetry drains any in-flight telemetry POST and reaps the scanner
+// version-lookup subprocesses before the process exits. Call this immediately
+// before os.Exit so both have a chance to finish. Both steps are nil-safe, so
+// this works even if the telemetry client was never constructed.
 func flushTelemetry() {
 	scannerVersionCache.Close()
 	telemetryClient.Flush()
