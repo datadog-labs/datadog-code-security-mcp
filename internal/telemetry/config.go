@@ -186,22 +186,59 @@ func readConfig(path string) (persistedConfig, error) {
 	return cfg, nil
 }
 
+// writeTempConfigFile marshals cfg and writes it to a new temp file in dir,
+// named per pattern (see os.CreateTemp), fully durable on disk (chmod'd to
+// 0600, written, and fsync'd) before returning. It's shared by saveConfig and
+// createConfigIfAbsent, which differ only in how they commit the temp file
+// (rename vs. hard-link) once it's ready.
+//
+// On any failure the temp file is removed and "" is returned; on success the
+// caller owns removing tmpName once its commit step has run.
+func writeTempConfigFile(cfg persistedConfig, dir, pattern string) (tmpName string, err error) {
+	data, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("marshal config: %w", err)
+	}
+
+	tmp, err := os.CreateTemp(dir, pattern)
+	if err != nil {
+		return "", fmt.Errorf("create temp config: %w", err)
+	}
+	tmpName = tmp.Name()
+
+	if err := tmp.Chmod(0o600); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmpName)
+		return "", fmt.Errorf("chmod temp config: %w", err)
+	}
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmpName)
+		return "", fmt.Errorf("write temp config: %w", err)
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmpName)
+		return "", fmt.Errorf("sync temp config: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmpName)
+		return "", fmt.Errorf("close temp config: %w", err)
+	}
+
+	return tmpName, nil
+}
+
 // saveConfig atomically writes cfg to path via a temp file and rename, so
 // readers never observe a partial write. It returns the number of atomic-rename
 // attempts made (1 on a clean write, > 1 under contention, 0 when it failed
 // before reaching the rename step) so callers can surface write contention in
 // telemetry.
 func saveConfig(cfg persistedConfig, path string) (int, error) {
-	data, err := json.MarshalIndent(cfg, "", "  ")
+	tmpName, err := writeTempConfigFile(cfg, filepath.Dir(path), "."+filepath.Base(path)+".tmp-*")
 	if err != nil {
-		return 0, fmt.Errorf("marshal config: %w", err)
+		return 0, err
 	}
-
-	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".tmp-*")
-	if err != nil {
-		return 0, fmt.Errorf("create temp config: %w", err)
-	}
-	tmpName := tmp.Name()
 	cleanup := true
 	defer func() {
 		if cleanup {
@@ -209,21 +246,6 @@ func saveConfig(cfg persistedConfig, path string) (int, error) {
 		}
 	}()
 
-	if err := tmp.Chmod(0o600); err != nil {
-		_ = tmp.Close()
-		return 0, fmt.Errorf("chmod temp config: %w", err)
-	}
-	if _, err := tmp.Write(data); err != nil {
-		_ = tmp.Close()
-		return 0, fmt.Errorf("write temp config: %w", err)
-	}
-	if err := tmp.Sync(); err != nil {
-		_ = tmp.Close()
-		return 0, fmt.Errorf("sync temp config: %w", err)
-	}
-	if err := tmp.Close(); err != nil {
-		return 0, fmt.Errorf("close temp config: %w", err)
-	}
 	attempts, err := renameWithRetry(tmpName, path)
 	if err != nil {
 		return attempts, fmt.Errorf("replace config: %w", err)
@@ -232,6 +254,14 @@ func saveConfig(cfg persistedConfig, path string) (int, error) {
 	cleanup = false
 	return attempts, nil
 }
+
+// renameFn performs the actual rename in renameWithRetry. It's a package
+// variable (rather than a direct os.Rename call) purely so tests can
+// substitute a fake that simulates the transient failures this retry loop
+// exists to recover from — real POSIX renames essentially never fail
+// transiently, so exercising the loop otherwise requires OS-specific
+// contention that isn't reliably reproducible in CI.
+var renameFn = os.Rename
 
 // renameWithRetry renames oldpath to newpath, retrying on failure. Unlike POSIX
 // rename(2), Windows' MoveFileEx can transiently fail with a sharing violation
@@ -247,7 +277,7 @@ func renameWithRetry(oldpath, newpath string) (attempts int, err error) {
 	const maxAttempts = 10
 	for attempt := 0; attempt < maxAttempts; attempt++ {
 		attempts = attempt + 1
-		if err = os.Rename(oldpath, newpath); err == nil {
+		if err = renameFn(oldpath, newpath); err == nil {
 			return attempts, nil
 		}
 		if attempt < maxAttempts-1 {
@@ -294,33 +324,11 @@ func updateConfig(update func(*persistedConfig)) configUpdateResult {
 // converge on a single install_id without a lock. Returns created=false (and no
 // error) when the file already exists, signalling the caller to re-read it.
 func createConfigIfAbsent(cfg persistedConfig, path string) (created bool, err error) {
-	data, err := json.MarshalIndent(cfg, "", "  ")
+	tmpName, err := writeTempConfigFile(cfg, filepath.Dir(path), "."+filepath.Base(path)+".new-*")
 	if err != nil {
-		return false, fmt.Errorf("marshal config: %w", err)
+		return false, err
 	}
-
-	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".new-*")
-	if err != nil {
-		return false, fmt.Errorf("create temp config: %w", err)
-	}
-	tmpName := tmp.Name()
 	defer func() { _ = os.Remove(tmpName) }()
-
-	if err := tmp.Chmod(0o600); err != nil {
-		_ = tmp.Close()
-		return false, fmt.Errorf("chmod temp config: %w", err)
-	}
-	if _, err := tmp.Write(data); err != nil {
-		_ = tmp.Close()
-		return false, fmt.Errorf("write temp config: %w", err)
-	}
-	if err := tmp.Sync(); err != nil {
-		_ = tmp.Close()
-		return false, fmt.Errorf("sync temp config: %w", err)
-	}
-	if err := tmp.Close(); err != nil {
-		return false, fmt.Errorf("close temp config: %w", err)
-	}
 
 	if err := os.Link(tmpName, path); err != nil {
 		if os.IsExist(err) {
