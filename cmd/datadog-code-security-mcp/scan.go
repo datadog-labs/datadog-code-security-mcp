@@ -24,6 +24,12 @@ import (
 // printing an error, after flushing telemetry.
 var errViolationsFound = errors.New("violations found")
 
+// invalidScanType is the telemetry sentinel used when the CLI is given an
+// unrecognized scan-type argument. The raw argument is user-supplied and could
+// contain a path or secret, so it must never be sent as telemetry; this fixed,
+// path-free value records the invalid-scan-type case without echoing input.
+const invalidScanType = "invalid_scan"
+
 func newScanCmd() *cobra.Command {
 	var (
 		workingDir string
@@ -132,11 +138,15 @@ func runDirectScan(scanType string, paths []string, workingDir string, outputJSO
 	defer func() { trackCLIScan(ctx, tracking) }()
 
 	// telemetryTypes attributes a pre-execution failure. For an unrecognized
-	// scan type we fall back to the raw argument so the event still reflects
-	// what the user asked for.
+	// scan type we deliberately record a fixed sentinel instead of the raw
+	// argument: args[0] is arbitrary user input (potentially a path or secret
+	// if the positional args are misused) and must never reach the wire. The
+	// sentinel still lets us count invalid-scan-type failures without echoing
+	// the value. The human-facing error (scanTypesErr) is unaffected and may
+	// still show the raw value locally.
 	telemetryTypes := scanTypes
 	if scanTypesErr != nil {
-		telemetryTypes = []string{scanType}
+		telemetryTypes = []string{invalidScanType}
 	}
 
 	// fail records a pre-execution failure as the canonical outcome. The

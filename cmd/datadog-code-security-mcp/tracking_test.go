@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -682,6 +683,51 @@ func TestTrackCLIScan_ScanAllStandaloneFlag(t *testing.T) {
 	}
 	if sast["output_format"] == nil {
 		t.Error("output_format must be present on per-scan CLI events")
+	}
+}
+
+// TestRunDirectScan_InvalidScanTypeUsesSentinel is the regression guard for the
+// privacy bug where an unrecognized scan-type argument (args[0], arbitrary user
+// input that could be a path or secret) was echoed verbatim into the telemetry
+// operation/message. The fallback must instead report the fixed "invalid_scan"
+// sentinel, yielding operation "invalid_scan_scan", and the raw argument must
+// not appear anywhere on the wire. The human-facing error is unaffected and may
+// still contain the raw value.
+func TestRunDirectScan_InvalidScanTypeUsesSentinel(t *testing.T) {
+	srv, ch := captureCmdServer(t)
+	telemetryClient = newCmdTestTelemetryClient(t, srv)
+	t.Cleanup(func() { telemetryClient = nil })
+
+	// A raw argument that could plausibly be a path or secret if the CLI's
+	// positional args are misused. Already lowercase so it survives the
+	// strings.ToLower normalization in runDirectScan unchanged.
+	rawArg := "/tmp/super-secret-token-abc123"
+	err := runDirectScan(rawArg, []string{"."}, "", false)
+	if err == nil {
+		t.Fatal("expected an error for an invalid scan type")
+	}
+	// The user-facing error is printed locally and is allowed to echo the raw value.
+	if !strings.Contains(err.Error(), rawArg) {
+		t.Errorf("user-facing error = %q, want it to contain the raw arg %q", err.Error(), rawArg)
+	}
+	flushTelemetry()
+
+	item := waitCmdEvent(t, ch)
+	if item["operation"] != "invalid_scan_scan" {
+		t.Errorf("operation = %v, want invalid_scan_scan (fixed sentinel, not raw arg)", item["operation"])
+	}
+	if item["success"] != false {
+		t.Errorf("success = %v, want false", item["success"])
+	}
+
+	// Privacy contract: the raw argument must not leak anywhere in the event
+	// (operation, message, or error object).
+	raw, marshalErr := json.Marshal(item)
+	if marshalErr != nil {
+		t.Fatalf("failed to marshal telemetry event: %v", marshalErr)
+	}
+	if strings.Contains(string(raw), rawArg) {
+		t.Errorf("telemetry event leaked raw scan-type argument %q: %s", rawArg, raw)
 	}
 }
 
