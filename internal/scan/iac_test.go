@@ -35,7 +35,7 @@ func TestIaCScanner_Execute_ContextCancellation(t *testing.T) {
 		WorkingDir: ".",
 	}
 
-	_, _, err := s.Execute(ctx, args)
+	_, err := s.Execute(ctx, args)
 	// Expect an error due to context cancellation or binary not found
 	if err == nil {
 		t.Error("Expected an error due to context cancellation, got nil")
@@ -59,7 +59,7 @@ func TestIaCScanner_Execute_MissingBinary(t *testing.T) {
 		WorkingDir: tmpDir,
 	}
 
-	_, _, err = s.Execute(context.Background(), args)
+	_, err = s.Execute(context.Background(), args)
 	if err == nil {
 		t.Error("Expected an error when binary is not found, got nil")
 	}
@@ -81,7 +81,7 @@ func TestIaCScanner_Execute_InvalidSARIF(t *testing.T) {
 		WorkingDir: "/nonexistent/path",
 	}
 
-	_, _, err := s.Execute(ctx, args)
+	_, err := s.Execute(ctx, args)
 	if err == nil {
 		t.Error("Expected an error for invalid working directory, got nil")
 	}

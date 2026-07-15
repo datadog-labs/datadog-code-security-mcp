@@ -7,8 +7,8 @@ import (
 )
 
 // TestCloneExecution_NoticeIsDeepCopied pins the defensive-copy contract of
-// Executions()/Execution(): mutating a Notice obtained from either accessor
-// must never be observable through the outcome's internal state.
+// Execution(): mutating a Notice obtained from the accessor must never be
+// observable through the outcome's internal state.
 func TestCloneExecution_NoticeIsDeepCopied(t *testing.T) {
 	outcome := NewCompletedOutcome([]ScanExecution{
 		{
@@ -19,12 +19,6 @@ func TestCloneExecution_NoticeIsDeepCopied(t *testing.T) {
 			},
 		},
 	})
-
-	executions := outcome.Executions()
-	executions[0].Notice.Message = "mutated via Executions"
-	if got := outcome.executions[0].Notice.Message; got != "original" {
-		t.Errorf("Executions() leaked a shared Notice pointer; internal state became %q", got)
-	}
 
 	execution, ok := outcome.Execution(string(types.DetectionTypeSCA))
 	if !ok {

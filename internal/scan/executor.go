@@ -11,11 +11,12 @@ import (
 )
 
 type Scanner interface {
-	// Execute runs the scan and returns its findings. The returned notice is a
-	// non-fatal, informational note about the execution (e.g. "no components
-	// detected"); it is nil for scanners that have nothing to surface and is
-	// orthogonal to the error result.
-	Execute(ctx context.Context, args ScanArgs) ([]types.Violation, *types.ScanNotice, error)
+	// Execute runs the scan and returns its findings alongside an optional
+	// non-fatal notice (e.g. "no components detected"). The notice is nil for
+	// scanners that have nothing to surface and is orthogonal to the error
+	// result. Executor-owned metadata (detection type and duration) is stamped
+	// by ExecuteParallelScans, not by the scanner.
+	Execute(ctx context.Context, args ScanArgs) (ScannerResult, error)
 }
 
 // ExecuteParallelScans runs multiple scan types in parallel
@@ -45,13 +46,13 @@ func ExecuteParallelScans(ctx context.Context, args ScanArgs, binaryMgr *binary.
 
 			// Execute scan (may take several seconds) and record wall time
 			scanStart := time.Now()
-			findings, notice, err := scannerInst.Execute(ctx, args)
+			res, err := scannerInst.Execute(ctx, args)
 			results <- ScanExecution{
 				DetectionType: types.DetectionType(st),
-				Findings:      findings,
+				Findings:      res.Findings,
 				Err:           err,
 				Duration:      time.Since(scanStart),
-				Notice:        notice,
+				Notice:        res.Notice,
 			}
 		}(scanType)
 	}

@@ -34,18 +34,18 @@ type BaseStaticAnalyzerScanner struct {
 // 2. Parse SARIF output
 // Subclass-specific behavior (like filtering) is handled by the calling scanner.
 // Working directory resolution is handled by ExecuteScan before this is called.
-func (s *BaseStaticAnalyzerScanner) Execute(ctx context.Context, args ScanArgs) ([]types.Violation, *types.ScanNotice, error) {
+func (s *BaseStaticAnalyzerScanner) Execute(ctx context.Context, args ScanArgs) (ScannerResult, error) {
 	rawSARIF, err := s.runDetection(ctx, args.FilePaths, args.WorkingDir)
 	if err != nil {
-		return nil, nil, fmt.Errorf("detection failed: %w", err)
+		return ScannerResult{}, fmt.Errorf("detection failed: %w", err)
 	}
 
 	findings, err := s.parseSARIF(rawSARIF, args.WorkingDir)
 	if err != nil {
-		return nil, nil, fmt.Errorf("parsing failed: %w", err)
+		return ScannerResult{}, fmt.Errorf("parsing failed: %w", err)
 	}
 
-	return findings, nil, nil
+	return ScannerResult{Findings: findings}, nil
 }
 
 // runDetection calls the datadog-static-analyzer binary with config-specific flags

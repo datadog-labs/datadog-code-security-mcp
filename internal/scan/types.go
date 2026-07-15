@@ -28,6 +28,18 @@ type (
 	SCAResult        = types.SCAResult
 )
 
+// ScannerResult is what a single Scanner.Execute call produces: the findings
+// it discovered plus an optional non-fatal notice. Executor-owned metadata
+// (detection type, wall-clock duration, and the error result) is recorded
+// separately in ScanExecution, so scanners never touch those fields.
+type ScannerResult struct {
+	Findings []types.Violation
+	// Notice is a non-fatal, informational note about the execution (e.g. no
+	// components detected). It is nil for scanners that have nothing to
+	// surface and is orthogonal to the error result.
+	Notice *types.ScanNotice
+}
+
 // ScanExecution is the canonical record for one scanner invocation.
 type ScanExecution struct {
 	DetectionType types.DetectionType
@@ -97,18 +109,6 @@ func (o *ScanOutcome) ScanTypes() []string {
 	return scanTypes
 }
 
-// Executions returns a defensive copy of the canonical execution records.
-func (o *ScanOutcome) Executions() []ScanExecution {
-	if o == nil {
-		return nil
-	}
-	executions := make([]ScanExecution, len(o.executions))
-	for i, execution := range o.executions {
-		executions[i] = cloneExecution(execution)
-	}
-	return executions
-}
-
 // Execution returns the execution metadata for scanType.
 func (o *ScanOutcome) Execution(scanType string) (ScanExecution, bool) {
 	if o == nil {
@@ -125,7 +125,7 @@ func (o *ScanOutcome) Execution(scanType string) (ScanExecution, bool) {
 // EachExecution calls fn for every execution in request order. The execution is
 // passed by value but shares the underlying Findings slice, so fn must treat it
 // as read-only. This lets read-only consumers (e.g. telemetry) iterate without
-// paying the defensive deep-copy that Executions() makes.
+// paying the defensive deep-copy that Execution() makes.
 func (o *ScanOutcome) EachExecution(fn func(ScanExecution)) {
 	if o == nil {
 		return

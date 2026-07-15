@@ -38,7 +38,7 @@ func TestSecretsScanner_Execute_ContextCancellation(t *testing.T) {
 		WorkingDir: ".",
 	}
 
-	_, _, err := s.Execute(ctx, args)
+	_, err := s.Execute(ctx, args)
 	if err == nil {
 		t.Error("Expected an error due to context cancellation, got nil")
 	}
@@ -54,7 +54,7 @@ func TestSecretsScanner_Execute_InvalidWorkingDir(t *testing.T) {
 		WorkingDir: "/nonexistent/directory/that/does/not/exist",
 	}
 
-	_, _, err := s.Execute(ctx, args)
+	_, err := s.Execute(ctx, args)
 	if err == nil {
 		t.Error("Expected an error, got nil")
 	}

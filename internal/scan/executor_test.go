@@ -205,11 +205,11 @@ func TestExecuteParallelScans_DurationsAreNonNegative(t *testing.T) {
 	binMgr := binary.NewBinaryManager()
 	outcome := ExecuteParallelScans(ctx, args, binMgr)
 
-	for _, execution := range outcome.Executions() {
+	outcome.EachExecution(func(execution ScanExecution) {
 		if execution.Duration < 0 {
 			t.Errorf("duration[%q] = %s; want >= 0", execution.DetectionType, execution.Duration)
 		}
-	}
+	})
 }
 
 // TestExecuteParallelScans_AllScanTypes verifies all three scan types are dispatched in parallel.

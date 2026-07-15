@@ -32,33 +32,33 @@ func NewSCAScanner(binMgr *binary.BinaryManager) *SCAScanner {
 // components were found: the generator ran fine and produced a valid (empty)
 // result, so this is a non-fatal outcome the caller surfaces without treating
 // it as a scan failure.
-func (s *SCAScanner) Execute(ctx context.Context, args ScanArgs) ([]types.Violation, *types.ScanNotice, error) {
+func (s *SCAScanner) Execute(ctx context.Context, args ScanArgs) (ScannerResult, error) {
 	sbomFile, notice, err := s.generateSBOM(ctx, args.FilePaths, args.WorkingDir)
 	if err != nil {
-		return nil, nil, fmt.Errorf("SBOM generation failed: %w", err)
+		return ScannerResult{}, fmt.Errorf("SBOM generation failed: %w", err)
 	}
 	if notice != nil {
 		// No components were found across any requested path, so there's
 		// nothing to check for vulnerabilities.
-		return []types.Violation{}, notice, nil
+		return ScannerResult{Findings: []types.Violation{}, Notice: notice}, nil
 	}
 	defer func() { _ = os.Remove(sbomFile) }()
 
 	if err := s.validateSBOMFile(sbomFile); err != nil {
-		return nil, nil, fmt.Errorf("validation failed: %w", err)
+		return ScannerResult{}, fmt.Errorf("validation failed: %w", err)
 	}
 
 	rawOutput, err := s.runDetection(ctx, sbomFile, args.WorkingDir)
 	if err != nil {
-		return nil, nil, fmt.Errorf("detection failed: %w", err)
+		return ScannerResult{}, fmt.Errorf("detection failed: %w", err)
 	}
 
 	vulnerabilities, err := processing.ParseSCAJSON(rawOutput)
 	if err != nil {
-		return nil, nil, fmt.Errorf("parsing failed: %w", err)
+		return ScannerResult{}, fmt.Errorf("parsing failed: %w", err)
 	}
 
-	return s.convertToViolations(vulnerabilities), nil, nil
+	return ScannerResult{Findings: s.convertToViolations(vulnerabilities)}, nil
 }
 
 // generateSBOM creates SBOM from directories using sbom.Generator.
