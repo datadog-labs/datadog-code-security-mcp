@@ -3,6 +3,8 @@ package telemetry
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -106,6 +108,31 @@ func TestCategorizeErrorKnownKinds(t *testing.T) {
 		if got := CategorizeError(fmt.Errorf("%s", tc.msg)); got != tc.want {
 			t.Errorf("CategorizeError(%q) = %q, want %q", tc.msg, got, tc.want)
 		}
+	}
+}
+
+func TestCategorizeErrorWrappedNotExist(t *testing.T) {
+	// Regression: a missing scan target produced by wrapping os.Stat's error
+	// (e.g. the SBOM generator's "working_dir '...' does not exist or is not
+	// accessible"). The human-readable phrasing matches no substring rule, so
+	// before the typed fs.ErrNotExist check it fell through to Unknown. The
+	// chain check must categorize it as PathNotFound regardless of wording.
+	_, statErr := os.Stat(filepath.Join(t.TempDir(), "definitely-missing"))
+	if statErr == nil {
+		t.Fatal("expected os.Stat to fail on a missing path")
+	}
+	err := fmt.Errorf("sbom: working_dir '/some/path' does not exist or is not accessible: %w", statErr)
+
+	if got := CategorizeError(err); got != ErrKindPathNotFound {
+		t.Errorf("CategorizeError(wrapped fs.ErrNotExist) = %q, want %q", got, ErrKindPathNotFound)
+	}
+	info := ErrorInfoFromError(err)
+	if info == nil || info.Message == "" {
+		t.Fatal("expected a non-empty curated message")
+	}
+	// The curated message must not echo the raw wrapped path/error text.
+	if strings.Contains(info.Message, "/some/path") || strings.Contains(info.Message, "definitely-missing") {
+		t.Errorf("curated message leaked raw error content: %q", info.Message)
 	}
 }
 

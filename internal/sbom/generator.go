@@ -155,7 +155,7 @@ func ensureWorkingDir(args *types.SBOMArgs) error {
 
 	info, err := os.Stat(args.WorkingDir)
 	if err != nil {
-		return fmt.Errorf("sbom: working_dir '%s' does not exist or is not accessible", args.WorkingDir)
+		return fmt.Errorf("sbom: working_dir '%s' does not exist or is not accessible: %w", args.WorkingDir, err)
 	}
 	if !info.IsDir() {
 		return fmt.Errorf("sbom: working_dir '%s' is not a directory", args.WorkingDir)
@@ -177,7 +177,7 @@ func ensurePath(args *types.SBOMArgs) error {
 
 	info, err := os.Stat(fullPath)
 	if err != nil {
-		return fmt.Errorf("sbom: path '%s' does not exist or is not accessible (resolved to: %s)", args.Path, fullPath)
+		return fmt.Errorf("sbom: path '%s' does not exist or is not accessible (resolved to: %s): %w", args.Path, fullPath, err)
 	}
 	if !info.IsDir() {
 		return fmt.Errorf("sbom: path '%s' must be a directory", args.Path)

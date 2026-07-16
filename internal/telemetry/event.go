@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"regexp"
 	"strings"
 
@@ -182,6 +183,12 @@ func matchErrorRule(err error) (kind, message string) {
 	var netErr interface{ Timeout() bool }
 	if errors.As(err, &netErr) && netErr.Timeout() {
 		return ErrKindTimeout, ""
+	}
+	// A wrapped os/fs "not found" (e.g. a failed os.Stat on a missing scan
+	// target) is categorized by chain, not phrasing, so a new human-readable
+	// message can never silently regress it into Unknown.
+	if errors.Is(err, fs.ErrNotExist) {
+		return ErrKindPathNotFound, ""
 	}
 
 	msg := err.Error()
