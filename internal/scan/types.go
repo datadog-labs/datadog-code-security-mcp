@@ -117,9 +117,16 @@ func (o *ScanOutcome) ScanTypes() []string {
 }
 
 // Execution returns the execution metadata for scanType. The returned value
-// shares the outcome's underlying Findings slice and Notice pointer (the
-// defensive copy was already made at ingest), so callers must treat it as
-// read-only — the same contract as EachExecution.
+// shares the outcome's underlying Findings slice header and Notice pointer (the
+// defensive copy was already made at ingest via cloneExecution), so callers must
+// treat it as read-only — the same contract as EachExecution.
+//
+// This is a deliberate trade-off: we do not re-clone on every read to avoid
+// allocating on what is effectively a hot accessor. The "read-only" guarantee is
+// enforced by convention, not by the type — every caller today only reads, and a
+// caller that mutates Findings/Notice would corrupt the outcome. If a mutating
+// caller ever appears, return an immutable view (or clone here) instead of
+// relaxing this contract.
 func (o *ScanOutcome) Execution(scanType string) (ScanExecution, bool) {
 	if o == nil {
 		return ScanExecution{}, false
@@ -133,8 +140,9 @@ func (o *ScanOutcome) Execution(scanType string) (ScanExecution, bool) {
 }
 
 // EachExecution calls fn for every execution in request order. The execution is
-// passed by value but shares the underlying Findings slice and Notice pointer,
-// so fn must treat it as read-only — identical to Execution's contract.
+// passed by value but shares the underlying Findings slice header and Notice
+// pointer, so fn must treat it as read-only — identical to Execution's contract
+// (see there for the rationale behind not cloning on every read).
 func (o *ScanOutcome) EachExecution(fn func(ScanExecution)) {
 	if o == nil {
 		return
