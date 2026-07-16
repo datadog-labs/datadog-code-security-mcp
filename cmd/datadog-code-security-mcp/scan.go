@@ -203,6 +203,12 @@ func renderScanResult(result *scan.ScanResult, scanType string, outputJSON bool)
 	} else if err := outputResultsHuman(result, scanType); err != nil {
 		return err
 	}
+	// The exit decision keys solely on findings, not on result.Errors:
+	// partial scanner failures are intentionally non-fatal. They are surfaced
+	// as warnings (human) / included in the payload (json) but do not gate the
+	// exit code, so a crashed scanner with zero findings still exits 0. This
+	// preserves the historical CLI contract; changing it to fail on partial
+	// errors would be a deliberate behavior change made separately.
 	if result.Summary.Total > 0 {
 		return errViolationsFound
 	}
