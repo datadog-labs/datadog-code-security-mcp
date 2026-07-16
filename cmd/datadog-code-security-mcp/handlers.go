@@ -18,6 +18,24 @@ import (
 	"github.com/datadog-labs/datadog-code-security-mcp/internal/types"
 )
 
+// authRequiredError builds the user-facing error returned when credential setup
+// fails, appending the dd-auth and API-key setup instructions.
+func authRequiredError(err error) error {
+	return fmt.Errorf("%s: %v\n\n%s\n\n%s",
+		constants.ErrAuthRequired, err,
+		constants.AuthInstructionDDAuth,
+		constants.AuthInstructionAPIKey)
+}
+
+// apiKeyRequiredError builds the user-facing error returned when required API
+// credentials are missing from the environment, with the same setup instructions.
+func apiKeyRequiredError() error {
+	return fmt.Errorf("%s.\n\n%s\n\n%s",
+		constants.ErrAPIKeyRequired,
+		constants.AuthInstructionDDAuth,
+		constants.AuthInstructionAPIKey)
+}
+
 // Generic handler that eliminates duplication across SAST/Secrets handlers
 func handleAuthenticatedScan(ctx context.Context, request mcp.CallToolRequest, scanTypes []string) (*mcp.CallToolResult, error) {
 	tracking := telemetry.ScanEvent{
@@ -47,17 +65,11 @@ func handleAuthenticatedScan(ctx context.Context, request mcp.CallToolRequest, s
 	tracking.WorkingDir = args.WorkingDir
 
 	if err := setAuthCredentials(ctx); err != nil {
-		return fail(fmt.Errorf("%s: %v\n\n%s\n\n%s",
-			constants.ErrAuthRequired, err,
-			constants.AuthInstructionDDAuth,
-			constants.AuthInstructionAPIKey))
+		return fail(authRequiredError(err))
 	}
 
 	if os.Getenv(constants.EnvAPIKey) == "" {
-		return fail(fmt.Errorf("%s.\n\n%s\n\n%s",
-			constants.ErrAPIKeyRequired,
-			constants.AuthInstructionDDAuth,
-			constants.AuthInstructionAPIKey))
+		return fail(apiKeyRequiredError())
 	}
 
 	args.ScanTypes = scanTypes
@@ -250,10 +262,7 @@ func handleLibraryVulnerabilityScan(ctx context.Context, request mcp.CallToolReq
 
 	// Require credentials — this scan always calls the Datadog cloud API
 	if err := setAuthCredentials(ctx); err != nil {
-		return fail(fmt.Errorf("%s: %v\n\n%s\n\n%s",
-			constants.ErrAuthRequired, err,
-			constants.AuthInstructionDDAuth,
-			constants.AuthInstructionAPIKey))
+		return fail(authRequiredError(err))
 	}
 
 	apiKey := os.Getenv(constants.EnvAPIKey)
@@ -266,10 +275,7 @@ func handleLibraryVulnerabilityScan(ctx context.Context, request mcp.CallToolReq
 	// needs DD_API_KEY locally). This check is a safeguard in case setAuthCredentials
 	// partially configured the environment.
 	if apiKey == "" || appKey == "" {
-		return fail(fmt.Errorf("%s.\n\n%s\n\n%s",
-			constants.ErrAPIKeyRequired,
-			constants.AuthInstructionDDAuth,
-			constants.AuthInstructionAPIKey))
+		return fail(apiKeyRequiredError())
 	}
 
 	workingDir := constants.DefaultWorkingDir
