@@ -24,7 +24,7 @@ Every scan emits **one telemetry event per scan type** plus, when multiple types
 | `interface`                | `cli` or `mcp`                                                                                   |
 | `duration_ms`              | Wall-clock time for this event: per-scan time for per-scan events; total elapsed time for aggregate |
 | `success`                  | Whether the invocation succeeded                                                                 |
-| `error.kind`               | Categorized error type (`BinaryNotFound`, `AuthRequired`, `PathNotFound`, `Timeout`, `Network`, `ScanError`, `GitError`, `Unknown`) |
+| `error.kind`               | Categorized error type (`BinaryNotFound`, `AuthRequired`, `InvalidArguments`, `PathNotFound`, `Timeout`, `Network`, `ScanError`, `GitError`, `Unknown`) |
 | `error.message`            | Short curated description for Error Tracking: a per-kind default (e.g. `scan execution failed`) or a more specific string for known sub-cases (optionally suffixed with the process exit code). Hardcoded and path-free — never the raw error text |
 | `os`, `arch`, `go_version` | Runtime platform info                                                                            |
 | `ci`                       | Whether a `CI` environment variable is set                                                       |
