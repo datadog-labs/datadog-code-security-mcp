@@ -16,6 +16,8 @@ const (
 	EnvDoNotTrack = "DO_NOT_TRACK"
 	// EnvTelemetryToken allows overriding the compiled-in client token at runtime (dev use only).
 	EnvTelemetryToken = "DD_CODE_SECURITY_TELEMETRY_TOKEN"
+	// EnvCI is the conventional flag CI systems set; its presence tags events as CI-originated.
+	EnvCI = "CI"
 )
 
 // Telemetry payload constants

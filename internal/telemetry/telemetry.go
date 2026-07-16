@@ -427,7 +427,7 @@ func CommonAttrs() map[string]any {
 		"arch":       runtime.GOARCH,
 		"go_version": runtime.Version(),
 	}
-	if os.Getenv("CI") != "" {
+	if os.Getenv(constants.EnvCI) != "" {
 		attrs["ci"] = true
 	}
 	return attrs
