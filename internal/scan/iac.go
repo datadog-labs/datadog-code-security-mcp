@@ -2,6 +2,7 @@ package scan
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -69,18 +70,11 @@ func (s *IaCScanner) Execute(ctx context.Context, args ScanArgs) (ScannerResult,
 	cmd.Dir = args.WorkingDir
 
 	output, err := cmd.CombinedOutput()
-	if err != nil {
-		// KICS-based scanner uses exit codes 40/50/60 for findings by severity
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			exitCode := exitErr.ExitCode()
-			if exitCode == iacExitCodeLow || exitCode == iacExitCodeMedium || exitCode == iacExitCodeHigh {
-				// Findings exist - continue to parse output
-			} else {
-				return ScannerResult{}, fmt.Errorf("iac scanner execution failed: %w\nOutput: %s", err, string(output))
-			}
-		} else {
-			return ScannerResult{}, fmt.Errorf("iac scanner execution failed: %w\nOutput: %s", err, string(output))
-		}
+	// A findings exit code (KICS-based 40/50/60) is not a real failure: the scan
+	// ran and simply reported findings, so we fall through to parse the output.
+	// Any other error is fatal.
+	if err != nil && !isIaCFindingsExit(err) {
+		return ScannerResult{}, fmt.Errorf("iac scanner execution failed: %w\nOutput: %s", err, string(output))
 	}
 
 	// Read the SARIF output file
@@ -97,4 +91,20 @@ func (s *IaCScanner) Execute(ctx context.Context, args ScanArgs) (ScannerResult,
 	}
 
 	return ScannerResult{Findings: violations}, nil
+}
+
+// isIaCFindingsExit reports whether err is the KICS-based scanner signalling that
+// findings were detected (exit codes 40/50/60 by severity) rather than a real
+// execution failure.
+func isIaCFindingsExit(err error) bool {
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		return false
+	}
+	switch exitErr.ExitCode() {
+	case iacExitCodeLow, iacExitCodeMedium, iacExitCodeHigh:
+		return true
+	default:
+		return false
+	}
 }
