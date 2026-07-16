@@ -92,7 +92,10 @@ type Options struct {
 //
 // If any config I/O errors occurred (e.g. permission denied writing config.json),
 // a single warn event is emitted after construction so the team can track how
-// many installs have broken config paths. No event is sent when config loads cleanly.
+// many installs have broken config paths. Even on a clean (error-free) load, a
+// telemetry_config_rename_contended signal is still emitted when the config write
+// succeeded only after more than one atomic-rename attempt (write contention);
+// a truly clean, uncontended load emits nothing.
 func New(opts Options) *Client {
 	result := loadOrCreateConfig()
 

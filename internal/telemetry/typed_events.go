@@ -49,7 +49,9 @@ func (e ScanEvent) err() error {
 	return e.Outcome.Err()
 }
 
-// TrackScan emits the aggregate and per-scanner events for an invocation.
+// TrackScan emits the telemetry events for a scan invocation. A single-type scan
+// emits exactly one per-scan event (and no aggregate); a multi-type scan emits an
+// aggregate event plus one per-scan event per executed type.
 func (c *Client) TrackScan(ctx context.Context, event ScanEvent) {
 	if c == nil || !c.Enabled() || event.Outcome == nil {
 		return
