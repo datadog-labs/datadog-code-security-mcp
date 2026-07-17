@@ -165,7 +165,7 @@ brew install --cask datadog-security-cli
 
 ## Telemetry
 
-Datadog Code Security MCP collects **anonymous usage telemetry** (tool and scanner versions, OS/arch, run duration, success/failure, aggregate counts, coarse authentication/workspace metadata, and categorized error kinds) to help improve the tool. It does not collect source code, paths, scan finding contents, secrets, repository names, usernames, or raw error messages. Each error carries a short curated, path-free description (for Error Tracking) — never the raw error text.
+Datadog Code Security MCP collects **anonymous usage telemetry** (tool and scanner versions, OS/arch, run duration, success/failure, aggregate counts, coarse authentication/workspace metadata, categorized error kinds, and a fixed team ownership tag) to help improve the tool. It does not collect source code, paths, scan finding contents, secrets, repository names, usernames, or raw error messages. Each error carries a short curated, path-free description (for Error Tracking) — never the raw error text.
 
 Scanner versions are collected once per process and are not persisted.
 

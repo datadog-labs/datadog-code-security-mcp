@@ -26,6 +26,8 @@ const (
 	TelemetryService = "datadog-code-security-mcp"
 	// TelemetryDDSource is the ddsource query param value required by the browser intake.
 	TelemetryDDSource = "browser"
+	// TelemetryTeamTag identifies the team that owns the telemetry.
+	TelemetryTeamTag = "team:k9-iac"
 )
 
 // Argument keys for MCP tool requests

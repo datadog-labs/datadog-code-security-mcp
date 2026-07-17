@@ -32,6 +32,7 @@ Every scan emits **one telemetry event per scan type** plus, when multiple types
 | `usr.id`                   | Anonymous install ID — random UUID unique per installation                                       |
 | `version`                  | CLI version                                                                                      |
 | `env`                      | Deployment environment (`development` or `production`)                                           |
+| `team`                     | Fixed telemetry ownership tag (`k9-iac`)                                                         |
 
 **Depending on the operation:**
 

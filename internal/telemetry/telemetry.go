@@ -364,7 +364,7 @@ func (c *Client) buildURL() string {
 
 // buildDDTags returns a comma-separated key:value tag string for the ddtags query param.
 func buildDDTags(version, env string) string {
-	var parts []string
+	parts := []string{constants.TelemetryTeamTag}
 	if version != "" {
 		parts = append(parts, "version:"+version)
 	}

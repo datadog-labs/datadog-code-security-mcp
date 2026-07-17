@@ -299,7 +299,9 @@ func TestURLQueryParams(t *testing.T) {
 	if !contains(capturedURL, "ddsource=browser") {
 		t.Errorf("ddsource missing from URL: %s", capturedURL)
 	}
-	if !contains(capturedURL, "version%3A1.2.3") || !contains(capturedURL, "env%3Aproduction") {
+	if !contains(capturedURL, "team%3Ak9-iac") ||
+		!contains(capturedURL, "version%3A1.2.3") ||
+		!contains(capturedURL, "env%3Aproduction") {
 		t.Errorf("ddtags missing or wrong in URL: %s", capturedURL)
 	}
 }

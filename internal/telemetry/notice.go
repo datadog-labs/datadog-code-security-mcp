@@ -11,8 +11,8 @@ Datadog Code Security MCP collects anonymous usage telemetry to improve the tool
 
 What is collected: tool and scanner versions, OS/arch, run duration,
   success/failure, aggregate counts, coarse auth/workspace metadata, categorized
-  error kinds with a short curated (path-free) description, and a random
-  anonymous install ID.
+  error kinds with a short curated (path-free) description, a fixed team
+  ownership tag, and a random anonymous install ID.
 What is NOT collected: source code, absolute paths or directory structure,
   scan finding contents, secrets, usernames, repo names, or raw error messages.
 
