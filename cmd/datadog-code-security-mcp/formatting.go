@@ -15,17 +15,14 @@ import (
 func formatScanResult(result *scan.ScanResult) *mcp.CallToolResult {
 	output := "# 🛡️ Security Scan Results\n\n"
 
-	// Show errors if present
+	// Render the error and notice sections top-to-bottom. Each helper is a
+	// no-op when its slice is empty, so the section order stays fixed here.
+	output += formatScanErrorsSection(result.Errors)
+	output += formatScanNoticesSection(result.Notices)
+
+	// When errors were surfaced, decide once what follows: with no findings
+	// there is nothing more to show; otherwise separate them from the summary.
 	if len(result.Errors) > 0 {
-		output += "⚠️ **Errors encountered:**\n\n"
-		for _, err := range result.Errors {
-			output += fmt.Sprintf("- **%s**: %s\n", err.DetectionType, err.Error)
-			if err.Hint != "" {
-				output += fmt.Sprintf("  - *Hint:* %s\n", err.Hint)
-			}
-		}
-		output += "\n"
-		// If there were errors but we have some results, continue showing them
 		if result.Summary.Total == 0 {
 			return mcp.NewToolResultText(output)
 		}
@@ -89,6 +86,42 @@ func formatScanResult(result *scan.ScanResult) *mcp.CallToolResult {
 	return mcp.NewToolResultText(output)
 }
 
+// formatScanErrorsSection renders the "Errors encountered" block. Returns an
+// empty string when there are no errors.
+func formatScanErrorsSection(errors []scan.ScanError) string {
+	if len(errors) == 0 {
+		return ""
+	}
+	out := "⚠️ **Errors encountered:**\n\n"
+	for _, err := range errors {
+		out += fmt.Sprintf("- **%s**: %s\n", err.DetectionType, err.Error)
+		if err.Hint != "" {
+			out += fmt.Sprintf("  - *Hint:* %s\n", err.Hint)
+		}
+	}
+	out += "\n"
+	return out
+}
+
+// formatScanNoticesSection renders the non-fatal "Notices" block (e.g. no
+// components detected). Unlike errors, these come from scans that completed
+// successfully and never affect success/failure status. Returns an empty
+// string when there are no notices.
+func formatScanNoticesSection(notices []scan.ScanNotice) string {
+	if len(notices) == 0 {
+		return ""
+	}
+	out := "ℹ️ **Notices:**\n\n"
+	for _, notice := range notices {
+		out += fmt.Sprintf("- **%s**: %s\n", notice.DetectionType, notice.Message)
+		if notice.Hint != "" {
+			out += fmt.Sprintf("  - *Hint:* %s\n", notice.Hint)
+		}
+	}
+	out += "\n"
+	return out
+}
+
 // formatSBOMResult formats SBOM results as markdown
 func formatSBOMResult(result *scan.SBOMResult) *mcp.CallToolResult {
 	output := "# 📦 Software Bill of Materials (SBOM)\n\n"
@@ -100,6 +133,17 @@ func formatSBOMResult(result *scan.SBOMResult) *mcp.CallToolResult {
 			output += fmt.Sprintf("**Hint:** %s\n\n", result.Error.Hint)
 		}
 		// If there are no components, return early
+		if len(result.Components) == 0 {
+			return mcp.NewToolResultText(output)
+		}
+	}
+
+	// Check for non-fatal notices (e.g. no components detected)
+	if result.Notice != nil {
+		output += fmt.Sprintf("ℹ️ **%s**\n\n", result.Notice.Message)
+		if result.Notice.Hint != "" {
+			output += fmt.Sprintf("**Hint:** %s\n\n", result.Notice.Hint)
+		}
 		if len(result.Components) == 0 {
 			return mcp.NewToolResultText(output)
 		}

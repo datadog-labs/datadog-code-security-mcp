@@ -4,28 +4,27 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/datadog-labs/datadog-code-security-mcp/internal/binary"
 	"github.com/datadog-labs/datadog-code-security-mcp/internal/types"
 )
 
 type Scanner interface {
-	Execute(ctx context.Context, args ScanArgs) ([]types.Violation, error)
+	// Execute runs the scan and returns its findings alongside an optional
+	// non-fatal notice (e.g. "no components detected"). The notice is nil for
+	// scanners that have nothing to surface and is orthogonal to the error
+	// result. Executor-owned metadata (detection type and duration) is stamped
+	// by ExecuteParallelScans, not by the scanner.
+	Execute(ctx context.Context, args ScanArgs) (ScannerResult, error)
 }
 
 // ExecuteParallelScans runs multiple scan types in parallel
 // Returns partial results if some scans fail but others succeed
-func ExecuteParallelScans(ctx context.Context, args ScanArgs, binaryMgr *binary.BinaryManager) (*ScanResult, error) {
-	// Result channel
-	type scanResult struct {
-		scanType string
-		findings []types.Violation
-		err      error
-	}
-
+func ExecuteParallelScans(ctx context.Context, args ScanArgs, binaryMgr *binary.BinaryManager) *ScanOutcome {
 	// Buffered channel sized to number of scan types
 	// This ensures goroutines never block on send, even if collection is slow
-	results := make(chan scanResult, len(args.ScanTypes))
+	results := make(chan ScanExecution, len(args.ScanTypes))
 	var wg sync.WaitGroup
 
 	// Launch all scans in parallel
@@ -38,13 +37,23 @@ func ExecuteParallelScans(ctx context.Context, args ScanArgs, binaryMgr *binary.
 
 			scannerInst := getScannerFor(st, binaryMgr)
 			if scannerInst == nil {
-				results <- scanResult{st, nil, fmt.Errorf("unknown scan type: %s", st)}
+				results <- ScanExecution{
+					DetectionType: types.DetectionType(st),
+					Err:           fmt.Errorf("unknown scan type: %s", st),
+				}
 				return
 			}
 
-			// Execute scan (may take several seconds)
-			findings, err := scannerInst.Execute(ctx, args)
-			results <- scanResult{st, findings, err}
+			// Execute scan (may take several seconds) and record wall time
+			scanStart := time.Now()
+			res, err := scannerInst.Execute(ctx, args)
+			results <- ScanExecution{
+				DetectionType: types.DetectionType(st),
+				Findings:      res.Findings,
+				Err:           err,
+				Duration:      time.Since(scanStart),
+				Notice:        res.Notice,
+			}
 		}(scanType)
 	}
 
@@ -55,36 +64,35 @@ func ExecuteParallelScans(ctx context.Context, args ScanArgs, binaryMgr *binary.
 		close(results)
 	}()
 
-	// Collect all results (even if some failed)
-	// This enables partial success: if SAST fails but Secrets succeeds,
-	// we still return the Secrets findings with an error for SAST
-	allFindings := make([]types.Violation, 0)
-	resultsByType := make(map[types.DetectionType][]types.Violation)
-	var errors []ScanError
-
+	// Collect all results (even if some failed). The channel completes in
+	// nondeterministic order, so store by type and project in request order below.
+	collected := make(map[string]ScanExecution, len(args.ScanTypes))
 	for result := range results {
-		if result.err != nil {
-			errors = append(errors, ScanError{
-				DetectionType: result.scanType,
-				Error:         result.err.Error(),
-			})
-		} else {
-			allFindings = append(allFindings, result.findings...)
-			// Convert string to DetectionType
-			detectionType := types.DetectionType(result.scanType)
-			resultsByType[detectionType] = result.findings
-		}
+		collected[string(result.DetectionType)] = result
 	}
 
-	// Build summary
-	summary := buildSummary(allFindings)
+	return assembleOutcome(args.ScanTypes, collected)
+}
 
-	return &ScanResult{
-		Summary:       summary,
-		Results:       resultsByType,
-		Errors:        errors,
-		PartialResult: len(errors) > 0 && len(allFindings) > 0,
-	}, nil
+// assembleOutcome preserves request order after concurrent scanner completion.
+func assembleOutcome(scanTypes []string, collected map[string]ScanExecution) *ScanOutcome {
+	executions := make([]ScanExecution, 0, len(scanTypes))
+	for _, scanType := range scanTypes {
+		execution, ok := collected[scanType]
+		if !ok {
+			// Defensive: each scan goroutine is expected to report exactly one
+			// result. If one didn't (e.g. a future early return before send),
+			// record an explicit error execution so the gap surfaces as a
+			// failure and ScanTypes() stays aligned with what was requested,
+			// instead of appending a zero-value with an empty DetectionType.
+			execution = ScanExecution{
+				DetectionType: types.DetectionType(scanType),
+				Err:           fmt.Errorf("no result reported for scan type: %s", scanType),
+			}
+		}
+		executions = append(executions, execution)
+	}
+	return NewCompletedOutcome(executions)
 }
 
 // getScannerFor returns the appropriate scanner for the given scan type

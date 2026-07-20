@@ -104,7 +104,7 @@ func (c *Client) submitScan(ctx context.Context, req ScanRequest) (string, error
 	if err != nil {
 		return "", fmt.Errorf("scan request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -168,7 +168,7 @@ func (c *Client) fetchResult(ctx context.Context, url string) (*ScanResult, bool
 	if err != nil {
 		return nil, false, fmt.Errorf("poll request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusNotFound {
 		return nil, false, nil // still processing

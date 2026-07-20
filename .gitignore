@@ -39,3 +39,6 @@ checksums.txt
 
 # Local audit/notes
 docs/public-release-audit.md
+
+# Local dev env (contains secrets — never commit)
+.env

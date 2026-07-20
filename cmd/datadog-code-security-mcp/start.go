@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -10,6 +11,7 @@ import (
 
 	"github.com/datadog-labs/datadog-code-security-mcp/internal/auth"
 	"github.com/datadog-labs/datadog-code-security-mcp/internal/scan"
+	"github.com/datadog-labs/datadog-code-security-mcp/internal/telemetry"
 )
 
 func newStartCmd() *cobra.Command {
@@ -59,12 +61,21 @@ The server will run until terminated with Ctrl+C or SIGTERM.`,
 
 var authProvider *auth.Provider
 
+// mcpAuthMethod is how authentication was configured for this server process,
+// captured once at startup below — before any tool call has had a chance to
+// export resolved credentials into the environment. Re-deriving this on every
+// request by inspecting the live environment would misread that self-inflicted
+// mutation as a user-set env var after the very first authenticated call (see
+// detectAuthMethod in utils.go and auth.Config.Method).
+var mcpAuthMethod string
+
 func runServer() error {
 	// Load authentication configuration
 	authConfig, err := auth.LoadConfig()
 	if err != nil {
 		return fmt.Errorf("failed to load auth config: %w", err)
 	}
+	mcpAuthMethod = authConfig.Method()
 
 	// Create auth provider
 	authProvider, err = auth.NewProvider(authConfig)
@@ -89,6 +100,14 @@ func runServer() error {
 		fmt.Fprintf(os.Stderr, "Note: Running in local-only mode. Set DD_API_KEY/DD_APP_KEY or DD_AUTH_DOMAIN for cloud features.\n")
 	}
 	fmt.Fprintf(os.Stderr, "Server ready. Listening on STDIO...\n")
+
+	// Emit a single startup event so we can track how many MCP sessions run
+	// without auth configured (local-only mode). Fires once per server lifetime.
+	// TrackInfo is nil-safe, so no client nil-check is needed here.
+	telemetryClient.TrackServerStart(context.Background(), telemetry.ServerStartEvent{
+		AuthConfigured: authConfig.IsConfigured(),
+		BinaryVersions: binaryVersionsForEvent(context.Background()),
+	})
 
 	// Start STDIO server (handles signal context internally)
 	return server.ServeStdio(s)

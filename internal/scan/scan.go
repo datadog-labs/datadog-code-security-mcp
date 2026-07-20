@@ -12,10 +12,21 @@ import (
 )
 
 // ExecuteScan runs security scans on the specified files using the new modular architecture
-func ExecuteScan(ctx context.Context, args ScanArgs) (*ScanResult, error) {
+func ExecuteScan(ctx context.Context, args ScanArgs) *ScanOutcome {
+	// Normalize requested types before any other fallible work so even
+	// pre-execution failures retain the invocation's canonical scan set.
+	scanTypes, err := parseScanTypes(args.ScanTypes)
+	if err != nil {
+		return NewFailedOutcome(args.ScanTypes, err)
+	}
+	if len(scanTypes) == 0 {
+		scanTypes = types.SecurityScanTypes()
+	}
+	args.ScanTypes = scanTypes
+
 	// Validate inputs
 	if err := validateScanArgs(args); err != nil {
-		return nil, err
+		return NewFailedOutcome(scanTypes, err)
 	}
 
 	// Resolve working directory
@@ -23,7 +34,7 @@ func ExecuteScan(ctx context.Context, args ScanArgs) (*ScanResult, error) {
 	if workingDir == "" {
 		cwd, err := os.Getwd()
 		if err != nil {
-			return nil, fmt.Errorf("failed to get current working directory: %w", err)
+			return NewFailedOutcome(scanTypes, fmt.Errorf("failed to get current working directory: %w", err))
 		}
 		workingDir = cwd
 	}
@@ -31,66 +42,38 @@ func ExecuteScan(ctx context.Context, args ScanArgs) (*ScanResult, error) {
 	// Make working directory absolute
 	absWorkingDir, err := filepath.Abs(workingDir)
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve working directory: %w", err)
+		return NewFailedOutcome(scanTypes, fmt.Errorf("failed to resolve working directory: %w", err))
 	}
 
 	// Validate working directory exists
 	if _, err := os.Stat(absWorkingDir); err != nil {
 		if os.IsNotExist(err) {
-			return nil, fmt.Errorf("working directory does not exist: %s", absWorkingDir)
+			return NewFailedOutcome(scanTypes, fmt.Errorf("working directory does not exist: %s", absWorkingDir))
 		}
-		return nil, fmt.Errorf("failed to access working directory: %w", err)
-	}
-
-	// Parse, validate, and normalize scan types
-	scanTypes, err := parseScanTypes(args.ScanTypes)
-	if err != nil {
-		return nil, err
-	}
-
-	// Default to all scan types if none specified
-	if len(scanTypes) == 0 {
-		scanTypes = []string{
-			string(types.DetectionTypeSAST),
-			string(types.DetectionTypeSecrets),
-			string(types.DetectionTypeSCA),
-			string(types.DetectionTypeIaC),
-		}
+		return NewFailedOutcome(scanTypes, fmt.Errorf("failed to access working directory: %w", err))
 	}
 
 	// Validate file paths
 	validatedPaths, err := validateFilePaths(args.FilePaths, absWorkingDir)
 	if err != nil {
-		return nil, err
+		return NewFailedOutcome(scanTypes, err)
 	}
 
 	// Update args with validated values
 	args.WorkingDir = absWorkingDir
 	args.FilePaths = validatedPaths
-	args.ScanTypes = scanTypes
 
 	// Validate all required binaries upfront
 	if err := binary.ValidateScanBinaries(ctx, scanTypes); err != nil {
-		return nil, fmt.Errorf("binary validation failed:\n\n%w", err)
+		return NewFailedOutcome(scanTypes, fmt.Errorf("binary validation failed:\n\n%w", err))
 	}
 
 	// Execute parallel scans
 	binMgr := binary.NewBinaryManager()
-	result, err := ExecuteParallelScans(ctx, args, binMgr)
-	if err != nil {
-		return nil, fmt.Errorf("scan execution failed: %w\n\nTroubleshooting:\n- Ensure datadog-static-analyzer is installed and in PATH\n- Run 'datadog-static-analyzer --version' to verify installation\n- Check file paths are correct and accessible", err)
-	}
-
-	// If all scans failed and there are no findings, return the error
-	if len(result.Errors) > 0 && result.Summary.Total == 0 && !result.PartialResult {
-		return nil, fmt.Errorf("all scans failed:\n%s", formatErrors(result.Errors))
-	}
-
-	return result, nil
+	return ExecuteParallelScans(ctx, args, binMgr)
 }
 
-// formatErrors formats multiple scan errors into a single string
-func formatErrors(errors []ScanError) string {
+func allScansFailedError(errors []ScanError) error {
 	var msgs []string
 	for _, err := range errors {
 		msg := fmt.Sprintf("- %s: %s", err.DetectionType, err.Error)
@@ -99,7 +82,7 @@ func formatErrors(errors []ScanError) string {
 		}
 		msgs = append(msgs, msg)
 	}
-	return strings.Join(msgs, "\n")
+	return fmt.Errorf("all scans failed:\n%s", strings.Join(msgs, "\n"))
 }
 
 // validateScanArgs validates the scan arguments

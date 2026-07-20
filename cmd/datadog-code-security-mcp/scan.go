@@ -3,17 +3,32 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/datadog-labs/datadog-code-security-mcp/internal/auth"
 	"github.com/datadog-labs/datadog-code-security-mcp/internal/libraryscan"
 	"github.com/datadog-labs/datadog-code-security-mcp/internal/scan"
+	"github.com/datadog-labs/datadog-code-security-mcp/internal/telemetry"
 	"github.com/datadog-labs/datadog-code-security-mcp/internal/types"
 )
+
+// errViolationsFound signals that a scan completed successfully but reported
+// findings, so the process should exit non-zero. It is not a scan failure:
+// telemetry still records success. main() maps it to exit code 1 without
+// printing an error, after flushing telemetry.
+var errViolationsFound = errors.New("violations found")
+
+// invalidScanType is the telemetry sentinel used when the CLI is given an
+// unrecognized scan-type argument. The raw argument is user-supplied and could
+// contain a path or secret, so it must never be sent as telemetry; this fixed,
+// path-free value records the invalid-scan-type case without echoing input.
+const invalidScanType = "invalid_scan"
 
 func newScanCmd() *cobra.Command {
 	var (
@@ -73,78 +88,131 @@ Examples:
 	return cmd
 }
 
-// loadAuthToEnv attempts to load Datadog credentials from the auth provider and
-// sets them as environment variables. Errors are silently ignored so callers can
-// fall back to env vars already set by the user.
-func loadAuthToEnv(ctx context.Context) {
-	authConfig, err := auth.LoadConfig()
-	if err != nil || !authConfig.IsConfigured() {
-		return
-	}
-	provider, err := auth.NewProvider(authConfig)
-	if err != nil {
-		return
-	}
-	creds, err := provider.GetCredentials(ctx)
-	if err != nil || creds == nil {
-		return
-	}
-	if creds.APIKey != "" {
-		os.Setenv("DD_API_KEY", creds.APIKey)
-	}
-	if creds.APPKey != "" {
-		os.Setenv("DD_APP_KEY", creds.APPKey)
-	}
-	if creds.Site != "" {
-		os.Setenv("DD_SITE", creds.Site)
+// loadAuthToEnv attempts to load Datadog credentials and export them as
+// environment variables for the scanner subprocess. It returns how auth was
+// configured (see auth.Config.Method), captured before any credential this
+// call resolves is exported to the environment — the CLI has no long-lived
+// authProvider to fall back on like the MCP server does, so this is the only
+// place that can correctly attribute a dd-auth-only setup instead of always
+// reporting "none". Unlike the MCP path, errors are intentionally ignored so
+// the CLI can fall back to env vars the user may have already set. The shared
+// logic lives in internal/auth.
+func loadAuthToEnv(ctx context.Context) string {
+	method, _ := auth.LoadAndApplyToEnv(ctx)
+	return method
+}
+
+// resolveScanTypes maps a CLI scan-type argument to the concrete detection
+// types to run. "all" expands to every security scan type. It is the single
+// source of truth for this mapping.
+func resolveScanTypes(scanType string) ([]string, error) {
+	switch scanType {
+	case "all":
+		return types.SecurityScanTypes(), nil
+	case "sast":
+		return []string{string(types.DetectionTypeSAST)}, nil
+	case "secrets":
+		return []string{string(types.DetectionTypeSecrets)}, nil
+	case "sca":
+		return []string{string(types.DetectionTypeSCA)}, nil
+	case "iac":
+		return []string{string(types.DetectionTypeIaC)}, nil
+	default:
+		return nil, fmt.Errorf("invalid scan type: %s (valid options: all, sast, secrets, sca, iac)", scanType)
 	}
 }
 
 func runDirectScan(scanType string, paths []string, workingDir string, outputJSON bool) error {
 	ctx := context.Background()
-
-	loadAuthToEnv(ctx)
+	start := time.Now()
+	authMethod := loadAuthToEnv(ctx)
 	scanType = strings.ToLower(scanType)
+	// resolveScanTypes is the single source of truth for the scan-type → concrete
+	// detection-types mapping; both telemetry and the scan args derive from it.
+	scanTypes, scanTypesErr := resolveScanTypes(scanType)
+	outputFormat := telemetry.OutputFormatHuman
+	if outputJSON {
+		outputFormat = telemetry.OutputFormatJSON
+	}
+	tracking := telemetry.ScanEvent{
+		Interface:    telemetry.InterfaceCLI,
+		StartedAt:    start,
+		OutputFormat: outputFormat,
+		WorkingDir:   workingDir,
+		AuthMethod:   authMethod,
+	}
+	defer func() { trackScan(ctx, tracking) }()
 
-	// Validate that at least one path is provided
-	if len(paths) == 0 {
-		return fmt.Errorf("%s scan requires at least one path to scan", scanType)
+	// telemetryTypes attributes a pre-execution failure. For an unrecognized
+	// scan type we deliberately record a fixed sentinel instead of the raw
+	// argument: args[0] is arbitrary user input (potentially a path or secret
+	// if the positional args are misused) and must never reach the wire. The
+	// sentinel still lets us count invalid-scan-type failures without echoing
+	// the value. The human-facing error (scanTypesErr) is unaffected and may
+	// still show the raw value locally.
+	telemetryTypes := scanTypes
+	if scanTypesErr != nil {
+		telemetryTypes = []string{invalidScanType}
 	}
 
-	// Build scan args
-	scanArgs := scan.ScanArgs{
-		FilePaths:  paths,
-		WorkingDir: workingDir,
-	}
-
-	// Set scan types based on command
-	switch scanType {
-	case "all":
-		scanArgs.ScanTypes = []string{string(types.DetectionTypeSAST), string(types.DetectionTypeSecrets), string(types.DetectionTypeSCA), string(types.DetectionTypeIaC)}
-	case "sast":
-		scanArgs.ScanTypes = []string{string(types.DetectionTypeSAST)}
-	case "secrets":
-		scanArgs.ScanTypes = []string{string(types.DetectionTypeSecrets)}
-	case "sca":
-		scanArgs.ScanTypes = []string{string(types.DetectionTypeSCA)}
-	case "iac":
-		scanArgs.ScanTypes = []string{string(types.DetectionTypeIaC)}
-	default:
-		return fmt.Errorf("invalid scan type: %s (valid options: all, sast, secrets, sca, iac)", scanType)
-	}
-
-	// Execute scan
-	result, err := scan.ExecuteScan(ctx, scanArgs)
-	if err != nil {
+	// fail records a pre-execution failure as the canonical outcome. The
+	// deferred emit above sends exactly one event on every return path.
+	fail := func(err error) error {
+		tracking.Outcome = scan.NewFailedOutcome(telemetryTypes, err)
 		return err
 	}
 
-	// Output results
-	if outputJSON {
-		return outputResultsJSON(result)
+	if scanTypesErr != nil {
+		tracking.PathsCount = len(paths)
+		return fail(scanTypesErr)
 	}
 
-	return outputResultsHuman(result, scanType)
+	if len(paths) == 0 {
+		return fail(fmt.Errorf("%s scan requires at least one path to scan", scanType))
+	}
+
+	scanArgs := scan.ScanArgs{
+		FilePaths:  paths,
+		WorkingDir: workingDir,
+		ScanTypes:  scanTypes,
+	}
+
+	outcome := scan.ExecuteScan(ctx, scanArgs)
+	tracking.Outcome = outcome
+	tracking.PathsCount = len(scanArgs.FilePaths)
+	tracking.WorkingDir = scanArgs.WorkingDir
+	if err := outcome.Err(); err != nil {
+		return err
+	}
+
+	return renderScanResult(outcome.Result(), scanType, outputJSON)
+}
+
+// renderScanResult writes the result in the chosen output format and then
+// applies the findings-based exit decision. The exit decision is shared across
+// both formats so CI gating behaves identically for --json and human output;
+// keeping it in one place (rather than per-format branch) is what prevents the
+// two modes from drifting. main() maps errViolationsFound to exit 1 silently
+// (findings were already rendered) and never prints it to stdout, so JSON
+// output stays clean.
+func renderScanResult(result *scan.ScanResult, scanType string, outputJSON bool) error {
+	if outputJSON {
+		if err := outputResultsJSON(result); err != nil {
+			return err
+		}
+	} else if err := outputResultsHuman(result, scanType); err != nil {
+		return err
+	}
+	// The exit decision keys solely on findings, not on result.Errors:
+	// partial scanner failures are intentionally non-fatal. They are surfaced
+	// as warnings (human) / included in the payload (json) but do not gate the
+	// exit code, so a crashed scanner with zero findings still exits 0. This
+	// preserves the historical CLI contract; changing it to fail on partial
+	// errors would be a deliberate behavior change made separately.
+	if result.Summary.Total > 0 {
+		return errViolationsFound
+	}
+	return nil
 }
 
 func outputResultsJSON(result *scan.ScanResult) error {
@@ -153,6 +221,9 @@ func outputResultsJSON(result *scan.ScanResult) error {
 	return encoder.Encode(result)
 }
 
+// outputResultsHuman prints scan results in human-readable form. It is a pure
+// presentation function; the caller decides the process exit code from the
+// result summary.
 func outputResultsHuman(result *scan.ScanResult, scanType string) error {
 	fmt.Println("╔════════════════════════════════════════════════════════════════╗")
 	fmt.Println("║       Datadog Code Security Scan Results                      ║")
@@ -183,55 +254,55 @@ func outputResultsHuman(result *scan.ScanResult, scanType string) error {
 		fmt.Println()
 	}
 
-	// No violations found
+	// Violations (or lack thereof). Errors/Notices are printed below
+	// regardless, so a clean scan doesn't hide a partial failure or notice
+	// from another scan type.
 	if result.Summary.Total == 0 {
 		fmt.Println("✅ No security issues found!")
-		return nil
-	}
-
-	// Detailed violations
-	fmt.Println("─────────────────────────────────────────────────────────────────")
-	fmt.Println("Detailed Violations:")
-	fmt.Println("─────────────────────────────────────────────────────────────────")
-	fmt.Println()
-
-	// Group and display violations by detection type
-	for detType, violations := range result.Results {
-		if len(violations) == 0 {
-			continue
-		}
-
-		fmt.Printf("▼ %s (%d issues)\n", strings.ToUpper(string(detType)), len(violations))
+	} else {
+		fmt.Println("─────────────────────────────────────────────────────────────────")
+		fmt.Println("Detailed Violations:")
+		fmt.Println("─────────────────────────────────────────────────────────────────")
 		fmt.Println()
 
-		for i, v := range violations {
-			// Severity icon
-			icon := getSeverityIcon(v.Severity)
-
-			// Print violation header
-			fmt.Printf("%d. %s [%s] %s\n", i+1, icon, v.Severity, v.Rule)
-
-			// Location
-			fmt.Printf("   Location: %s:%d\n", v.File, v.Line)
-
-			// Message
-			if v.Message != "" {
-				fmt.Printf("   Message: %s\n", v.Message)
+		// Group and display violations by detection type
+		for detType, violations := range result.Results {
+			if len(violations) == 0 {
+				continue
 			}
 
-			// Rule URL
-			if v.RuleURL != "" {
-				fmt.Printf("   Documentation: %s\n", v.RuleURL)
-			}
-
+			fmt.Printf("▼ %s (%d issues)\n", strings.ToUpper(string(detType)), len(violations))
 			fmt.Println()
+
+			for i, v := range violations {
+				// Severity icon
+				icon := getSeverityIcon(v.Severity)
+
+				// Print violation header
+				fmt.Printf("%d. %s [%s] %s\n", i+1, icon, v.Severity, v.Rule)
+
+				// Location
+				fmt.Printf("   Location: %s:%d\n", v.File, v.Line)
+
+				// Message
+				if v.Message != "" {
+					fmt.Printf("   Message: %s\n", v.Message)
+				}
+
+				// Rule URL
+				if v.RuleURL != "" {
+					fmt.Printf("   Documentation: %s\n", v.RuleURL)
+				}
+
+				fmt.Println()
+			}
 		}
 	}
 
 	// Errors if any
 	if len(result.Errors) > 0 {
 		fmt.Println("─────────────────────────────────────────────────────────────────")
-		fmt.Println("⚠️  Warnings:")
+		fmt.Println("⚠️  Errors encountered:")
 		fmt.Println("─────────────────────────────────────────────────────────────────")
 		for _, scanErr := range result.Errors {
 			fmt.Printf("  • %s: %s\n", scanErr.DetectionType, scanErr.Error)
@@ -242,9 +313,19 @@ func outputResultsHuman(result *scan.ScanResult, scanType string) error {
 		fmt.Println()
 	}
 
-	// Exit with non-zero if violations found
-	if result.Summary.Total > 0 {
-		os.Exit(1)
+	// Non-fatal notices (e.g. no components detected). Unlike errors, these
+	// come from scans that completed successfully.
+	if len(result.Notices) > 0 {
+		fmt.Println("─────────────────────────────────────────────────────────────────")
+		fmt.Println("ℹ️  Notices:")
+		fmt.Println("─────────────────────────────────────────────────────────────────")
+		for _, notice := range result.Notices {
+			fmt.Printf("  • %s: %s\n", notice.DetectionType, notice.Message)
+			if notice.Hint != "" {
+				fmt.Printf("    Hint: %s\n", notice.Hint)
+			}
+		}
+		fmt.Println()
 	}
 
 	return nil
@@ -309,49 +390,63 @@ Examples:
 
 func runLibraryScan(purls []string, workingDir string, outputJSON bool) error {
 	ctx := context.Background()
+	libraryCount := len(purls)
+	event := telemetry.OperationEvent{
+		Interface:      telemetry.InterfaceCLI,
+		Operation:      "library_scan",
+		StartedAt:      time.Now(),
+		LibrariesCount: &libraryCount,
+	}
+	defer func() { trackOperation(ctx, event) }()
 
-	loadAuthToEnv(ctx)
+	fail := func(err error) error {
+		event.Failure = err
+		return err
+	}
+
+	event.AuthMethod = loadAuthToEnv(ctx)
 
 	apiKey := os.Getenv("DD_API_KEY")
 	appKey := os.Getenv("DD_APP_KEY")
 	site := os.Getenv("DD_SITE")
-	if site == "" {
-		site = "datadoghq.com"
-	}
 
 	if apiKey == "" || appKey == "" {
-		return fmt.Errorf("DD_API_KEY and DD_APP_KEY are required for library scanning\n\nSet them via environment variables or run 'datadog-code-security-mcp dd-auth'")
+		return fail(fmt.Errorf("DD_API_KEY and DD_APP_KEY are required for library scanning\n\nSet them via environment variables or run 'datadog-code-security-mcp dd-auth'"))
 	}
 
 	libs := make([]libraryscan.Library, 0, len(purls))
 	for _, p := range purls {
 		if err := libraryscan.ValidatePURL(p); err != nil {
-			return err
+			return fail(err)
 		}
 		libs = append(libs, libraryscan.Library{Purl: p})
 	}
 
-	// Use working dir (or ".") for git context
-	dir := workingDir
-	if dir == "" {
-		dir = "."
-	}
-	repoName, commitHash := libraryscan.DetectGitContext(ctx, dir)
-
-	client := libraryscan.NewClient(apiKey, appKey, site)
-	result, err := client.Scan(ctx, libraryscan.ScanRequest{
-		Libraries:    libs,
-		ResourceName: repoName,
-		CommitHash:   commitHash,
-	})
+	result, totalVulns, err := libraryscan.Run(ctx, apiKey, appKey, site, workingDir, libs)
 	if err != nil {
-		return fmt.Errorf("library scan failed: %w", err)
+		return fail(fmt.Errorf("library scan failed: %w", err))
 	}
+	event.FindingsCount = &totalVulns
 
+	return renderLibraryScanResult(result, totalVulns, outputJSON)
+}
+
+// renderLibraryScanResult writes the library-scan result in the chosen format
+// and then applies the findings-based exit decision, mirroring
+// renderScanResult so --json and human output exit identically. See that
+// function for why the exit decision is shared rather than per-format.
+func renderLibraryScanResult(result *libraryscan.ScanResult, totalVulns int, outputJSON bool) error {
 	if outputJSON {
-		return outputLibraryScanJSON(result)
+		if err := outputLibraryScanJSON(result); err != nil {
+			return err
+		}
+	} else if err := outputLibraryScanHuman(result); err != nil {
+		return err
 	}
-	return outputLibraryScanHuman(result)
+	if totalVulns > 0 {
+		return errViolationsFound
+	}
+	return nil
 }
 
 func outputLibraryScanJSON(result *libraryscan.ScanResult) error {
@@ -360,6 +455,8 @@ func outputLibraryScanJSON(result *libraryscan.ScanResult) error {
 	return encoder.Encode(result)
 }
 
+// outputLibraryScanHuman prints library scan results in human-readable form.
+// It is a pure presentation function; the caller decides the exit code.
 func outputLibraryScanHuman(result *libraryscan.ScanResult) error {
 	fmt.Println("╔════════════════════════════════════════════════════════════════╗")
 	fmt.Println("║       Library Vulnerability Scan Results                      ║")
@@ -486,8 +583,6 @@ func outputLibraryScanHuman(result *libraryscan.ScanResult) error {
 		}
 	}
 
-	// Exit non-zero when vulnerabilities are found (consistent with other scan commands)
-	os.Exit(1)
 	return nil
 }
 

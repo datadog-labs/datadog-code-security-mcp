@@ -2,9 +2,11 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/mark3labs/mcp-go/mcp"
 
@@ -12,48 +14,76 @@ import (
 	"github.com/datadog-labs/datadog-code-security-mcp/internal/libraryscan"
 	"github.com/datadog-labs/datadog-code-security-mcp/internal/sbom"
 	"github.com/datadog-labs/datadog-code-security-mcp/internal/scan"
+	"github.com/datadog-labs/datadog-code-security-mcp/internal/telemetry"
 	"github.com/datadog-labs/datadog-code-security-mcp/internal/types"
 )
 
+// authRequiredError builds the user-facing error returned when credential setup
+// fails, appending the dd-auth and API-key setup instructions.
+func authRequiredError(err error) error {
+	return fmt.Errorf("%s: %v\n\n%s\n\n%s",
+		constants.ErrAuthRequired, err,
+		constants.AuthInstructionDDAuth,
+		constants.AuthInstructionAPIKey)
+}
+
+// apiKeyRequiredError builds the user-facing error returned when required API
+// credentials are missing from the environment, with the same setup instructions.
+func apiKeyRequiredError() error {
+	return fmt.Errorf("%s.\n\n%s\n\n%s",
+		constants.ErrAPIKeyRequired,
+		constants.AuthInstructionDDAuth,
+		constants.AuthInstructionAPIKey)
+}
+
 // Generic handler that eliminates duplication across SAST/Secrets handlers
 func handleAuthenticatedScan(ctx context.Context, request mcp.CallToolRequest, scanTypes []string) (*mcp.CallToolResult, error) {
+	tracking := telemetry.ScanEvent{
+		Interface:  telemetry.InterfaceMCP,
+		StartedAt:  time.Now(),
+		AuthMethod: detectAuthMethod(),
+	}
+	defer func() { trackScan(ctx, tracking) }()
+
+	// fail records a pre-execution failure as the canonical outcome and returns
+	// the MCP error result. The deferred emit above sends exactly one event.
+	fail := func(err error) (*mcp.CallToolResult, error) {
+		tracking.Outcome = scan.NewFailedOutcome(scanTypes, err)
+		return errorResult(err), nil
+	}
+
 	argsMap, ok := request.Params.Arguments.(map[string]any)
 	if !ok {
-		return errorResult(fmt.Errorf(constants.ErrInvalidArguments)), nil
+		return fail(fmt.Errorf(constants.ErrInvalidArguments))
 	}
 
 	args, err := parseScanArgs(argsMap)
 	if err != nil {
-		return errorResult(err), nil
+		return fail(err)
 	}
+	tracking.PathsCount = len(args.FilePaths)
+	tracking.WorkingDir = args.WorkingDir
 
-	// Authenticate
 	if err := setAuthCredentials(ctx); err != nil {
-		return errorResult(fmt.Errorf("%s: %v\n\n%s\n\n%s",
-			constants.ErrAuthRequired, err,
-			constants.AuthInstructionDDAuth,
-			constants.AuthInstructionAPIKey)), nil
+		return fail(authRequiredError(err))
 	}
 
 	if os.Getenv(constants.EnvAPIKey) == "" {
-		return errorResult(fmt.Errorf("%s.\n\n%s\n\n%s",
-			constants.ErrAPIKeyRequired,
-			constants.AuthInstructionDDAuth,
-			constants.AuthInstructionAPIKey)), nil
+		return fail(apiKeyRequiredError())
 	}
 
-	// Execute scan
 	args.ScanTypes = scanTypes
-	result, err := scan.ExecuteScan(ctx, args)
-	if err != nil {
+	outcome := scan.ExecuteScan(ctx, args)
+	tracking.Outcome = outcome
+	if err := outcome.Err(); err != nil {
 		return errorResult(err), nil
 	}
 
-	return formatScanResult(result), nil
+	return formatScanResult(outcome.Result()), nil
 }
 
 func handleCodeSecurityScan(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	return handleAuthenticatedScan(ctx, request, []string{string(types.DetectionTypeSAST), string(types.DetectionTypeSecrets), string(types.DetectionTypeSCA), string(types.DetectionTypeIaC)})
+	return handleAuthenticatedScan(ctx, request, types.SecurityScanTypes())
 }
 
 func handleSASTScan(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -65,22 +95,49 @@ func handleSecretsScan(ctx context.Context, request mcp.CallToolRequest) (*mcp.C
 }
 
 func handleGenerateSBOM(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	event := telemetry.OperationEvent{
+		Interface:  telemetry.InterfaceMCP,
+		Operation:  "generate_sbom",
+		StartedAt:  time.Now(),
+		AuthMethod: detectAuthMethod(),
+		ScanType:   string(types.DetectionTypeSBOM),
+	}
+	defer func() { trackOperation(ctx, event) }()
+
+	fail := func(err error) (*mcp.CallToolResult, error) {
+		event.Failure = err
+		return errorResult(err), nil
+	}
+
 	argsMap, ok := request.Params.Arguments.(map[string]any)
 	if !ok {
-		return errorResult(fmt.Errorf(constants.ErrInvalidArguments)), nil
+		return fail(fmt.Errorf(constants.ErrInvalidArguments))
 	}
 
 	args, err := parseSBOMArgs(argsMap)
 	if err != nil {
-		return errorResult(err), nil
+		return fail(err)
 	}
 
 	generator := sbom.NewGenerator()
 	result, err := generator.Generate(ctx, args)
 	if err != nil {
-		return errorResult(err), nil
+		return fail(err)
 	}
 
+	findingsCount := result.Summary.TotalComponents
+	event.FindingsCount = &findingsCount
+	if result.Notice != nil {
+		event.Notice = result.Notice.Message
+	}
+	// A non-nil result.Error means generation failed even though Generate
+	// returned a nil Go error. Record it as a telemetry failure so these runs
+	// aren't counted as successful. The raw text is only used by the telemetry
+	// layer to pick a categorized kind; it never reaches the wire. The tool
+	// response is unchanged — formatSBOMResult still surfaces the error.
+	if result.Error != nil {
+		event.Failure = errors.New(result.Error.Error)
+	}
 	return formatSBOMResult(result), nil
 }
 
@@ -143,30 +200,25 @@ func parseSBOMArgs(arguments map[string]any) (types.SBOMArgs, error) {
 	return args, nil
 }
 
-// handleLibraryVulnerabilityScan scans specific libraries for vulnerabilities via the Datadog API.
-func handleLibraryVulnerabilityScan(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	argsMap, ok := request.Params.Arguments.(map[string]any)
-	if !ok {
-		return errorResult(fmt.Errorf(constants.ErrInvalidArguments)), nil
-	}
-
+// parseLibraryArgs extracts and validates the libraries array from an MCP request.
+func parseLibraryArgs(argsMap map[string]any) ([]libraryscan.Library, error) {
 	librariesRaw, ok := argsMap["libraries"].([]any)
 	if !ok || len(librariesRaw) == 0 {
-		return errorResult(fmt.Errorf("libraries is required and must be a non-empty array")), nil
+		return nil, fmt.Errorf("libraries is required and must be a non-empty array")
 	}
 
 	libs := make([]libraryscan.Library, 0, len(librariesRaw))
 	for _, raw := range librariesRaw {
 		libMap, ok := raw.(map[string]any)
 		if !ok {
-			return errorResult(fmt.Errorf("each library must be an object with at least a 'purl' field")), nil
+			return nil, fmt.Errorf("each library must be an object with at least a 'purl' field")
 		}
 		purl, ok := libMap["purl"].(string)
 		if !ok || purl == "" {
-			return errorResult(fmt.Errorf("each library must have a non-empty 'purl' field")), nil
+			return nil, fmt.Errorf("each library must have a non-empty 'purl' field")
 		}
 		if err := libraryscan.ValidatePURL(purl); err != nil {
-			return errorResult(err), nil
+			return nil, err
 		}
 		lib := libraryscan.Library{Purl: purl}
 		if isDev, ok := libMap["is_dev"].(bool); ok {
@@ -180,13 +232,37 @@ func handleLibraryVulnerabilityScan(ctx context.Context, request mcp.CallToolReq
 		}
 		libs = append(libs, lib)
 	}
+	return libs, nil
+}
+
+// handleLibraryVulnerabilityScan scans specific libraries for vulnerabilities via the Datadog API.
+func handleLibraryVulnerabilityScan(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	event := telemetry.OperationEvent{
+		Interface:  telemetry.InterfaceMCP,
+		Operation:  "library_scan",
+		StartedAt:  time.Now(),
+		AuthMethod: detectAuthMethod(),
+	}
+	defer func() { trackOperation(ctx, event) }()
+
+	fail := func(err error) (*mcp.CallToolResult, error) {
+		event.Failure = err
+		return errorResult(err), nil
+	}
+
+	argsMap, ok := request.Params.Arguments.(map[string]any)
+	if !ok {
+		return fail(fmt.Errorf(constants.ErrInvalidArguments))
+	}
+
+	libs, err := parseLibraryArgs(argsMap)
+	if err != nil {
+		return fail(err)
+	}
 
 	// Require credentials — this scan always calls the Datadog cloud API
 	if err := setAuthCredentials(ctx); err != nil {
-		return errorResult(fmt.Errorf("%s: %v\n\n%s\n\n%s",
-			constants.ErrAuthRequired, err,
-			constants.AuthInstructionDDAuth,
-			constants.AuthInstructionAPIKey)), nil
+		return fail(authRequiredError(err))
 	}
 
 	apiKey := os.Getenv(constants.EnvAPIKey)
@@ -194,35 +270,28 @@ func handleLibraryVulnerabilityScan(ctx context.Context, request mcp.CallToolReq
 	// DD_SITE was validated by LoadConfig at startup (whitelist + domain regex).
 	// Re-reading from env here since setAuthCredentials may have updated it.
 	site := os.Getenv(constants.EnvSite)
-	if site == "" {
-		site = "datadoghq.com"
-	}
 
 	// Both keys are required for the library scan cloud API (unlike SAST which only
 	// needs DD_API_KEY locally). This check is a safeguard in case setAuthCredentials
 	// partially configured the environment.
 	if apiKey == "" || appKey == "" {
-		return errorResult(fmt.Errorf("%s.\n\n%s\n\n%s",
-			constants.ErrAPIKeyRequired,
-			constants.AuthInstructionDDAuth,
-			constants.AuthInstructionAPIKey)), nil
+		return fail(apiKeyRequiredError())
 	}
 
 	workingDir := constants.DefaultWorkingDir
 	if wd, ok := argsMap[constants.ArgWorkingDir].(string); ok && wd != "" {
 		workingDir = filepath.Clean(wd)
 	}
-	repoName, commitHash := libraryscan.DetectGitContext(ctx, workingDir)
 
-	client := libraryscan.NewClient(apiKey, appKey, site)
-	result, err := client.Scan(ctx, libraryscan.ScanRequest{
-		Libraries:    libs,
-		ResourceName: repoName,
-		CommitHash:   commitHash,
-	})
+	// Library count is known once the run reaches the cloud API; recorded here so
+	// both the failure and success events carry it (auth failures above do not).
+	libraryCount := len(libs)
+	event.LibrariesCount = &libraryCount
+	result, totalVulns, err := libraryscan.Run(ctx, apiKey, appKey, site, workingDir, libs)
 	if err != nil {
-		return errorResult(fmt.Errorf("library scan failed: %w", err)), nil
+		return fail(fmt.Errorf("library scan failed: %w", err))
 	}
 
+	event.FindingsCount = &totalVulns
 	return formatLibraryScanResult(result), nil
 }

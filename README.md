@@ -163,6 +163,27 @@ unzip -o /tmp/sbom.zip -d /tmp/ && mkdir -p ~/.local/bin && mv /tmp/datadog-sbom
 brew install --cask datadog-security-cli
 ```
 
+## Telemetry
+
+Datadog Code Security MCP collects **anonymous usage telemetry** (tool and scanner versions, OS/arch, run duration, success/failure, aggregate counts, coarse authentication/workspace metadata, categorized error kinds, and a fixed team ownership tag) to help improve the tool. It does not collect source code, paths, scan finding contents, secrets, repository names, usernames, or raw error messages. Each error carries a short curated, path-free description (for Error Tracking) — never the raw error text.
+
+Scanner versions are collected once per process and are not persisted.
+
+**To opt out**, use any of the following:
+
+```bash
+# Per-invocation flag
+datadog-code-security-mcp --no-telemetry scan sast ./src
+
+# Environment variable (add to your shell profile to make it permanent)
+export DD_CODE_SECURITY_TELEMETRY_DISABLED=1
+
+# DO_NOT_TRACK standard (https://consoledonottrack.com/)
+export DO_NOT_TRACK=1
+```
+
+Full details on what is collected, the anonymous install ID, and how opt-out works: [docs/TELEMETRY.md](docs/TELEMETRY.md).
+
 ## For Developers
 
 **Quick References:**

@@ -46,19 +46,19 @@ func NewSASTScanner(binMgr *binary.BinaryManager) *SASTScanner {
 }
 
 // Execute runs SAST scan with severity filtering
-func (s *SASTScanner) Execute(ctx context.Context, args ScanArgs) ([]types.Violation, error) {
+func (s *SASTScanner) Execute(ctx context.Context, args ScanArgs) (ScannerResult, error) {
 	// Delegate to base for detection and parsing
-	findings, err := s.base.Execute(ctx, args)
+	res, err := s.base.Execute(ctx, args)
 	if err != nil {
-		return nil, err
+		return ScannerResult{}, err
 	}
 
 	// Apply SAST-specific severity filtering
 	if s.filterConfig.Enabled {
-		findings = s.filterBySeverity(findings, s.filterConfig.MinSeverity)
+		res.Findings = s.filterBySeverity(res.Findings, s.filterConfig.MinSeverity)
 	}
 
-	return findings, nil
+	return res, nil
 }
 
 // filterBySeverity removes findings below the threshold

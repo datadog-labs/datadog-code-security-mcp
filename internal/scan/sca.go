@@ -27,35 +27,49 @@ func NewSCAScanner(binMgr *binary.BinaryManager) *SCAScanner {
 // Execute runs SCA scan
 // Takes directories as input (like SAST/Secrets), generates SBOM internally, then scans.
 // Working directory resolution is handled by ExecuteScan before this is called.
-func (s *SCAScanner) Execute(ctx context.Context, args ScanArgs) ([]types.Violation, error) {
-	sbomFile, err := s.generateSBOM(ctx, args.FilePaths, args.WorkingDir)
+//
+// Returns a non-nil notice (with empty findings and a nil error) when no
+// components were found: the generator ran fine and produced a valid (empty)
+// result, so this is a non-fatal outcome the caller surfaces without treating
+// it as a scan failure.
+func (s *SCAScanner) Execute(ctx context.Context, args ScanArgs) (ScannerResult, error) {
+	sbomFile, notice, err := s.generateSBOM(ctx, args.FilePaths, args.WorkingDir)
 	if err != nil {
-		return nil, fmt.Errorf("SBOM generation failed: %w", err)
+		return ScannerResult{}, fmt.Errorf("SBOM generation failed: %w", err)
 	}
-	defer os.Remove(sbomFile)
+	if notice != nil {
+		// No components were found across any requested path, so there's
+		// nothing to check for vulnerabilities.
+		return ScannerResult{Findings: []types.Violation{}, Notice: notice}, nil
+	}
+	defer func() { _ = os.Remove(sbomFile) }()
 
 	if err := s.validateSBOMFile(sbomFile); err != nil {
-		return nil, fmt.Errorf("validation failed: %w", err)
+		return ScannerResult{}, fmt.Errorf("validation failed: %w", err)
 	}
 
 	rawOutput, err := s.runDetection(ctx, sbomFile, args.WorkingDir)
 	if err != nil {
-		return nil, fmt.Errorf("detection failed: %w", err)
+		return ScannerResult{}, fmt.Errorf("detection failed: %w", err)
 	}
 
 	vulnerabilities, err := processing.ParseSCAJSON(rawOutput)
 	if err != nil {
-		return nil, fmt.Errorf("parsing failed: %w", err)
+		return ScannerResult{}, fmt.Errorf("parsing failed: %w", err)
 	}
 
-	return s.convertToViolations(vulnerabilities), nil
+	return ScannerResult{Findings: s.convertToViolations(vulnerabilities)}, nil
 }
 
 // generateSBOM creates SBOM from directories using sbom.Generator.
 // When multiple paths are provided, an SBOM is generated per path and
 // the components are merged (deduplicated by PackageURL) so that a
 // single vulnerability detection pass covers all requested targets.
-func (s *SCAScanner) generateSBOM(ctx context.Context, filePaths []string, workingDir string) (string, error) {
+//
+// Returns a non-nil notice (with an empty sbomFile) instead of an error when
+// no components were found — that's a valid, non-fatal outcome, not a
+// generation failure.
+func (s *SCAScanner) generateSBOM(ctx context.Context, filePaths []string, workingDir string) (string, *types.ScanNotice, error) {
 	// Normalize: if no paths provided, default to "."
 	paths := filePaths
 	if len(paths) == 0 {
@@ -63,6 +77,7 @@ func (s *SCAScanner) generateSBOM(ctx context.Context, filePaths []string, worki
 	}
 
 	var allComponents []types.Library
+	var notice *types.ScanNotice
 	generator := sbom.NewGenerator()
 
 	for _, p := range paths {
@@ -74,10 +89,15 @@ func (s *SCAScanner) generateSBOM(ctx context.Context, filePaths []string, worki
 			WorkingDir: workingDir,
 		})
 		if err != nil {
-			return "", fmt.Errorf("failed to generate SBOM for path %q: %w", p, err)
+			return "", nil, fmt.Errorf("failed to generate SBOM for path %q: %w", p, err)
 		}
-		if result.Error != nil {
-			return "", fmt.Errorf("SBOM generation error for path %q: %s", p, result.Error.Error)
+		pathNotice, err := classifySBOMResult(p, result)
+		if err != nil {
+			return "", nil, err
+		}
+		if pathNotice != nil {
+			notice = pathNotice
+			continue
 		}
 		allComponents = append(allComponents, result.Components...)
 	}
@@ -86,17 +106,43 @@ func (s *SCAScanner) generateSBOM(ctx context.Context, filePaths []string, worki
 	allComponents = deduplicateComponents(allComponents)
 
 	if len(allComponents) == 0 {
-		return "", fmt.Errorf("no components found in SBOM")
+		if notice == nil {
+			notice = &types.ScanNotice{
+				DetectionType: types.DetectionTypeSCA,
+				Message:       types.NoComponentsDetectedMessage,
+				Hint:          types.ManualSBOMSuggestion,
+			}
+		}
+		return "", notice, nil
 	}
 
 	// Build merged result and write to temp file
 	mergedResult := &types.SBOMResult{Components: allComponents}
 	sbomFile, err := s.writeSBOMToTempFile(mergedResult)
 	if err != nil {
-		return "", fmt.Errorf("failed to write SBOM: %w", err)
+		return "", nil, fmt.Errorf("failed to write SBOM: %w", err)
 	}
 
-	return sbomFile, nil
+	return sbomFile, nil, nil
+}
+
+// classifySBOMResult decides whether a per-path SBOM generation result is a
+// genuine failure or a non-fatal "nothing found" notice. It's a standalone
+// function so this decision is unit-testable without shelling out to the
+// real datadog-sbom-generator binary.
+func classifySBOMResult(path string, result *types.SBOMResult) (*types.ScanNotice, error) {
+	if result.Error != nil {
+		return nil, fmt.Errorf("SBOM generation error for path %q: %s", path, result.Error.Error)
+	}
+	if result.Notice != nil {
+		// Re-tag as "sca": the generator reports "sbom" since that's its own
+		// detection type, but from the caller's perspective this notice
+		// belongs to the sca scan that's using the SBOM step internally.
+		notice := *result.Notice
+		notice.DetectionType = types.DetectionTypeSCA
+		return &notice, nil
+	}
+	return nil, nil
 }
 
 // deduplicateComponents removes duplicate libraries by PackageURL.
@@ -123,7 +169,7 @@ func (s *SCAScanner) writeSBOMToTempFile(result *types.SBOMResult) (string, erro
 	if err != nil {
 		return "", err
 	}
-	defer tempFile.Close()
+	defer func() { _ = tempFile.Close() }()
 
 	// Convert to CycloneDX format
 	cycloneDX := convertToCycloneDX(result)
@@ -132,7 +178,7 @@ func (s *SCAScanner) writeSBOMToTempFile(result *types.SBOMResult) (string, erro
 	encoder := json.NewEncoder(tempFile)
 	encoder.SetIndent("", "  ")
 	if err := encoder.Encode(cycloneDX); err != nil {
-		os.Remove(tempFile.Name())
+		_ = os.Remove(tempFile.Name())
 		return "", err
 	}
 

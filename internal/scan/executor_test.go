@@ -2,6 +2,8 @@ package scan
 
 import (
 	"context"
+	"errors"
+	"os/exec"
 	"testing"
 
 	"github.com/datadog-labs/datadog-code-security-mcp/internal/binary"
@@ -97,8 +99,13 @@ func TestGetScannerFor_KnownTypes(t *testing.T) {
 }
 
 // TestExecuteParallelScans_SCABinaryMissing tests that SCA gracefully errors
-// when required binaries (datadog-sbom-generator, datadog-security-cli) are not in PATH.
+// when required binaries (datadog-sbom-generator, datadog-security-cli) are
+// not in PATH. PATH is cleared so this is deterministic even on machines that
+// have the binaries installed locally (otherwise this would instead exercise
+// the "no components detected" notice path, which is not an error).
 func TestExecuteParallelScans_SCABinaryMissing(t *testing.T) {
+	t.Setenv("PATH", "")
+
 	ctx := context.Background()
 	args := ScanArgs{
 		FilePaths:  []string{"."},
@@ -107,10 +114,8 @@ func TestExecuteParallelScans_SCABinaryMissing(t *testing.T) {
 	}
 
 	binMgr := binary.NewBinaryManager()
-	result, err := ExecuteParallelScans(ctx, args, binMgr)
-	if err != nil {
-		t.Fatalf("Expected no error from executor, got: %v", err)
-	}
+	outcome := ExecuteParallelScans(ctx, args, binMgr)
+	result := outcome.Result()
 
 	if len(result.Errors) != 1 {
 		t.Errorf("Expected 1 error (binary not found), got %d", len(result.Errors))
@@ -125,6 +130,88 @@ func TestExecuteParallelScans_SCABinaryMissing(t *testing.T) {
 	}
 }
 
+// TestExecuteParallelScans_SCANoComponents verifies that when the SBOM
+// generator runs successfully but finds no components (e.g. a directory with
+// no recognized dependency manifests), SCA completes successfully with a
+// notice rather than an error.
+func TestExecuteParallelScans_SCANoComponents(t *testing.T) {
+	if _, err := exec.LookPath("datadog-sbom-generator"); err != nil {
+		t.Skip("datadog-sbom-generator not installed; skipping")
+	}
+
+	ctx := context.Background()
+	args := ScanArgs{
+		// This test file's own directory has no dependency manifest (go.mod
+		// lives at the repo root), so it reliably yields zero components.
+		FilePaths:  []string{"."},
+		WorkingDir: ".",
+		ScanTypes:  []string{"sca"},
+	}
+
+	binMgr := binary.NewBinaryManager()
+	outcome := ExecuteParallelScans(ctx, args, binMgr)
+	result := outcome.Result()
+
+	if len(result.Errors) != 0 {
+		t.Errorf("Expected 0 errors for zero components, got %d: %v", len(result.Errors), result.Errors)
+	}
+	if len(result.Notices) != 1 {
+		t.Fatalf("Expected 1 notice for zero components, got %d", len(result.Notices))
+	}
+	if result.Notices[0].DetectionType != "sca" {
+		t.Errorf("Expected notice for sca, got %q", result.Notices[0].DetectionType)
+	}
+	if result.Summary.Total != 0 {
+		t.Errorf("Expected 0 findings, got %d", result.Summary.Total)
+	}
+	if result.PartialResult {
+		t.Error("Expected PartialResult=false; a notice is not a failure")
+	}
+}
+
+// TestExecuteParallelScans_DurationsPopulated verifies that the internal
+// execution report contains every requested scan type, whether it succeeds or fails.
+func TestExecuteParallelScans_DurationsPopulated(t *testing.T) {
+	ctx := context.Background()
+	args := ScanArgs{
+		FilePaths:  []string{"."},
+		WorkingDir: ".",
+		ScanTypes:  []string{"sca", "iac"},
+	}
+
+	binMgr := binary.NewBinaryManager()
+	outcome := ExecuteParallelScans(ctx, args, binMgr)
+	if outcome == nil {
+		t.Fatal("expected scan outcome to be non-nil")
+	}
+
+	for _, st := range args.ScanTypes {
+		if _, ok := outcome.Execution(st); !ok {
+			t.Errorf("execution %q missing; want an entry for every requested scan type", st)
+		}
+	}
+}
+
+// TestExecuteParallelScans_DurationsAreNonNegative verifies that report
+// durations are >= 0 (wall time cannot be negative).
+func TestExecuteParallelScans_DurationsAreNonNegative(t *testing.T) {
+	ctx := context.Background()
+	args := ScanArgs{
+		FilePaths:  []string{"."},
+		WorkingDir: ".",
+		ScanTypes:  []string{"sca"},
+	}
+
+	binMgr := binary.NewBinaryManager()
+	outcome := ExecuteParallelScans(ctx, args, binMgr)
+
+	outcome.EachExecution(func(execution ScanExecution) {
+		if execution.Duration < 0 {
+			t.Errorf("duration[%q] = %s; want >= 0", execution.DetectionType, execution.Duration)
+		}
+	})
+}
+
 // TestExecuteParallelScans_AllScanTypes verifies all three scan types are dispatched in parallel.
 // Each scan type will either succeed (findings + result entry) or fail (error entry) depending
 // on whether the required binary is installed. The test checks that no scan type is silently dropped.
@@ -137,10 +224,8 @@ func TestExecuteParallelScans_AllScanTypes(t *testing.T) {
 	}
 
 	binMgr := binary.NewBinaryManager()
-	result, err := ExecuteParallelScans(ctx, args, binMgr)
-	if err != nil {
-		t.Fatalf("Expected no error from executor, got: %v", err)
-	}
+	outcome := ExecuteParallelScans(ctx, args, binMgr)
+	result := outcome.Result()
 
 	// Every scan type must appear in either Results or Errors — none should be dropped
 	reported := make(map[string]bool)
@@ -148,7 +233,7 @@ func TestExecuteParallelScans_AllScanTypes(t *testing.T) {
 		reported[string(dt)] = true
 	}
 	for _, e := range result.Errors {
-		reported[e.DetectionType] = true
+		reported[string(e.DetectionType)] = true
 	}
 	for _, expected := range []string{"sast", "secrets", "sca"} {
 		if !reported[expected] {
@@ -157,33 +242,21 @@ func TestExecuteParallelScans_AllScanTypes(t *testing.T) {
 	}
 }
 
-// TestExecuteParallelScans_PartialFailure_WithMock tests the partial result aggregation logic:
-// when some scan types succeed and others fail, PartialResult should be true.
-func TestExecuteParallelScans_PartialFailure_WithMock(t *testing.T) {
-	findings := []types.Violation{
-		{Severity: "HIGH", DetectionType: "sast"},
-	}
-	errors := []ScanError{
-		{DetectionType: "secrets", Error: "failed"},
-	}
+func TestScanOutcome_PartialSuccessDoesNotRequireFindings(t *testing.T) {
+	outcome := assembleOutcome(
+		[]string{"sast", "secrets"},
+		map[string]ScanExecution{
+			"sast":    {DetectionType: types.DetectionTypeSAST},
+			"secrets": {DetectionType: types.DetectionTypeSecrets, Err: errors.New("failed")},
+		},
+	)
 
-	result := &ScanResult{
-		Summary:       buildSummary(findings),
-		Results:       map[types.DetectionType][]types.Violation{"sast": findings},
-		Errors:        errors,
-		PartialResult: len(errors) > 0 && len(findings) > 0,
-	}
-
+	result := outcome.Result()
 	if !result.PartialResult {
-		t.Error("Expected PartialResult=true when some scans succeed and some fail")
+		t.Error("zero-finding success plus failure must be a partial result")
 	}
-
-	if result.Summary.Total != 1 {
-		t.Errorf("Expected 1 finding, got %d", result.Summary.Total)
-	}
-
-	if len(result.Errors) != 1 {
-		t.Errorf("Expected 1 error, got %d", len(result.Errors))
+	if result.Summary.Total != 0 {
+		t.Fatalf("expected zero findings, got %d", result.Summary.Total)
 	}
 }
 
@@ -202,11 +275,8 @@ func TestExecuteParallelScans_ThreadSafety(t *testing.T) {
 				WorkingDir: ".",
 				ScanTypes:  []string{"sast", "secrets", "sca"},
 			}
-			result, err := ExecuteParallelScans(ctx, args, binMgr)
-			if err != nil {
-				t.Errorf("Unexpected error: %v", err)
-			}
-			if len(result.Errors) == 0 {
+			outcome := ExecuteParallelScans(ctx, args, binMgr)
+			if len(outcome.Result().Errors) == 0 {
 				t.Error("Expected errors (binaries not installed)")
 			}
 			done <- true
@@ -217,4 +287,3 @@ func TestExecuteParallelScans_ThreadSafety(t *testing.T) {
 		<-done
 	}
 }
-

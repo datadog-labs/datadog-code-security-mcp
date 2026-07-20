@@ -4,9 +4,13 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"regexp"
 	"runtime"
 	"strings"
 )
+
+// semverRE extracts the first semver string (X.Y.Z) from binary --version output.
+var semverRE = regexp.MustCompile(`\d+\.\d+\.\d+`)
 
 // Binary supported OS/architecture combination
 type Platform struct {
@@ -33,11 +37,13 @@ const (
 // BinaryConfig contains the configuration for a specific binary type
 type BinaryConfig struct {
 	BinaryName         string
+	TelemetryKey       string
 	GitHubRepo         string
 	SupportedPlatforms []Platform
 	NamingConvention   NamingConvention
 	ArchiveFormat      ArchiveFormat // defaults to zip if empty
 	VersionedFilename  bool          // if true, release assets embed the version: {name}_{version}_{os}_{arch}.{ext}
+	VersionArgs        []string      // defaults to --version if empty
 }
 
 // BinaryType represents different types of binaries
@@ -54,6 +60,7 @@ const (
 var BinaryConfigs = map[BinaryType]BinaryConfig{
 	BinaryTypeStaticAnalyzer: {
 		BinaryName:       "datadog-static-analyzer",
+		TelemetryKey:     "static_analyzer",
 		GitHubRepo:       "DataDog/datadog-static-analyzer",
 		NamingConvention: NamingConventionRustTriple,
 		SupportedPlatforms: []Platform{
@@ -66,6 +73,7 @@ var BinaryConfigs = map[BinaryType]BinaryConfig{
 	},
 	BinaryTypeSBOMGenerator: {
 		BinaryName:       "datadog-sbom-generator",
+		TelemetryKey:     "sbom_generator",
 		GitHubRepo:       "DataDog/datadog-sbom-generator",
 		NamingConvention: NamingConventionSimple,
 		SupportedPlatforms: []Platform{
@@ -77,8 +85,10 @@ var BinaryConfigs = map[BinaryType]BinaryConfig{
 	},
 	BinaryTypeSecurity: {
 		BinaryName:       "datadog-security-cli",
+		TelemetryKey:     "security_cli",
 		GitHubRepo:       "",                     // Not distributed via GitHub releases
 		NamingConvention: NamingConventionSimple, // Not used for package-based install
+		VersionArgs:      []string{"version"},
 		SupportedPlatforms: []Platform{
 			{OS: "linux", Arch: "amd64"},
 			{OS: "linux", Arch: "arm64"},
@@ -87,11 +97,11 @@ var BinaryConfigs = map[BinaryType]BinaryConfig{
 		},
 	},
 	BinaryTypeIaC: {
-		BinaryName:        "datadog-iac-scanner",
-		GitHubRepo:        "DataDog/datadog-iac-scanner",
-		NamingConvention:  NamingConventionSimple,
-		ArchiveFormat:     ArchiveFormatTarGz,
-		VersionedFilename: true, // assets are named {name}_{version}_{os}_{arch}.tar.gz
+		BinaryName:       "datadog-iac-scanner",
+		TelemetryKey:     "iac_scanner",
+		GitHubRepo:       "DataDog/datadog-iac-scanner",
+		NamingConvention: NamingConventionSimple,
+		ArchiveFormat:    ArchiveFormatTarGz,
 		SupportedPlatforms: []Platform{
 			{OS: "darwin", Arch: "arm64"},
 			{OS: "linux", Arch: "amd64"},
@@ -99,6 +109,36 @@ var BinaryConfigs = map[BinaryType]BinaryConfig{
 			{OS: "windows", Arch: "amd64"},
 		},
 	},
+}
+
+// scanTypeBinaries is the single source of truth for which binaries each scan
+// type invokes. SCA is the only two-binary type (it generates an SBOM, then
+// scans it); standalone SBOM generation uses just the generator. Consumed by
+// prerequisite validation and per-scan/operation version telemetry.
+var scanTypeBinaries = map[string][]BinaryType{
+	"sast":    {BinaryTypeStaticAnalyzer},
+	"secrets": {BinaryTypeStaticAnalyzer},
+	"sca":     {BinaryTypeSBOMGenerator, BinaryTypeSecurity},
+	"iac":     {BinaryTypeIaC},
+	"sbom":    {BinaryTypeSBOMGenerator},
+}
+
+// BinariesForScanType returns the binary types a scan type depends on, in the
+// order they are invoked. Unknown scan types return nil.
+func BinariesForScanType(scanType string) []BinaryType {
+	return scanTypeBinaries[scanType]
+}
+
+// TelemetryKeysForScanType returns the telemetry keys of the binaries a scan
+// type depends on, for scoping per-scan version telemetry to only the scanners
+// that scan type actually uses.
+func TelemetryKeysForScanType(scanType string) []string {
+	binaries := scanTypeBinaries[scanType]
+	keys := make([]string, 0, len(binaries))
+	for _, binaryType := range binaries {
+		keys = append(keys, BinaryConfigs[binaryType].TelemetryKey)
+	}
+	return keys
 }
 
 // BinaryManager manages scanner binaries
@@ -176,7 +216,7 @@ func (bm *BinaryManager) formatMissingBinaryError() error {
 			"1. Run the installation command above\n"+
 			"2. Retry the comprehensive security scan\n"+
 			"3. If installation fails, you may run partial scans as fallback\n\n"+
-			"This is a RECOVERABLE error. Install the binary and retry.",
+			"This is a RECOVERABLE error. Install the binary and retry",
 		bm.config.BinaryName,
 		purpose,
 		separator,
@@ -185,6 +225,29 @@ func (bm *BinaryManager) formatMissingBinaryError() error {
 		separator,
 		separator,
 	)
+}
+
+// GetVersion returns the semver (X.Y.Z) reported by the binary's version command.
+// Returns "not_found" if the binary is not in PATH, "unknown" if the version
+// command fails to run or its output cannot be parsed as a semver.
+func (bm *BinaryManager) GetVersion(ctx context.Context) string {
+	path, err := exec.LookPath(bm.config.BinaryName)
+	if err != nil {
+		return "not_found"
+	}
+	versionArgs := bm.config.VersionArgs
+	if len(versionArgs) == 0 {
+		versionArgs = []string{"--version"}
+	}
+	// no-dd-sa:go-security/command-injection - path comes from exec.LookPath, not user input
+	out, err := exec.CommandContext(ctx, path, versionArgs...).Output()
+	if err != nil {
+		return "unknown"
+	}
+	if m := semverRE.FindString(string(out)); m != "" {
+		return m
+	}
+	return "unknown"
 }
 
 // Execute runs the binary with the given arguments
@@ -285,10 +348,10 @@ echo "Installing %s version ${VERSION}"
 		// Choose extract command based on archive format
 		var extractCmd string
 		if archiveExt == ".tar.gz" {
-			extractCmd = fmt.Sprintf("curl -L \"%s\" -o /tmp/%s.tar.gz && tar xzf /tmp/%s.tar.gz -C /tmp/ && mkdir -p ~/.local/bin && mv /tmp/%s ~/.local/bin/ && chmod +x ~/.local/bin/%s",
+			extractCmd = fmt.Sprintf("curl -fL \"%s\" -o /tmp/%s.tar.gz && tar xzf /tmp/%s.tar.gz -C /tmp/ && mkdir -p ~/.local/bin && mv /tmp/%s ~/.local/bin/ && chmod +x ~/.local/bin/%s",
 				downloadURL, bm.config.BinaryName, bm.config.BinaryName, bm.config.BinaryName, bm.config.BinaryName)
 		} else {
-			extractCmd = fmt.Sprintf("curl -L \"%s\" -o /tmp/%s.zip && unzip -o /tmp/%s.zip -d /tmp/ && mkdir -p ~/.local/bin && mv /tmp/%s ~/.local/bin/ && chmod +x ~/.local/bin/%s",
+			extractCmd = fmt.Sprintf("curl -fL \"%s\" -o /tmp/%s.zip && unzip -o /tmp/%s.zip -d /tmp/ && mkdir -p ~/.local/bin && mv /tmp/%s ~/.local/bin/ && chmod +x ~/.local/bin/%s",
 				downloadURL, bm.config.BinaryName, bm.config.BinaryName, bm.config.BinaryName, bm.config.BinaryName)
 		}
 
@@ -362,14 +425,14 @@ func (bm *BinaryManager) isPlatformSupported(os, arch string) bool {
 
 func (bm *BinaryManager) generateUnsupportedPlatformMessage(os, arch string) string {
 	var supportedList strings.Builder
-	supportedList.WriteString(fmt.Sprintf("# Binary not available for %s/%s\n\n", os, arch))
+	fmt.Fprintf(&supportedList, "# Binary not available for %s/%s\n\n", os, arch)
 	supportedList.WriteString("# Supported platforms:\n")
 
 	for _, platform := range bm.config.SupportedPlatforms {
-		supportedList.WriteString(fmt.Sprintf("#   - %s/%s\n", platform.OS, platform.Arch))
+		fmt.Fprintf(&supportedList, "#   - %s/%s\n", platform.OS, platform.Arch)
 	}
 
-	supportedList.WriteString(fmt.Sprintf("\n# For more information, visit: https://github.com/%s/releases", bm.config.GitHubRepo))
+	fmt.Fprintf(&supportedList, "\n# For more information, visit: https://github.com/%s/releases", bm.config.GitHubRepo)
 	return supportedList.String()
 }
 
@@ -412,16 +475,16 @@ EOF
 sudo yum install datadog-security-cli
 
 # Verify installation
-datadog-security-cli --version`
+datadog-security-cli version`
 
 	case "darwin":
 		return `# Install datadog-security-cli on macOS:
 
 # Install via Homebrew
-brew install --cask datadog/tap/datadog-security-cli
+brew install --cask datadog-security-cli
 
 # Verify installation
-datadog-security-cli --version`
+datadog-security-cli version`
 
 	default:
 		return `# datadog-security-cli installation:

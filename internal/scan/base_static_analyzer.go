@@ -34,18 +34,18 @@ type BaseStaticAnalyzerScanner struct {
 // 2. Parse SARIF output
 // Subclass-specific behavior (like filtering) is handled by the calling scanner.
 // Working directory resolution is handled by ExecuteScan before this is called.
-func (s *BaseStaticAnalyzerScanner) Execute(ctx context.Context, args ScanArgs) ([]types.Violation, error) {
+func (s *BaseStaticAnalyzerScanner) Execute(ctx context.Context, args ScanArgs) (ScannerResult, error) {
 	rawSARIF, err := s.runDetection(ctx, args.FilePaths, args.WorkingDir)
 	if err != nil {
-		return nil, fmt.Errorf("detection failed: %w", err)
+		return ScannerResult{}, fmt.Errorf("detection failed: %w", err)
 	}
 
 	findings, err := s.parseSARIF(rawSARIF, args.WorkingDir)
 	if err != nil {
-		return nil, fmt.Errorf("parsing failed: %w", err)
+		return ScannerResult{}, fmt.Errorf("parsing failed: %w", err)
 	}
 
-	return findings, nil
+	return ScannerResult{Findings: findings}, nil
 }
 
 // runDetection calls the datadog-static-analyzer binary with config-specific flags
@@ -62,7 +62,7 @@ func (s *BaseStaticAnalyzerScanner) runDetection(ctx context.Context, filePaths 
 	if err != nil {
 		return nil, fmt.Errorf("failed to create temp directory: %w", err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	outputPath := filepath.Join(tempDir, "output.sarif")
 

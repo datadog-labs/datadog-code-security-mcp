@@ -59,14 +59,26 @@ type ScanResult struct {
 	Summary       ScanSummary                   `json:"summary" jsonschema:"description=Summary statistics of all detections"`
 	Results       map[DetectionType][]Violation `json:"results" jsonschema:"description=Results from each detection type"`
 	Errors        []ScanError                   `json:"errors,omitempty" jsonschema:"description=Any errors encountered during scanning"`
+	Notices       []ScanNotice                  `json:"notices,omitempty" jsonschema:"description=Non-fatal notices about scans that completed successfully (e.g. no components detected)"`
 	PartialResult bool                          `json:"partial_result,omitempty" jsonschema:"description=True if some scans failed but others succeeded"`
 }
 
 // ScanError represents an error that occurred during scanning
 type ScanError struct {
-	DetectionType string `json:"detection_type" jsonschema:"description=The detection type that encountered an error"`
-	Error         string `json:"error" jsonschema:"description=Error message"`
-	Hint          string `json:"hint,omitempty" jsonschema:"description=Suggestion for how to resolve the error"`
+	DetectionType DetectionType `json:"detection_type" jsonschema:"description=The detection type that encountered an error"`
+	Error         string        `json:"error" jsonschema:"description=Error message"`
+	Hint          string        `json:"hint,omitempty" jsonschema:"description=Suggestion for how to resolve the error"`
+}
+
+// ScanNotice is a non-fatal, informational note about a scan that completed
+// successfully but has something worth surfacing to the caller (e.g. no
+// components were detected, so there was nothing to check). Unlike ScanError,
+// a notice never affects success/failure status, exit codes, or telemetry
+// error classification.
+type ScanNotice struct {
+	DetectionType DetectionType `json:"detection_type" jsonschema:"description=The detection type the notice applies to"`
+	Message       string        `json:"message" jsonschema:"description=Short description of the notice"`
+	Hint          string        `json:"hint,omitempty" jsonschema:"description=Suggested follow-up action"`
 }
 
 // SBOMArgs represents arguments for SBOM generation
@@ -87,6 +99,7 @@ type SBOMResult struct {
 	Summary    SBOMSummary `json:"summary" jsonschema:"description=Summary statistics of SBOM scan"`
 	Components []Library   `json:"components" jsonschema:"description=List of software components found"`
 	Error      *ScanError  `json:"error,omitempty" jsonschema:"description=Error encountered during SBOM generation"`
+	Notice     *ScanNotice `json:"notice,omitempty" jsonschema:"description=Non-fatal notice about the SBOM generation (e.g. no components detected)"`
 }
 
 // SCAArgs represents arguments for Software Composition Analysis (vulnerability scanning)

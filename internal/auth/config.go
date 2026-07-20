@@ -5,6 +5,8 @@ import (
 	"os"
 	"regexp"
 	"strings"
+
+	"github.com/datadog-labs/datadog-code-security-mcp/internal/constants"
 )
 
 // Config holds authentication configuration
@@ -34,13 +36,23 @@ var validDatadogSites = map[string]bool{
 // Domain validation regex - only allows valid domain characters
 var domainRegex = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$`)
 
+// Auth method categories reported in telemetry. MethodAuthProvider covers any
+// credential resolved dynamically rather than typed by the user (today, only
+// dd-auth) — kept generic rather than named after dd-auth specifically so a
+// future provider-backed mechanism doesn't require a taxonomy change.
+const (
+	MethodNone         = "none"
+	MethodEnvVar       = "env_var"
+	MethodAuthProvider = "auth_provider"
+)
+
 // LoadConfig loads authentication configuration from environment variables
 func LoadConfig() (*Config, error) {
 	cfg := &Config{
-		APIKey:       os.Getenv("DD_API_KEY"),
-		APPKey:       os.Getenv("DD_APP_KEY"),
-		Site:         os.Getenv("DD_SITE"),
-		DDAuthDomain: os.Getenv("DD_AUTH_DOMAIN"),
+		APIKey:       os.Getenv(constants.EnvAPIKey),
+		APPKey:       os.Getenv(constants.EnvAPPKey),
+		Site:         os.Getenv(constants.EnvSite),
+		DDAuthDomain: os.Getenv(constants.EnvAuthDomain),
 	}
 
 	// Default site
@@ -100,6 +112,25 @@ func (c *Config) HasAPIKeys() bool {
 // HasDDAuth returns true if dd-auth is configured
 func (c *Config) HasDDAuth() bool {
 	return c.DDAuthDomain != ""
+}
+
+// Method categorizes how authentication is configured for telemetry, based
+// on this Config's state as read from the environment. It must be derived
+// from a Config loaded before ApplyToEnv/LoadAndApplyToEnv has had a chance
+// to mutate the process environment — otherwise a credential this process
+// itself exported (e.g. after resolving dd-auth) becomes indistinguishable
+// from one the user set directly, causing every call after the first to be
+// misreported as MethodEnvVar. Callers must capture the result once, up
+// front, and reuse it rather than re-deriving it later (see
+// LoadAndApplyToEnv and cmd/datadog-code-security-mcp's mcpAuthMethod).
+func (c *Config) Method() string {
+	if c.APIKey != "" {
+		return MethodEnvVar
+	}
+	if c.HasDDAuth() {
+		return MethodAuthProvider
+	}
+	return MethodNone
 }
 
 // Validate checks if the configuration is valid

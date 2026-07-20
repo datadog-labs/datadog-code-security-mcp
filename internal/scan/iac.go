@@ -2,6 +2,7 @@ package scan
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -37,18 +38,18 @@ func NewIaCScanner(binMgr *binary.BinaryManager) *IaCScanner {
 }
 
 // Execute runs the IaC scan on the specified paths.
-func (s *IaCScanner) Execute(ctx context.Context, args ScanArgs) ([]types.Violation, error) {
+func (s *IaCScanner) Execute(ctx context.Context, args ScanArgs) (ScannerResult, error) {
 	scannerPath, err := s.binaryMgr.GetBinaryPath(ctx)
 	if err != nil {
-		return nil, err
+		return ScannerResult{}, err
 	}
 
 	// Create temp directory for SARIF output
 	tempDir, err := os.MkdirTemp("", "iac-scan-")
 	if err != nil {
-		return nil, fmt.Errorf("failed to create temp directory: %w", err)
+		return ScannerResult{}, fmt.Errorf("failed to create temp directory: %w", err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	// Build command arguments: datadog-iac-scanner scan -p <path> [-p <path>...] -o <outputdir>
 	cmdArgs := []string{"scan"}
@@ -69,32 +70,41 @@ func (s *IaCScanner) Execute(ctx context.Context, args ScanArgs) ([]types.Violat
 	cmd.Dir = args.WorkingDir
 
 	output, err := cmd.CombinedOutput()
-	if err != nil {
-		// KICS-based scanner uses exit codes 40/50/60 for findings by severity
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			exitCode := exitErr.ExitCode()
-			if exitCode == iacExitCodeLow || exitCode == iacExitCodeMedium || exitCode == iacExitCodeHigh {
-				// Findings exist - continue to parse output
-			} else {
-				return nil, fmt.Errorf("iac scanner execution failed: %w\nOutput: %s", err, string(output))
-			}
-		} else {
-			return nil, fmt.Errorf("iac scanner execution failed: %w\nOutput: %s", err, string(output))
-		}
+	// A findings exit code (KICS-based 40/50/60) is not a real failure: the scan
+	// ran and simply reported findings, so we fall through to parse the output.
+	// Any other error is fatal.
+	if err != nil && !isIaCFindingsExit(err) {
+		return ScannerResult{}, fmt.Errorf("iac scanner execution failed: %w\nOutput: %s", err, string(output))
 	}
 
 	// Read the SARIF output file
 	sarifPath := filepath.Join(tempDir, iacSARIFOutputFile)
 	sarifData, err := os.ReadFile(sarifPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read IaC scanner SARIF output: %w", err)
+		return ScannerResult{}, fmt.Errorf("failed to read IaC scanner SARIF output: %w", err)
 	}
 
 	// Parse SARIF using the shared parser
 	violations, err := processing.ParseSARIF(sarifData, args.WorkingDir, types.DetectionTypeIaC)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse IaC SARIF output: %w", err)
+		return ScannerResult{}, fmt.Errorf("failed to parse IaC SARIF output: %w", err)
 	}
 
-	return violations, nil
+	return ScannerResult{Findings: violations}, nil
+}
+
+// isIaCFindingsExit reports whether err is the KICS-based scanner signalling that
+// findings were detected (exit codes 40/50/60 by severity) rather than a real
+// execution failure.
+func isIaCFindingsExit(err error) bool {
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		return false
+	}
+	switch exitErr.ExitCode() {
+	case iacExitCodeLow, iacExitCodeMedium, iacExitCodeHigh:
+		return true
+	default:
+		return false
+	}
 }

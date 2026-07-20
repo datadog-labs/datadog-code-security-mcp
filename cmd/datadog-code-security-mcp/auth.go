@@ -8,8 +8,10 @@ import (
 	"github.com/datadog-labs/datadog-code-security-mcp/internal/constants"
 )
 
-// setAuthCredentials gets credentials from auth provider and sets them as environment variables
-// This allows the scanner subprocess to access them
+// setAuthCredentials resolves credentials from the MCP server's auth provider
+// and exports them as environment variables so the scanner subprocess can read
+// them. Errors are fatal for the MCP path, which requires credentials to fetch
+// rules. The shared apply logic lives in internal/auth (see Provider.ApplyToEnv).
 func setAuthCredentials(ctx context.Context) error {
 	// Check if already set via environment variables
 	if os.Getenv(constants.EnvAPIKey) != "" && os.Getenv(constants.EnvAPPKey) != "" {
@@ -22,27 +24,12 @@ func setAuthCredentials(ctx context.Context) error {
 			constants.EnvAPIKey, constants.EnvAPPKey, constants.EnvAuthDomain)
 	}
 
-	creds, err := authProvider.GetCredentials(ctx)
+	applied, err := authProvider.ApplyToEnv(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get credentials: %w", err)
+		return fmt.Errorf("failed to apply credentials: %w", err)
 	}
-
-	if creds == nil {
-		return fmt.Errorf("no credentials available from auth provider")
-	}
-
-	// Set environment variables for scanner subprocess
-	if creds.APIKey != "" {
-		os.Setenv(constants.EnvAPIKey, creds.APIKey)
-		fmt.Fprintf(os.Stderr, "%s set from auth provider\n", constants.EnvAPIKey)
-	}
-	if creds.APPKey != "" {
-		os.Setenv(constants.EnvAPPKey, creds.APPKey)
-		fmt.Fprintf(os.Stderr, "%s set from auth provider\n", constants.EnvAPPKey)
-	}
-	if creds.Site != "" {
-		os.Setenv(constants.EnvSite, creds.Site)
-		fmt.Fprintf(os.Stderr, "%s set to: %s\n", constants.EnvSite, creds.Site)
+	if applied {
+		fmt.Fprintln(os.Stderr, "Datadog credentials set from auth provider")
 	}
 
 	return nil

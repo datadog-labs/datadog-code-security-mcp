@@ -65,8 +65,8 @@ type LibraryInfo struct {
 	Popularity    string
 	LatestVersion string
 	EolDate       *string
-	Relation      string   // "direct" or "transitive"
-	RootParent    *string  // PURL of the root dependency that pulled this in
+	Relation      string  // "direct" or "transitive"
+	RootParent    *string // PURL of the root dependency that pulled this in
 	TraversalPath *string
 	Risks         []string // risk flags, e.g. UNMAINTAINED, MALICIOUS_PACKAGE, EOL_NOW, …
 

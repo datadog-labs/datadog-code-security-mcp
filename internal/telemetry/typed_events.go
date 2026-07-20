@@ -1,0 +1,326 @@
+package telemetry
+
+import (
+	"context"
+	"strings"
+	"time"
+
+	"github.com/google/uuid"
+
+	"github.com/datadog-labs/datadog-code-security-mcp/internal/binary"
+	"github.com/datadog-labs/datadog-code-security-mcp/internal/scan"
+	"github.com/datadog-labs/datadog-code-security-mcp/internal/types"
+)
+
+type Interface string
+
+const (
+	InterfaceCLI Interface = "cli"
+	InterfaceMCP Interface = "mcp"
+)
+
+type OutputFormat string
+
+const (
+	OutputFormatHuman OutputFormat = "human"
+	OutputFormatJSON  OutputFormat = "json"
+)
+
+// ScanEvent describes one scan invocation. Outcome is the single canonical
+// source for requested types, findings, durations, and failures — including
+// pre-execution failures, which callers record via scan.NewFailedOutcome so
+// there is never a second, competing source of truth on this struct.
+type ScanEvent struct {
+	Interface      Interface
+	Outcome        *scan.ScanOutcome
+	StartedAt      time.Time
+	PathsCount     int
+	OutputFormat   OutputFormat
+	WorkingDir     string
+	AuthMethod     string
+	BinaryVersions map[string]string
+}
+
+func (e ScanEvent) scanTypes() []string {
+	return e.Outcome.ScanTypes()
+}
+
+func (e ScanEvent) err() error {
+	return e.Outcome.Err()
+}
+
+// TrackScan emits the telemetry events for a scan invocation. A single-type scan
+// emits exactly one per-scan event (and no aggregate); a multi-type scan emits an
+// aggregate event plus one per-scan event per executed type.
+func (c *Client) TrackScan(ctx context.Context, event ScanEvent) {
+	if c == nil || !c.Enabled() || event.Outcome == nil {
+		return
+	}
+
+	scanTypes := event.scanTypes()
+	base := c.scanBaseAttrs(event)
+	invocationErr := event.err()
+	if len(scanTypes) == 1 {
+		report := perScanReport{
+			scanType:   scanTypes[0],
+			standalone: true,
+			duration:   time.Since(event.StartedAt),
+			err:        invocationErr,
+		}
+		if execution, ok := event.Outcome.Execution(scanTypes[0]); ok {
+			report.executed = true
+			report.duration = execution.Duration
+			report.err = execution.Err
+			report.findings = execution.Findings
+			report.notice = execution.Notice
+		}
+		c.trackPerScan(ctx, event.Interface, base, report)
+		return
+	}
+
+	batchID := uuid.New().String()
+	operation := scanOperation(scanTypes)
+	result := event.Outcome.Result()
+	attrs := baseOperationAttrs(operation, event.Interface, time.Since(event.StartedAt), invocationErr)
+	attrs["scan_types"] = strings.Join(scanTypes, ",")
+	attrs["batch_id"] = batchID
+	addScanBaseAttrs(attrs, base)
+	if result != nil {
+		// One pass over the executions yields all three breakdowns without
+		// cloning findings.
+		breakdowns := event.Outcome.AggregateBreakdowns(CategorizeError)
+		attrs["findings_count"] = result.Summary.Total
+		attrs["scan_types_breakdown"] = result.Summary.ByDetectionType
+		attrs["severity_breakdown"] = result.Summary.BySeverity
+		attrs["partial_errors_count"] = len(result.Errors)
+		if len(breakdowns.Durations) > 0 {
+			attrs["scan_durations_breakdown"] = breakdowns.Durations
+		}
+		if len(breakdowns.ErrorKinds) > 0 {
+			attrs["partial_errors_breakdown"] = breakdowns.ErrorKinds
+		}
+		attrs["notices_count"] = len(result.Notices)
+		if len(breakdowns.Notices) > 0 {
+			attrs["notices_breakdown"] = breakdowns.Notices
+		}
+	}
+	c.trackOperationResult(ctx, operation, attrs, invocationErr)
+
+	base.batchID = batchID
+	event.Outcome.EachExecution(func(execution scan.ScanExecution) {
+		c.trackPerScan(ctx, event.Interface, base, perScanReport{
+			scanType:   string(execution.DetectionType),
+			standalone: false,
+			duration:   execution.Duration,
+			findings:   execution.Findings,
+			executed:   true,
+			err:        execution.Err,
+			notice:     execution.Notice,
+		})
+	})
+}
+
+type scanBaseAttributes struct {
+	pathsCount     int
+	authMethod     string
+	binaryVersions map[string]string
+	firstRun       bool
+	outputFormat   OutputFormat
+	isGitRepo      bool
+	isWorktree     bool
+	batchID        string
+}
+
+func (c *Client) scanBaseAttrs(event ScanEvent) scanBaseAttributes {
+	workingDir := event.WorkingDir
+	if workingDir == "" {
+		workingDir = "."
+	}
+	workspace := DetectWorkspace(workingDir)
+	return scanBaseAttributes{
+		pathsCount:     event.PathsCount,
+		authMethod:     event.AuthMethod,
+		binaryVersions: event.BinaryVersions,
+		firstRun:       c.IsFirstRun(),
+		outputFormat:   event.OutputFormat,
+		isGitRepo:      workspace.IsGitRepo,
+		isWorktree:     workspace.IsWorktree,
+	}
+}
+
+// baseOperationAttrs builds the common operation envelope shared by every
+// operation-result event: the CommonAttrs base plus operation, interface,
+// duration, and success. Callers layer any event-specific attributes on top.
+func baseOperationAttrs(operation string, iface Interface, duration time.Duration, err error) map[string]any {
+	attrs := CommonAttrs()
+	attrs["operation"] = operation
+	attrs["interface"] = string(iface)
+	attrs["duration_ms"] = duration.Milliseconds()
+	attrs["success"] = err == nil
+	return attrs
+}
+
+func addScanBaseAttrs(attrs map[string]any, base scanBaseAttributes) {
+	attrs["paths_count"] = base.pathsCount
+	attrs["auth_method"] = base.authMethod
+	attrs["binary_versions"] = base.binaryVersions
+	attrs["first_run"] = base.firstRun
+	attrs["is_git_repo"] = base.isGitRepo
+	attrs["is_worktree"] = base.isWorktree
+	if base.outputFormat != "" {
+		attrs["output_format"] = string(base.outputFormat)
+	}
+	if base.batchID != "" {
+		attrs["batch_id"] = base.batchID
+	}
+}
+
+// perScanReport is the per-scanner slice of a scan invocation. executed
+// distinguishes a scanner that ran and found nothing from an event that never
+// reached execution (e.g. a pre-execution failure or an empty outcome).
+type perScanReport struct {
+	scanType   string
+	standalone bool
+	duration   time.Duration
+	findings   []types.Violation
+	executed   bool
+	err        error
+	// notice is a non-fatal, informational note (e.g. no components
+	// detected). It never affects success/failure status.
+	notice *scan.ScanNotice
+}
+
+func (c *Client) trackPerScan(ctx context.Context, iface Interface, base scanBaseAttributes, report perScanReport) {
+	operation := report.scanType + "_scan"
+	attrs := baseOperationAttrs(operation, iface, report.duration, report.err)
+	attrs["standalone"] = report.standalone
+	addScanBaseAttrs(attrs, base)
+	// used_binary_versions scopes binary_versions down to only the binaries this
+	// scan type actually invokes, so per-binary version distributions aren't
+	// inflated by the full inventory carried on every event.
+	if scoped := usedBinaryVersions(report.scanType, base.binaryVersions); len(scoped) > 0 {
+		attrs["used_binary_versions"] = scoped
+	}
+	if report.executed && report.err == nil {
+		attrs["findings_count"] = len(report.findings)
+		attrs["severity_breakdown"] = severityBreakdown(report.findings)
+	}
+	if report.notice != nil {
+		// Notice messages are fixed, curated strings (never raw error text),
+		// so they're safe to log verbatim.
+		attrs["notice"] = report.notice.Message
+	}
+	c.trackOperationResult(ctx, operation, attrs, report.err)
+}
+
+func scanOperation(scanTypes []string) string {
+	if len(scanTypes) == 1 {
+		return scanTypes[0] + "_scan"
+	}
+	return "code_security_scan"
+}
+
+// usedBinaryVersions returns the subset of the full binary-version snapshot
+// relevant to scanType, keyed by telemetry key. Returns nil when the scan type
+// maps to no binaries or no versions are available, so the attribute is omitted.
+func usedBinaryVersions(scanType string, allVersions map[string]string) map[string]string {
+	keys := binary.TelemetryKeysForScanType(scanType)
+	if len(keys) == 0 || len(allVersions) == 0 {
+		return nil
+	}
+	scoped := make(map[string]string, len(keys))
+	for _, key := range keys {
+		if version, ok := allVersions[key]; ok {
+			scoped[key] = version
+		}
+	}
+	return scoped
+}
+
+func severityBreakdown(findings []types.Violation) map[string]int {
+	counts := make(map[string]int)
+	for _, finding := range findings {
+		counts[finding.Severity]++
+	}
+	return counts
+}
+
+// OperationEvent is the typed schema for non-scan command and MCP operations.
+type OperationEvent struct {
+	Operation      string
+	Interface      Interface
+	StartedAt      time.Time
+	Failure        error
+	BinaryVersions map[string]string
+	AuthMethod     string
+	FindingsCount  *int
+	LibrariesCount *int
+	Detailed       *bool
+	// Notice is a curated, non-fatal informational message (e.g. a
+	// zero-component SBOM generation). Empty when there is nothing to surface.
+	// Always a hardcoded, path-free string — never raw error text.
+	Notice string
+	// ScanType, when set (e.g. "sbom"), scopes used_binary_versions down to only
+	// the binaries this operation actually invokes, mirroring per-scan events.
+	ScanType string
+}
+
+func (c *Client) TrackOperation(ctx context.Context, event OperationEvent) {
+	if c == nil {
+		return
+	}
+	attrs := baseOperationAttrs(event.Operation, event.Interface, time.Since(event.StartedAt), event.Failure)
+	attrs["binary_versions"] = event.BinaryVersions
+	// used_binary_versions scopes binary_versions down to only the binaries this
+	// operation actually invokes, matching per-scan events so version
+	// distributions aren't inflated by the full inventory carried on every event.
+	if scoped := usedBinaryVersions(event.ScanType, event.BinaryVersions); len(scoped) > 0 {
+		attrs["used_binary_versions"] = scoped
+	}
+	// first_run is a property of the client, not the call site — attach it
+	// uniformly so operation events aren't biased by interface (CLI vs MCP),
+	// matching per-scan events.
+	attrs["first_run"] = c.IsFirstRun()
+	if event.AuthMethod != "" {
+		attrs["auth_method"] = event.AuthMethod
+	}
+	if event.FindingsCount != nil {
+		attrs["findings_count"] = *event.FindingsCount
+	}
+	if event.LibrariesCount != nil {
+		attrs["libraries_count"] = *event.LibrariesCount
+	}
+	if event.Detailed != nil {
+		attrs["detailed"] = *event.Detailed
+	}
+	if event.Notice != "" {
+		attrs["notice"] = event.Notice
+	}
+	c.trackOperationResult(ctx, event.Operation, attrs, event.Failure)
+}
+
+// ServerStartEvent is the typed schema for the once-per-process MCP start event.
+type ServerStartEvent struct {
+	AuthConfigured bool
+	BinaryVersions map[string]string
+}
+
+func (c *Client) TrackServerStart(ctx context.Context, event ServerStartEvent) {
+	if c == nil {
+		return
+	}
+	attrs := CommonAttrs()
+	attrs["operation"] = "server_start"
+	attrs["interface"] = string(InterfaceMCP)
+	attrs["auth_configured"] = event.AuthConfigured
+	attrs["binary_versions"] = event.BinaryVersions
+	c.TrackInfo(ctx, "mcp server started", attrs)
+}
+
+func (c *Client) trackOperationResult(ctx context.Context, operation string, attrs map[string]any, err error) {
+	if err != nil {
+		c.TrackError(ctx, err, operation+" failed", attrs)
+		return
+	}
+	c.TrackInfo(ctx, operation+" completed", attrs)
+}

@@ -3,6 +3,7 @@ package scan
 import (
 	"context"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/datadog-labs/datadog-code-security-mcp/internal/binary"
@@ -14,17 +15,17 @@ func TestSCAScanner_ConvertToViolations(t *testing.T) {
 
 	vulns := []types.Vulnerability{
 		{
-			CVE:       "CVE-2021-44228",
-			Severity:  "CRITICAL",
-			Component: "log4j-core",
-			Version:   "2.14.1",
+			CVE:         "CVE-2021-44228",
+			Severity:    "CRITICAL",
+			Component:   "log4j-core",
+			Version:     "2.14.1",
 			Description: "Remote code execution via JNDI lookups",
 		},
 		{
-			CVE:       "CVE-2023-1234",
-			Severity:  "HIGH",
-			Component: "some-lib",
-			Version:   "1.0.0",
+			CVE:         "CVE-2023-1234",
+			Severity:    "HIGH",
+			Component:   "some-lib",
+			Version:     "1.0.0",
 			Description: "Buffer overflow",
 		},
 	}
@@ -128,8 +129,8 @@ func TestSCAScanner_ValidateSBOMFile(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer os.Remove(f.Name())
-		f.Close()
+		defer func() { _ = os.Remove(f.Name()) }()
+		_ = f.Close()
 
 		if err := s.validateSBOMFile(f.Name()); err != nil {
 			t.Errorf("Expected no error for valid file, got: %v", err)
@@ -141,7 +142,7 @@ func TestSCAScanner_ValidateSBOMFile(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer os.RemoveAll(dir)
+		defer func() { _ = os.RemoveAll(dir) }()
 
 		if err := s.validateSBOMFile(dir); err == nil {
 			t.Error("Expected error for directory, got nil")
@@ -234,6 +235,64 @@ func TestDeduplicateComponents_PreservesOrder(t *testing.T) {
 	}
 	if result[2].Name != "third" {
 		t.Errorf("expected third component to be 'third', got %q", result[2].Name)
+	}
+}
+
+func TestClassifySBOMResult_GenuineFailure(t *testing.T) {
+	result := &types.SBOMResult{
+		Error: &types.ScanError{
+			DetectionType: "sbom",
+			Error:         "binary validation failed",
+		},
+	}
+
+	notice, err := classifySBOMResult(".", result)
+	if err == nil {
+		t.Fatal("expected an error for a genuine SBOM generation failure")
+	}
+	if notice != nil {
+		t.Errorf("expected nil notice alongside an error, got %+v", notice)
+	}
+	if !strings.Contains(err.Error(), "binary validation failed") {
+		t.Errorf("expected error to include the underlying message, got: %v", err)
+	}
+}
+
+func TestClassifySBOMResult_NoComponentsNotice(t *testing.T) {
+	result := &types.SBOMResult{
+		Notice: &types.ScanNotice{
+			DetectionType: "sbom",
+			Message:       types.NoComponentsDetectedMessage,
+			Hint:          "some hint",
+		},
+	}
+
+	notice, err := classifySBOMResult(".", result)
+	if err != nil {
+		t.Fatalf("expected no error for a zero-components notice, got: %v", err)
+	}
+	if notice == nil {
+		t.Fatal("expected a non-nil notice")
+	}
+	if notice.DetectionType != types.DetectionTypeSCA {
+		t.Errorf("expected notice to be re-tagged as %q, got %q", types.DetectionTypeSCA, notice.DetectionType)
+	}
+	if notice.Message != types.NoComponentsDetectedMessage {
+		t.Errorf("unexpected notice message: %q", notice.Message)
+	}
+}
+
+func TestClassifySBOMResult_Success(t *testing.T) {
+	result := &types.SBOMResult{
+		Components: []types.Library{{Name: "lodash", Version: "4.17.21"}},
+	}
+
+	notice, err := classifySBOMResult(".", result)
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+	if notice != nil {
+		t.Errorf("expected no notice for a successful result with components, got %+v", notice)
 	}
 }
 

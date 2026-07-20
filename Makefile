@@ -1,14 +1,25 @@
 .PHONY: build test lint clean install run fmt mod help
 
+# Load .env file if it exists (for local dev; never committed).
+# Variables defined there take precedence over the defaults below.
+-include .env
+export
+
 # Version information
 VERSION ?= dev
 COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "none")
 BUILD_TIME ?= $(shell date -u '+%Y-%m-%d_%H:%M:%S')
 
+# Telemetry build vars (override via env or .env file)
+TELEMETRY_CLIENT_TOKEN ?=
+TELEMETRY_ENV ?= development
+
 # Build flags
 LDFLAGS = -X main.version=$(VERSION) \
           -X main.commit=$(COMMIT) \
-          -X main.buildTime=$(BUILD_TIME)
+          -X main.buildTime=$(BUILD_TIME) \
+          -X main.telemetryClientToken=$(TELEMETRY_CLIENT_TOKEN) \
+          -X main.telemetryEnv=$(TELEMETRY_ENV)
 
 # Binary name
 BINARY_NAME = datadog-code-security-mcp
@@ -52,8 +63,15 @@ install: ## Install the binary to $GOPATH/bin
 	go install -ldflags "$(LDFLAGS)" ./cmd/$(BINARY_NAME)
 	@echo "✓ Installed to $(shell go env GOPATH)/bin/$(BINARY_NAME)"
 
-run: ## Run the binary (for development)
-	go run -ldflags "$(LDFLAGS)" ./cmd/$(BINARY_NAME)
+# Capture any words after "run" as passthrough arguments.
+# This lets you type: make run scan sast ./src
+ifeq (run,$(firstword $(MAKECMDGOALS)))
+  RUN_ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
+  $(eval $(RUN_ARGS):;@:)
+endif
+
+run: ## Run the binary. Extra words become args: make run scan sast ./src
+	go run -ldflags "$(LDFLAGS)" ./cmd/$(BINARY_NAME) $(RUN_ARGS)
 
 fmt: ## Format code
 	@echo "Formatting code..."

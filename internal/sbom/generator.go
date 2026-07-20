@@ -48,7 +48,7 @@ func (g *Generator) Generate(ctx context.Context, args types.SBOMArgs) (*types.S
 	if err != nil {
 		return &types.SBOMResult{
 			Error: &types.ScanError{
-				DetectionType: string(types.DetectionTypeSBOM),
+				DetectionType: types.DetectionTypeSBOM,
 				Error:         err.Error(),
 				Hint:          "Install datadog-sbom-generator using the instructions above",
 			},
@@ -60,12 +60,12 @@ func (g *Generator) Generate(ctx context.Context, args types.SBOMArgs) (*types.S
 	if err != nil {
 		return &types.SBOMResult{
 			Error: &types.ScanError{
-				DetectionType: string(types.DetectionTypeSBOM),
+				DetectionType: types.DetectionTypeSBOM,
 				Error:         fmt.Sprintf("failed to create temp directory: %v", err),
 			},
 		}, nil
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	// Create output file inside the secure directory
 	outputPath := filepath.Join(tempDir, "sbom.json")
@@ -92,7 +92,7 @@ func (g *Generator) Generate(ctx context.Context, args types.SBOMArgs) (*types.S
 	if err != nil {
 		return &types.SBOMResult{
 			Error: &types.ScanError{
-				DetectionType: string(types.DetectionTypeSBOM),
+				DetectionType: types.DetectionTypeSBOM,
 				Error:         err.Error(),
 				Hint:          retryHintFromError(err),
 			},
@@ -104,7 +104,7 @@ func (g *Generator) Generate(ctx context.Context, args types.SBOMArgs) (*types.S
 	if err != nil {
 		return &types.SBOMResult{
 			Error: &types.ScanError{
-				DetectionType: string(types.DetectionTypeSBOM),
+				DetectionType: types.DetectionTypeSBOM,
 				Error:         fmt.Sprintf("failed to parse SBOM results: %v", err),
 			},
 		}, nil
@@ -119,12 +119,14 @@ func (g *Generator) Generate(ctx context.Context, args types.SBOMArgs) (*types.S
 		Components: libraries,
 	}
 
-	// Add hint if no components found
+	// Zero components is not a failure — the generator ran successfully and
+	// produced a valid (empty) result. Surface it as a non-fatal notice so
+	// callers don't mistake "nothing found" for "something broke."
 	if len(libraries) == 0 {
-		result.Error = &types.ScanError{
-			DetectionType: string(types.DetectionTypeSBOM),
-			Error:         "No components detected by datadog-sbom-generator",
-			Hint:          getManualSBOMSuggestion(),
+		result.Notice = &types.ScanNotice{
+			DetectionType: types.DetectionTypeSBOM,
+			Message:       types.NoComponentsDetectedMessage,
+			Hint:          types.ManualSBOMSuggestion,
 		}
 	}
 
@@ -153,7 +155,7 @@ func ensureWorkingDir(args *types.SBOMArgs) error {
 
 	info, err := os.Stat(args.WorkingDir)
 	if err != nil {
-		return fmt.Errorf("sbom: working_dir '%s' does not exist or is not accessible", args.WorkingDir)
+		return fmt.Errorf("sbom: working_dir '%s' does not exist or is not accessible: %w", args.WorkingDir, err)
 	}
 	if !info.IsDir() {
 		return fmt.Errorf("sbom: working_dir '%s' is not a directory", args.WorkingDir)
@@ -175,7 +177,7 @@ func ensurePath(args *types.SBOMArgs) error {
 
 	info, err := os.Stat(fullPath)
 	if err != nil {
-		return fmt.Errorf("sbom: path '%s' does not exist or is not accessible (resolved to: %s)", args.Path, fullPath)
+		return fmt.Errorf("sbom: path '%s' does not exist or is not accessible (resolved to: %s): %w", args.Path, fullPath, err)
 	}
 	if !info.IsDir() {
 		return fmt.Errorf("sbom: path '%s' must be a directory", args.Path)
@@ -228,11 +230,6 @@ func retryHintFromError(err error) string {
 
 	// Default hint
 	return ""
-}
-
-func getManualSBOMSuggestion() string {
-	return "The package manager may not be supported. Supported: .NET (NuGet), C++ (Conan), Go (modules), Java (Gradle/Maven), JavaScript (NPM/PNPM/Yarn), PHP (Composer), Python (pdm/pipenv/poetry/requirements/uv), Ruby (Bundler), Rust (Cargo). " +
-		"Claude should perform manual SBOM generation by reading lock files (package.json, requirements.txt, go.mod, pom.xml, Gemfile.lock, Cargo.lock, composer.lock, etc.) and extracting dependencies."
 }
 
 // CycloneDX structs for parsing SBOM output

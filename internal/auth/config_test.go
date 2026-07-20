@@ -77,7 +77,7 @@ func TestLoadConfig(t *testing.T) {
 
 			// Set test environment variables
 			for k, v := range tt.envVars {
-				os.Setenv(k, v)
+				_ = os.Setenv(k, v)
 			}
 
 			cfg, err := LoadConfig()
@@ -172,7 +172,7 @@ func TestLoadConfig_SecurityValidation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			os.Clearenv()
-			os.Setenv("DD_SITE", tt.site)
+			_ = os.Setenv("DD_SITE", tt.site)
 
 			_, err := LoadConfig()
 			if (err != nil) != tt.wantErr {
@@ -240,6 +240,39 @@ func TestConfig_HasAPIKeys(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := tt.config.HasAPIKeys(); got != tt.want {
 				t.Errorf("HasAPIKeys() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestConfig_Method_DDAuthOnlyIsAuthProvider is the regression guard for the
+// bug where a dd-auth-only config (DD_AUTH_DOMAIN set, no DD_API_KEY) was
+// unreachable via the CLI's old global authProvider check and always fell
+// through to "none", even though this Config resolves real credentials via
+// dd-auth and the scan succeeds. Method must report MethodAuthProvider here,
+// not MethodNone.
+func TestConfig_Method_DDAuthOnlyIsAuthProvider(t *testing.T) {
+	cfg := &Config{DDAuthDomain: "app.datadoghq.com"}
+	if got := cfg.Method(); got != MethodAuthProvider {
+		t.Errorf("Method() = %q, want %q", got, MethodAuthProvider)
+	}
+}
+
+func TestConfig_Method(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  *Config
+		want string
+	}{
+		{"api key set", &Config{APIKey: "key"}, MethodEnvVar},
+		{"dd-auth only", &Config{DDAuthDomain: "app.datadoghq.com"}, MethodAuthProvider},
+		{"api key takes precedence over dd-auth", &Config{APIKey: "key", DDAuthDomain: "app.datadoghq.com"}, MethodEnvVar},
+		{"nothing configured", &Config{}, MethodNone},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.cfg.Method(); got != tt.want {
+				t.Errorf("Method() = %q, want %q", got, tt.want)
 			}
 		})
 	}

@@ -3,12 +3,15 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/datadog-labs/datadog-code-security-mcp/internal/sbom"
+	"github.com/datadog-labs/datadog-code-security-mcp/internal/telemetry"
 	"github.com/datadog-labs/datadog-code-security-mcp/internal/types"
 )
 
@@ -60,21 +63,46 @@ Examples:
 
 func runGenerateSBOM(path string, workingDir string, outputJSON bool) error {
 	ctx := context.Background()
+	event := telemetry.OperationEvent{
+		Interface: telemetry.InterfaceCLI,
+		Operation: "generate_sbom",
+		StartedAt: time.Now(),
+		ScanType:  string(types.DetectionTypeSBOM),
+	}
+	defer func() { trackOperation(ctx, event) }()
 
-	// Build SBOM args
+	fail := func(err error) error {
+		event.Failure = err
+		return err
+	}
+
 	sbomArgs := types.SBOMArgs{
 		Path:       path,
 		WorkingDir: workingDir,
 	}
 
-	// Generate SBOM
 	generator := sbom.NewGenerator()
 	result, err := generator.Generate(ctx, sbomArgs)
+	if result != nil {
+		findingsCount := result.Summary.TotalComponents
+		event.FindingsCount = &findingsCount
+		if result.Notice != nil {
+			event.Notice = result.Notice.Message
+		}
+		// Generate can report a failure via result.Error while returning a nil
+		// Go error (e.g. missing binary, exec/parse failure). Record it as a
+		// telemetry failure so these runs aren't counted as successful. The raw
+		// text is only used by the telemetry layer to pick a categorized kind;
+		// it never reaches the wire. Output/exit behavior is unchanged — the
+		// human/JSON renderers still surface result.Error to the user.
+		if err == nil && result.Error != nil {
+			event.Failure = errors.New(result.Error.Error)
+		}
+	}
 	if err != nil {
-		return err
+		return fail(err)
 	}
 
-	// Output results
 	if outputJSON {
 		return outputSBOMResultsJSON(result)
 	}
@@ -102,6 +130,19 @@ func outputSBOMResultsHuman(result *types.SBOMResult) error {
 		fmt.Println()
 
 		// If no components, exit early
+		if len(result.Components) == 0 {
+			return nil
+		}
+	}
+
+	// Check for non-fatal notices (e.g. no components detected)
+	if result.Notice != nil {
+		fmt.Printf("ℹ️  %s\n", result.Notice.Message)
+		if result.Notice.Hint != "" {
+			fmt.Printf("Hint: %s\n", result.Notice.Hint)
+		}
+		fmt.Println()
+
 		if len(result.Components) == 0 {
 			return nil
 		}
