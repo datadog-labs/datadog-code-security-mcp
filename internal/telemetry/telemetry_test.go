@@ -296,7 +296,7 @@ func TestURLQueryParams(t *testing.T) {
 	if !contains(capturedURL, "dd-api-key=mytoken") {
 		t.Errorf("dd-api-key missing from URL: %s", capturedURL)
 	}
-	if !contains(capturedURL, "ddsource=browser") {
+	if !contains(capturedURL, "ddsource=datadog-code-security-mcp") {
 		t.Errorf("ddsource missing from URL: %s", capturedURL)
 	}
 	if !contains(capturedURL, "team%3Ak9-iac") ||

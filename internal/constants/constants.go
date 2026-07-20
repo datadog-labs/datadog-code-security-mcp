@@ -24,8 +24,8 @@ const (
 const (
 	// TelemetryService is the service name sent in every telemetry log.
 	TelemetryService = "datadog-code-security-mcp"
-	// TelemetryDDSource is the ddsource query param value required by the browser intake.
-	TelemetryDDSource = "browser"
+	// TelemetryDDSource identifies telemetry logs emitted by this application.
+	TelemetryDDSource = "datadog-code-security-mcp"
 	// TelemetryTeamTag identifies the team that owns the telemetry.
 	TelemetryTeamTag = "team:k9-iac"
 )

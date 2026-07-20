@@ -132,6 +132,7 @@ When telemetry is enabled, scanner versions are collected concurrently once per 
 ## Technical details
 
 - **Endpoint**: `https://browser-http-intake.logs.datadoghq.com/api/v2/logs`
+- **Source tag**: `ddsource=datadog-code-security-mcp`
 - **Auth**: client token (RUM-style, publicly embeddable) injected at build time via `TELEMETRY_CLIENT_TOKEN` CI secret, never your `DD_API_KEY` or `DD_APP_KEY`
 - **Transport**: HTTP POST, `Content-Type: application/json`, 2 s per-request timeout; process waits up to 3 s at exit for any in-flight POST to complete
 - **Fire-and-forget**: telemetry errors are swallowed and never affect scan results
