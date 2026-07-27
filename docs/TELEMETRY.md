@@ -2,6 +2,8 @@
 
 Datadog Code Security MCP collects **anonymous usage telemetry** to help the team understand how the tool is used and improve it over time.
 
+Please see the Datadog [Privacy Policy](https://www.datadoghq.com/legal/privacy/) for more information.
+
 ## What is collected
 
 ### Event model
@@ -94,7 +96,11 @@ Every scan emits **one telemetry event per scan type** plus, when multiple types
   documented coarse modes such as `output_format` and `detailed` are collected
 - Any user-identifiable information
 
-## How to opt out
+## Data retention
+
+Collected telemetry is stored in a dedicated Datadog index with a **30-day retention period**, after which it is deleted.
+
+## How to disable data collection
 
 Any of the following disables telemetry completely:
 
@@ -117,9 +123,9 @@ Telemetry is also automatically disabled if the compiled-in client token is abse
 
 ## Disclosure (first run)
 
-On the first invocation, a short notice is printed to **stderr** explaining what is collected and how to opt out. It is shown once and then suppressed for subsequent runs (controlled by `first_run_notice_shown` in `~/.datadog-code-security-mcp/config.json`).
+On the first invocation, a short notice is printed to **stderr** explaining what is collected and how to turn off data collection. It is shown once and then suppressed for subsequent runs (controlled by `first_run_notice_shown` in `~/.datadog-code-security-mcp/config.json`).
 
-> In **MCP server mode**, stderr is captured by the AI assistant client (Claude Desktop, Cursor, etc.) and not directly visible to the user. The primary disclosure for MCP users is the [README telemetry section](../README.md#telemetry) and this document. A future `setup` command will present the disclosure interactively.
+> In **MCP server mode**, stderr is captured by the AI assistant client (Claude Desktop, Cursor, etc.) and not directly visible to the user. The primary disclosure for MCP users is the [README telemetry section](../README.md#telemetry-data-collection) and this document. A future `setup` command will present the disclosure interactively.
 
 ## Install ID
 

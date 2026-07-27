@@ -163,13 +163,13 @@ unzip -o /tmp/sbom.zip -d /tmp/ && mkdir -p ~/.local/bin && mv /tmp/datadog-sbom
 brew install --cask datadog-security-cli
 ```
 
-## Telemetry
+## Telemetry Data Collection
 
-Datadog Code Security MCP collects **anonymous usage telemetry** (tool and scanner versions, OS/arch, run duration, success/failure, aggregate counts, coarse authentication/workspace metadata, categorized error kinds, and a fixed team ownership tag) to help improve the tool. It does not collect source code, paths, scan finding contents, secrets, repository names, usernames, or raw error messages. Each error carries a short curated, path-free description (for Error Tracking) — never the raw error text.
+Datadog Code Security MCP collects **usage telemetry** (tool and scanner versions, OS/arch, run duration, success/failure, aggregate counts, coarse authentication/workspace metadata, categorized error kinds, a fixed team ownership tag, and a random install ID stored on your machine) to help improve the tool. It does not collect source code, paths, scan finding contents, secrets, repository names, usernames, or raw error messages. Each error carries a short curated, path-free description (for Error Tracking) — never the raw error text.
 
-Scanner versions are collected once per process and are not persisted.
+Scanner versions are collected once per process and are not persisted. Collected data is retained for 30 days.
 
-**To opt out**, use any of the following:
+**To disable collection of any of this usage telemetry**, use any of the following:
 
 ```bash
 # Per-invocation flag
@@ -182,7 +182,9 @@ export DD_CODE_SECURITY_TELEMETRY_DISABLED=1
 export DO_NOT_TRACK=1
 ```
 
-Full details on what is collected, the anonymous install ID, and how opt-out works: [docs/TELEMETRY.md](docs/TELEMETRY.md).
+Full details on what is collected, the install ID, and how to turn off data collection: [docs/TELEMETRY.md](docs/TELEMETRY.md).
+
+Please see the Datadog [Privacy Policy](https://www.datadoghq.com/legal/privacy/) for more information.
 
 ## For Developers
 
