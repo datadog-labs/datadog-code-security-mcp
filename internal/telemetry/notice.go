@@ -7,17 +7,20 @@ import (
 )
 
 const noticeText = `
-Datadog Code Security MCP collects anonymous usage telemetry to improve the tool.
+Datadog Code Security MCP collects usage telemetry to improve the tool.
+Telemetry events sent to Datadog are retained for 30 days.
 
 What is collected: tool and scanner versions, OS/arch, run duration,
   success/failure, aggregate counts, coarse auth/workspace metadata, categorized
   error kinds with a short curated (path-free) description, a fixed team
-  ownership tag, and a random anonymous install ID.
+  ownership tag, and a random install ID stored on this machine.
 What is NOT collected: source code, absolute paths or directory structure,
   scan finding contents, secrets, usernames, repo names, or raw error messages.
 
-To opt out, set DD_CODE_SECURITY_TELEMETRY_DISABLED=1 or use --no-telemetry.
+To turn off data collection, set DD_CODE_SECURITY_TELEMETRY_DISABLED=1 or use
+  --no-telemetry.
 More information: https://github.com/datadog-labs/datadog-code-security-mcp/blob/main/docs/TELEMETRY.md
+Datadog Privacy Policy: https://www.datadoghq.com/legal/privacy/
 `
 
 // MaybeShowFirstRunNotice prints a one-time telemetry disclosure to stderr
