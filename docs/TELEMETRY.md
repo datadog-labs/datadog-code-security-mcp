@@ -1,6 +1,6 @@
 # Telemetry
 
-Datadog Code Security MCP collects **anonymous usage telemetry** to help the team understand how the tool is used and improve it over time.
+Datadog Code Security MCP collects **usage telemetry** to help the team understand how the tool is used and improve it over time.
 
 Please see the Datadog [Privacy Policy](https://www.datadoghq.com/legal/privacy/) for more information.
 
