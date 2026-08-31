@@ -45,6 +45,26 @@ use the matching CLI command with `--json`:
 | Dependency manifest or lockfile | `datadog_sca_scan` | `datadog-code-security-mcp scan sca <project-dir> --json` |
 | Terraform, Kubernetes, Dockerfile, CloudFormation, Helm, CI config | `datadog_iac_scan` | `datadog-code-security-mcp scan iac <paths...> --json` |
 
+For a known backend finding, state the selected local target before scanning
+and apply these scope rules:
+
+- Scan the resolved file itself for SAST, Secrets, and standalone IaC
+  manifests, templates, or Dockerfiles. Do not substitute its parent directory.
+- For Terraform, start with the resolved `.tf` file. The IaC scanner reads
+  sibling Terraform variable, local, data-source, and tfvars context without
+  adding those files to the scan. If the file scan does not reproduce the
+  finding and the expression depends on sibling resources or module context,
+  explain the expansion and retry with the smallest containing module
+  directory before declaring the finding absent.
+- For Helm or Kustomize, use the smallest chart or overlay root required to
+  render the resolved file.
+- For SCA, use the smallest project directory required to resolve the
+  dependency graph.
+
+Generic directory-scan examples in project documentation do not justify a
+broader target. Never broaden directly to the repository root unless the user
+requested a repository scan or it is the required semantic root.
+
 Run Secrets alongside the domain-specific scan for changed files. Use the
 combined scan for a user-requested directory or a broad mixed change.
 
