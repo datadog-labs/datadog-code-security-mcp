@@ -32,6 +32,12 @@ Once the local target is known:
    needed, to enrich the result with triage state, first/last seen,
    service/repository exposure, owner, and remediation status.
 
+Reading or manually inspecting the flagged code does not count as local
+verification and must never replace the scanner. If the local scan cannot run
+or fails, report the finding as not locally verified; do not claim that it is
+still present or fixed. A request to verify a finding authorises the read-only
+local scan, so do not ask for separate confirmation before running it.
+
 Platform data must never override or suppress a current local finding. A
 backend finding can be stale because the local code has changed since the last
 upload; a local clean result does not prove that every deployed branch is clean.
