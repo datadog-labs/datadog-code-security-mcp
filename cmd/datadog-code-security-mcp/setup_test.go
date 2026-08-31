@@ -22,14 +22,11 @@ func setSetupTestHome(t *testing.T) string {
 
 func TestSetupCommandDryRunWritesNothing(t *testing.T) {
 	home := setSetupTestHome(t)
-	if err := os.Mkdir(filepath.Join(home, ".cursor"), 0o700); err != nil {
-		t.Fatal(err)
-	}
 
 	var output bytes.Buffer
 	cmd := newSetupCmd()
 	cmd.SetOut(&output)
-	cmd.SetArgs([]string{"--client", "cursor", "--dry-run"})
+	cmd.SetArgs([]string{"--client", "agents", "--dry-run"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatal(err)
 	}
@@ -39,7 +36,7 @@ func TestSetupCommandDryRunWritesNothing(t *testing.T) {
 	if !strings.Contains(output.String(), "Dry run complete.") {
 		t.Fatalf("dry-run footer missing: %q", output.String())
 	}
-	if _, err := os.Stat(filepath.Join(home, ".cursor", "skills")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(home, ".agents", "skills")); !os.IsNotExist(err) {
 		t.Fatalf("dry run created skills directory: %v", err)
 	}
 }
@@ -86,26 +83,23 @@ func TestSetupCommandRejectsUnknownClient(t *testing.T) {
 
 func TestSetupCommandRemoveSkillsLeavesUnmarkedDirectories(t *testing.T) {
 	home := setSetupTestHome(t)
-	if err := os.Mkdir(filepath.Join(home, ".cursor"), 0o700); err != nil {
-		t.Fatal(err)
-	}
 
 	install := newSetupCmd()
-	install.SetArgs([]string{"--client", "cursor"})
+	install.SetArgs([]string{"--client", "agents"})
 	if err := install.Execute(); err != nil {
 		t.Fatal(err)
 	}
 
-	userSkill := filepath.Join(home, ".cursor", "skills", "user-skill")
+	userSkill := filepath.Join(home, ".agents", "skills", "user-skill")
 	if err := os.MkdirAll(userSkill, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	managed := filepath.Join(home, ".cursor", "skills", "datadog-code-security-remediation", "SKILL.md")
+	managed := filepath.Join(home, ".agents", "skills", "datadog-code-security-remediation", "SKILL.md")
 
 	var preview bytes.Buffer
 	dryRun := newSetupCmd()
 	dryRun.SetOut(&preview)
-	dryRun.SetArgs([]string{"--client", "cursor", "--remove-skills", "--dry-run"})
+	dryRun.SetArgs([]string{"--client", "agents", "--remove-skills", "--dry-run"})
 	if err := dryRun.Execute(); err != nil {
 		t.Fatal(err)
 	}
@@ -119,7 +113,7 @@ func TestSetupCommandRemoveSkillsLeavesUnmarkedDirectories(t *testing.T) {
 	var output bytes.Buffer
 	remove := newSetupCmd()
 	remove.SetOut(&output)
-	remove.SetArgs([]string{"--client", "cursor", "--remove-skills", "--json"})
+	remove.SetArgs([]string{"--client", "agents", "--remove-skills", "--json"})
 	if err := remove.Execute(); err != nil {
 		t.Fatal(err)
 	}
@@ -138,7 +132,7 @@ func TestSetupCommandRemoveSkillsLeavesUnmarkedDirectories(t *testing.T) {
 			t.Fatalf("unexpected change: %+v", change)
 		}
 	}
-	if _, err := os.Stat(filepath.Join(home, ".cursor", "skills", "datadog-code-security-remediation")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(home, ".agents", "skills", "datadog-code-security-remediation")); !os.IsNotExist(err) {
 		t.Fatalf("managed skill survived --remove-skills: %v", err)
 	}
 	if _, err := os.Stat(userSkill); err != nil {
@@ -148,7 +142,7 @@ func TestSetupCommandRemoveSkillsLeavesUnmarkedDirectories(t *testing.T) {
 
 func TestSetupCommandReturnsFailureWithoutWrites(t *testing.T) {
 	home := setSetupTestHome(t)
-	collision := filepath.Join(home, ".cursor", "skills", "datadog-code-security-remediation")
+	collision := filepath.Join(home, ".agents", "skills", "datadog-code-security-remediation")
 	if err := os.MkdirAll(collision, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -156,17 +150,17 @@ func TestSetupCommandReturnsFailureWithoutWrites(t *testing.T) {
 	var output bytes.Buffer
 	cmd := newSetupCmd()
 	cmd.SetOut(&output)
-	cmd.SetArgs([]string{"--client", "cursor"})
+	cmd.SetArgs([]string{"--client", "agents"})
 	if err := cmd.Execute(); err == nil {
 		t.Fatal("setup reported success for an unowned skill collision")
 	}
-	if !strings.Contains(output.String(), "Cursor: failed") {
+	if !strings.Contains(output.String(), "Agent Skills: failed") {
 		t.Fatalf("failure output = %q", output.String())
 	}
 	if strings.Contains(output.String(), "Restart") {
 		t.Fatalf("blocked client requested restart: %q", output.String())
 	}
-	skillsDir := filepath.Join(home, ".cursor", "skills")
+	skillsDir := filepath.Join(home, ".agents", "skills")
 	entries, err := os.ReadDir(skillsDir)
 	if err != nil {
 		t.Fatal(err)
@@ -180,8 +174,8 @@ func TestRenderSetupResultDoesNotRestartWhenAlreadyCurrent(t *testing.T) {
 	var output bytes.Buffer
 	err := renderSetupResult(&output, setupcmd.Result{
 		Clients: []setupcmd.ClientResult{{
-			ClientID:    "cursor",
-			DisplayName: "Cursor",
+			ClientID:    "agents",
+			DisplayName: "Agent Skills",
 			Status:      setupcmd.ClientStatusApplied,
 			SkillsDir:   "/tmp/skills",
 		}},
@@ -192,7 +186,7 @@ func TestRenderSetupResultDoesNotRestartWhenAlreadyCurrent(t *testing.T) {
 	if strings.Contains(output.String(), "Restart") {
 		t.Fatalf("unchanged setup requested restart: %q", output.String())
 	}
-	if !strings.Contains(output.String(), "Cursor: no changes") {
+	if !strings.Contains(output.String(), "Agent Skills: no changes") {
 		t.Fatalf("empty plan output = %q", output.String())
 	}
 }
@@ -201,8 +195,8 @@ func TestRenderSetupResultDoesNotRestartAfterFailure(t *testing.T) {
 	var output bytes.Buffer
 	err := renderSetupResult(&output, setupcmd.Result{
 		Clients: []setupcmd.ClientResult{{
-			ClientID:    "cursor",
-			DisplayName: "Cursor",
+			ClientID:    "agents",
+			DisplayName: "Agent Skills",
 			Status:      setupcmd.ClientStatusFailed,
 			Reason:      "unowned skill directory",
 		}},

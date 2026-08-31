@@ -245,7 +245,7 @@ Returns component list (name, version, license)
 
 **`internal/setup/`** - AI client detection and skill lifecycle
 
-- `clients.go`: Declarative Claude Code, Cursor, and Codex registry
+- `clients.go`: Declarative shared Agent Skills, Claude Code, and Codex destination registry
 - `detect.go`: Testable PATH and user-home marker detection
 - `skills.go`: Recursive embedded-skill installation and marker-safe pruning
 - `setup.go`: Per-client plan-then-execute reconcile and structured results

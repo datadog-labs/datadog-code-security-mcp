@@ -25,12 +25,12 @@ func newSetupCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "setup",
 		Short: "Install Datadog Code Security skills for AI coding clients",
-		Long: `Detect supported AI coding clients and install the Datadog Code Security
-skills into their user-level skills directories.
+		Long: `Install Datadog Code Security skills into the shared Agent Skills
+directory and the native directories of detected AI coding clients.
 
-Supported clients: Claude Code, Cursor, and Codex. Setup manages only skill
-directories carrying its .datadog-managed.json marker; it never changes MCP
-configuration or removes user-managed skills.`,
+Destinations: Agent Skills (~/.agents/skills), Claude Code, and Codex. Setup
+manages only skill directories carrying its .datadog-managed.json marker; it
+never changes MCP configuration or removes user-managed skills.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) (runErr error) {
 			event := telemetry.OperationEvent{
@@ -85,7 +85,7 @@ configuration or removes user-managed skills.`,
 	}
 
 	cmd.Flags().StringArrayVar(&clientIDs, "client", nil,
-		"Restrict setup to a client ID (repeatable: claude-code, cursor, codex)")
+		"Restrict setup to a destination ID (repeatable: agents, claude-code, codex)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Report actions without changing files")
 	cmd.Flags().BoolVar(&removeSkills, "remove-skills", false,
 		"Remove all Datadog-managed skills instead of installing them")
@@ -121,7 +121,7 @@ func renderSetupResult(writer io.Writer, result setupcmd.Result, dryRun, outputJ
 	}
 
 	if !detected {
-		_, err := fmt.Fprintln(writer, "No selected AI clients were detected. Install or select Claude Code, Cursor, or Codex and run setup again.")
+		_, err := fmt.Fprintln(writer, "No selected AI clients were detected. Install or select Claude Code or Codex and run setup again.")
 		return err
 	}
 	if dryRun {

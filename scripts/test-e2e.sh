@@ -418,7 +418,7 @@ echo ""
 echo -e "${BLUE}==> Test 8/9: Testing setup command...${NC}"
 
 SETUP_HOME=$(mktemp -d)
-mkdir -p "${SETUP_HOME}/.claude" "${SETUP_HOME}/.cursor" "${SETUP_HOME}/.codex/skills/.system"
+mkdir -p "${SETUP_HOME}/.claude" "${SETUP_HOME}/.codex/skills/.system"
 
 SETUP_OK=true
 if HOME="${SETUP_HOME}" USERPROFILE="${SETUP_HOME}" \
@@ -440,7 +440,7 @@ if [[ "${SETUP_OK}" == "true" ]] && \
   ./bin/datadog-code-security-mcp --no-telemetry setup --json \
   > "${TEST_OUTPUT_DIR}/setup-output.json" \
   2> "${TEST_OUTPUT_DIR}/setup-error.txt"; then
-  for client_dir in .claude .cursor .codex; do
+  for client_dir in .agents .claude .codex; do
     for skill in datadog-code-security-remediation datadog-code-security-verification datadog-code-security-toolchain; do
       if [[ ! -f "${SETUP_HOME}/${client_dir}/skills/${skill}/SKILL.md" ]] || \
          [[ ! -f "${SETUP_HOME}/${client_dir}/skills/${skill}/.datadog-managed.json" ]]; then
@@ -467,7 +467,7 @@ else
 fi
 
 if [[ "${SETUP_OK}" == "true" ]]; then
-  mkdir -p "${SETUP_HOME}/.cursor/skills/user-skill"
+  mkdir -p "${SETUP_HOME}/.agents/skills/user-skill"
   if HOME="${SETUP_HOME}" USERPROFILE="${SETUP_HOME}" \
     ./bin/datadog-code-security-mcp --no-telemetry setup --remove-skills --dry-run \
     > "${TEST_OUTPUT_DIR}/setup-remove-dry-run.txt" 2>&1; then
@@ -488,7 +488,7 @@ if [[ "${SETUP_OK}" == "true" ]] && \
   ./bin/datadog-code-security-mcp --no-telemetry setup --remove-skills --json \
   > "${TEST_OUTPUT_DIR}/setup-remove-output.json" \
   2> "${TEST_OUTPUT_DIR}/setup-remove-error.txt"; then
-  for client_dir in .claude .cursor .codex; do
+  for client_dir in .agents .claude .codex; do
     for skill in datadog-code-security-remediation datadog-code-security-verification datadog-code-security-toolchain; do
       if [[ -e "${SETUP_HOME}/${client_dir}/skills/${skill}" ]]; then
         echo -e "${RED}❌ ${skill} survived --remove-skills for ${client_dir}${NC}"
@@ -496,7 +496,7 @@ if [[ "${SETUP_OK}" == "true" ]] && \
       fi
     done
   done
-  if [[ ! -d "${SETUP_HOME}/.cursor/skills/user-skill" ]]; then
+  if [[ ! -d "${SETUP_HOME}/.agents/skills/user-skill" ]]; then
     echo -e "${RED}❌ Setup --remove-skills deleted unmarked user skill${NC}"
     SETUP_OK=false
   fi

@@ -81,8 +81,9 @@ skills/                       # Skills embedded into release binaries
 ## Skills
 
 The root `skills/` package embeds every `datadog-*` directory recursively.
-`internal/setup/` detects Claude Code, Cursor, and Codex and installs those
-trees into each client's user-level skills directory.
+`internal/setup/` always installs those trees into the shared
+`~/.agents/skills/` directory and also installs them into the native Claude
+Code and Codex skill directories when those clients are detected.
 
 Every installed skill root gets `.datadog-managed.json`. This marker is the
 **only** authority for updates and deletion:

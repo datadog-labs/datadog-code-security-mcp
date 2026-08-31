@@ -14,8 +14,12 @@ type Detection struct {
 }
 
 // IsInstalled applies the client detection policy: a matching CLI on PATH or a
-// known user-home marker is sufficient.
+// known user-home marker is sufficient. Shared destinations are always used.
 func IsInstalled(client Client, homeDir string) (Detection, error) {
+	if client.AlwaysInstall {
+		return Detection{Installed: true, Reason: "shared Agent Skills directory"}, nil
+	}
+
 	for _, cliName := range client.CLINames {
 		if _, err := exec.LookPath(cliName); err == nil {
 			return Detection{Installed: true, Reason: fmt.Sprintf("%s found on PATH", cliName)}, nil

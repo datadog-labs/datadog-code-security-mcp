@@ -42,7 +42,7 @@ datadog-code-security-mcp version --detailed # Include every required scanner
 
 ### Install AI Client Skills
 
-The binary ships three skills for Claude Code, Cursor, and Codex:
+The binary ships three Agent Skills for compatible AI coding clients:
 
 - **Remediation** — scans local code, loads a focused SAST, Secrets, SCA, or
   IaC playbook, applies approved fixes, and rescans to verify them.
@@ -51,7 +51,8 @@ The binary ships three skills for Claude Code, Cursor, and Codex:
 - **Toolchain** — diagnoses missing scanner binaries and relays the CLI's
   platform-specific installation instructions with confirmation guardrails.
 
-Install them for every detected client:
+Install them into the shared Agent Skills directory and every detected native
+client directory:
 
 ```bash
 datadog-code-security-mcp setup
@@ -64,22 +65,24 @@ Useful options:
 datadog-code-security-mcp setup --dry-run
 
 # Restrict setup to one or more clients
-datadog-code-security-mcp setup --client cursor --client codex
+datadog-code-security-mcp setup --client agents --client codex
 
 # Remove only skills managed by this binary
 datadog-code-security-mcp setup --remove-skills
 
-# Remove Datadog skills from Cursor only
-datadog-code-security-mcp setup --client cursor --remove-skills
+# Remove Datadog skills from the shared Agent Skills directory only
+datadog-code-security-mcp setup --client agents --remove-skills
 
 # Machine-readable report
 datadog-code-security-mcp setup --json
 ```
 
-Setup detects `claude`, `cursor`/`cursor-agent`, and `codex` on `PATH`, plus
-their user configuration directories. It installs into `~/.claude/skills`,
-`~/.cursor/skills`, and `~/.codex/skills`, then asks you to restart updated
-clients. The accepted `--client` IDs are `claude-code`, `cursor`, and `codex`.
+Setup always installs into `~/.agents/skills`, the shared directory used by
+Cursor, OpenCode, Pi, Gemini CLI, and other clients that follow the Agent
+Skills convention. It also detects Claude Code and Codex from their CLIs or
+user configuration directories and installs into `~/.claude/skills` and
+`~/.codex/skills` when present. It then asks you to restart updated clients.
+The accepted `--client` IDs are `agents`, `claude-code`, and `codex`.
 
 The skills prefer the structured local Code Security MCP tools when available
 and fall back to `datadog-code-security-mcp ... --json`, so skill installation

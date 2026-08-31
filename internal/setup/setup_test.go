@@ -25,10 +25,8 @@ func testOptions(home string, desired []string) Options {
 func TestRunContinuesAfterClientFailure(t *testing.T) {
 	isolatePATH(t)
 	home := t.TempDir()
-	for _, marker := range []string{".claude", ".cursor"} {
-		if err := os.MkdirAll(filepath.Join(home, marker), 0o700); err != nil {
-			t.Fatal(err)
-		}
+	if err := os.MkdirAll(filepath.Join(home, ".claude"), 0o700); err != nil {
+		t.Fatal(err)
 	}
 	collision := filepath.Join(home, ".claude", "skills", "datadog-remediation")
 	if err := os.MkdirAll(collision, 0o700); err != nil {
@@ -36,7 +34,7 @@ func TestRunContinuesAfterClientFailure(t *testing.T) {
 	}
 
 	options := testOptions(home, testSkillIDs())
-	options.ClientIDs = []string{"claude-code", "cursor", "codex"}
+	options.ClientIDs = []string{"claude-code", "agents", "codex"}
 	result, err := Run(options)
 	if err != nil {
 		t.Fatal(err)
@@ -51,7 +49,7 @@ func TestRunContinuesAfterClientFailure(t *testing.T) {
 		t.Errorf("Claude changes = %+v, want none", result.Clients[0].Changes)
 	}
 	if result.Clients[1].Status != ClientStatusApplied {
-		t.Errorf("Cursor status = %s, want applied", result.Clients[1].Status)
+		t.Errorf("Agent Skills status = %s, want applied", result.Clients[1].Status)
 	}
 	if result.Clients[2].Status != ClientStatusSkipped {
 		t.Errorf("Codex status = %s, want skipped", result.Clients[2].Status)
@@ -59,8 +57,8 @@ func TestRunContinuesAfterClientFailure(t *testing.T) {
 	if !result.HasFailures() || result.FailureError() == nil {
 		t.Fatal("partial failure was not reflected in aggregate result")
 	}
-	if _, err := os.Stat(filepath.Join(home, ".cursor", "skills", "datadog-remediation", "SKILL.md")); err != nil {
-		t.Fatalf("Cursor was not installed after Claude failure: %v", err)
+	if _, err := os.Stat(filepath.Join(home, ".agents", "skills", "datadog-remediation", "SKILL.md")); err != nil {
+		t.Fatalf("Agent Skills was not installed after Claude failure: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(home, ".claude", "skills", "datadog-verification")); !os.IsNotExist(err) {
 		t.Fatal("blocked Claude client was mutated")
@@ -78,16 +76,13 @@ func TestRunRejectsUnknownClient(t *testing.T) {
 func TestRunDoesNotWriteWhenAnyDesiredSkillIsBlocked(t *testing.T) {
 	isolatePATH(t)
 	home := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(home, ".cursor"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	collision := filepath.Join(home, ".cursor", "skills", "datadog-verification")
+	collision := filepath.Join(home, ".agents", "skills", "datadog-verification")
 	if err := os.MkdirAll(collision, 0o700); err != nil {
 		t.Fatal(err)
 	}
 
 	options := testOptions(home, testSkillIDs())
-	options.ClientIDs = []string{"cursor"}
+	options.ClientIDs = []string{"agents"}
 	result, err := Run(options)
 	if err != nil {
 		t.Fatal(err)
@@ -98,7 +93,7 @@ func TestRunDoesNotWriteWhenAnyDesiredSkillIsBlocked(t *testing.T) {
 	if len(result.Clients[0].Changes) != 0 {
 		t.Fatalf("blocked client changes = %+v, want none", result.Clients[0].Changes)
 	}
-	if _, err := os.Stat(filepath.Join(home, ".cursor", "skills", "datadog-remediation")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(home, ".agents", "skills", "datadog-remediation")); !os.IsNotExist(err) {
 		t.Fatal("sibling skill was written despite a blocked desired skill")
 	}
 }
@@ -106,7 +101,7 @@ func TestRunDoesNotWriteWhenAnyDesiredSkillIsBlocked(t *testing.T) {
 func TestRunDoesNotPruneWhenDesiredSkillIsBlocked(t *testing.T) {
 	isolatePATH(t)
 	home := t.TempDir()
-	skillsDir := filepath.Join(home, ".cursor", "skills")
+	skillsDir := filepath.Join(home, ".agents", "skills")
 	stale := filepath.Join(skillsDir, "datadog-stale")
 	collision := filepath.Join(skillsDir, "datadog-verification")
 	for _, path := range []string{stale, collision} {
@@ -123,7 +118,7 @@ func TestRunDoesNotPruneWhenDesiredSkillIsBlocked(t *testing.T) {
 	}
 
 	options := testOptions(home, testSkillIDs())
-	options.ClientIDs = []string{"cursor"}
+	options.ClientIDs = []string{"agents"}
 	result, err := Run(options)
 	if err != nil {
 		t.Fatal(err)
@@ -142,12 +137,9 @@ func TestRunDoesNotPruneWhenDesiredSkillIsBlocked(t *testing.T) {
 func TestRunRemoveSkillsLeavesUnmarkedDirectories(t *testing.T) {
 	isolatePATH(t)
 	home := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(home, ".cursor"), 0o700); err != nil {
-		t.Fatal(err)
-	}
 
 	install := testOptions(home, testSkillIDs())
-	install.ClientIDs = []string{"cursor"}
+	install.ClientIDs = []string{"agents"}
 	installed, err := Run(install)
 	if err != nil {
 		t.Fatal(err)
@@ -156,13 +148,13 @@ func TestRunRemoveSkillsLeavesUnmarkedDirectories(t *testing.T) {
 		t.Fatalf("install failed: %+v", installed.Clients)
 	}
 
-	userSkill := filepath.Join(home, ".cursor", "skills", "user-skill")
+	userSkill := filepath.Join(home, ".agents", "skills", "user-skill")
 	if err := os.MkdirAll(userSkill, 0o700); err != nil {
 		t.Fatal(err)
 	}
 
 	remove := testOptions(home, nil)
-	remove.ClientIDs = []string{"cursor"}
+	remove.ClientIDs = []string{"agents"}
 	preview, err := Preview(remove)
 	if err != nil {
 		t.Fatal(err)
@@ -173,7 +165,7 @@ func TestRunRemoveSkillsLeavesUnmarkedDirectories(t *testing.T) {
 	if len(preview.Clients) != 1 || preview.Clients[0].Status != ClientStatusApplied {
 		t.Fatalf("preview remove result = %+v, want one applied client", preview.Clients)
 	}
-	if _, err := os.Stat(filepath.Join(home, ".cursor", "skills", "datadog-remediation", "SKILL.md")); err != nil {
+	if _, err := os.Stat(filepath.Join(home, ".agents", "skills", "datadog-remediation", "SKILL.md")); err != nil {
 		t.Fatalf("preview remove deleted managed skills: %v", err)
 	}
 
@@ -184,7 +176,7 @@ func TestRunRemoveSkillsLeavesUnmarkedDirectories(t *testing.T) {
 	if len(result.Clients) != 1 || result.Clients[0].Status != ClientStatusApplied {
 		t.Fatalf("remove result = %+v, want one applied client", result.Clients)
 	}
-	if _, err := os.Stat(filepath.Join(home, ".cursor", "skills", "datadog-remediation")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(home, ".agents", "skills", "datadog-remediation")); !os.IsNotExist(err) {
 		t.Fatalf("managed skill survived empty desired set: %v", err)
 	}
 	if _, err := os.Stat(userSkill); err != nil {

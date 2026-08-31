@@ -14,12 +14,12 @@ func TestIsInstalledFromPATH(t *testing.T) {
 
 	home := t.TempDir()
 	binDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(binDir, "cursor-agent"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(binDir, "codex"), []byte("#!/bin/sh\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", binDir)
 
-	client, err := ClientByID("cursor")
+	client, err := ClientByID("codex")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -28,9 +28,9 @@ func TestIsInstalledFromPATH(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !detection.Installed {
-		t.Fatal("cursor-agent on PATH was not detected")
+		t.Fatal("codex on PATH was not detected")
 	}
-	if detection.Reason != "cursor-agent found on PATH" {
+	if detection.Reason != "codex found on PATH" {
 		t.Errorf("Reason = %q", detection.Reason)
 	}
 }
@@ -38,11 +38,11 @@ func TestIsInstalledFromPATH(t *testing.T) {
 func TestIsInstalledFromHomeMarker(t *testing.T) {
 	isolatePATH(t)
 	home := t.TempDir()
-	if err := os.Mkdir(filepath.Join(home, ".cursor"), 0o700); err != nil {
+	if err := os.Mkdir(filepath.Join(home, ".claude"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 
-	client, err := ClientByID("cursor")
+	client, err := ClientByID("claude-code")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,7 +57,7 @@ func TestIsInstalledFromHomeMarker(t *testing.T) {
 
 func TestIsInstalledWhenMissing(t *testing.T) {
 	isolatePATH(t)
-	client, err := ClientByID("cursor")
+	client, err := ClientByID("codex")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,10 +73,28 @@ func TestIsInstalledWhenMissing(t *testing.T) {
 	}
 }
 
+func TestIsInstalledForSharedDestination(t *testing.T) {
+	isolatePATH(t)
+	client, err := ClientByID("agents")
+	if err != nil {
+		t.Fatal(err)
+	}
+	detection, err := IsInstalled(client, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !detection.Installed {
+		t.Fatal("shared Agent Skills destination was not enabled")
+	}
+	if detection.Reason != "shared Agent Skills directory" {
+		t.Errorf("Reason = %q", detection.Reason)
+	}
+}
+
 func TestClientRegistry(t *testing.T) {
 	want := map[string]string{
+		"agents":      filepath.Join(".agents", "skills"),
 		"claude-code": filepath.Join(".claude", "skills"),
-		"cursor":      filepath.Join(".cursor", "skills"),
 		"codex":       filepath.Join(".codex", "skills"),
 	}
 	for _, client := range Clients() {

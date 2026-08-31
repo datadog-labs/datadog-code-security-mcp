@@ -13,22 +13,22 @@ type Client struct {
 	CLINames          []string
 	HomeMarkers       []string
 	SkillsDirSegments []string
+	AlwaysInstall     bool
 }
 
 var supportedClients = []Client{
+	{
+		ID:                "agents",
+		DisplayName:       "Agent Skills",
+		SkillsDirSegments: []string{".agents", "skills"},
+		AlwaysInstall:     true,
+	},
 	{
 		ID:                "claude-code",
 		DisplayName:       "Claude Code",
 		CLINames:          []string{"claude"},
 		HomeMarkers:       []string{".claude"},
 		SkillsDirSegments: []string{".claude", "skills"},
-	},
-	{
-		ID:                "cursor",
-		DisplayName:       "Cursor",
-		CLINames:          []string{"cursor", "cursor-agent"},
-		HomeMarkers:       []string{".cursor"},
-		SkillsDirSegments: []string{".cursor", "skills"},
 	},
 	{
 		ID:                "codex",
