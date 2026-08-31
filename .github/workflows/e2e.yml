@@ -231,6 +231,9 @@ jobs:
           echo "=== Setup Output ==="
           cat /tmp/setup-output.json || echo "File not found"
           echo ""
+          echo "=== Setup Remove Output ==="
+          cat /tmp/setup-remove-output.json || echo "File not found"
+          echo ""
           echo "=== IaC Output ==="
           cat /tmp/iac-output.json || echo "File not found"
 
@@ -248,6 +251,8 @@ jobs:
             /tmp/sbom-output.json
             /tmp/setup-output.json
             /tmp/setup-error.txt
+            /tmp/setup-remove-output.json
+            /tmp/setup-remove-error.txt
             /tmp/iac-output.json
           retention-days: 7
           if-no-files-found: warn

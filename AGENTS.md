@@ -280,7 +280,7 @@ export DD_SITE=datadoghq.com
 5. ✅ **Secrets scanner** - Detects AWS keys, GitHub tokens, API keys
 6. ✅ **Negative testing** - Verifies no false positives on clean code
 7. ✅ **SBOM generation** - Generates and validates a component inventory
-8. ✅ **Setup command** - Verifies dry-run and installation in an isolated home
+8. ✅ **Setup command** - Verifies dry-run, installation, and `--remove-skills` in an isolated home
 9. ✅ **IaC scanner** - Detects infrastructure misconfigurations
 10. ✅ **Claude Desktop** - Configures local build (full mode only)
 

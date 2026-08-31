@@ -466,9 +466,56 @@ else
   SETUP_OK=false
 fi
 
+if [[ "${SETUP_OK}" == "true" ]]; then
+  mkdir -p "${SETUP_HOME}/.cursor/skills/user-skill"
+  if HOME="${SETUP_HOME}" USERPROFILE="${SETUP_HOME}" \
+    ./bin/datadog-code-security-mcp --no-telemetry setup --remove-skills --dry-run \
+    > "${TEST_OUTPUT_DIR}/setup-remove-dry-run.txt" 2>&1; then
+    REMOVE_DRY_RUN_FILES=$(find "${SETUP_HOME}" -path '*/datadog-*/SKILL.md' | wc -l | tr -d ' ')
+    if [[ "${REMOVE_DRY_RUN_FILES}" == "0" ]]; then
+      echo -e "${RED}❌ Setup --remove-skills dry run deleted managed skills${NC}"
+      SETUP_OK=false
+    fi
+  else
+    echo -e "${RED}❌ Setup --remove-skills dry run failed${NC}"
+    cat "${TEST_OUTPUT_DIR}/setup-remove-dry-run.txt"
+    SETUP_OK=false
+  fi
+fi
+
+if [[ "${SETUP_OK}" == "true" ]] && \
+  HOME="${SETUP_HOME}" USERPROFILE="${SETUP_HOME}" \
+  ./bin/datadog-code-security-mcp --no-telemetry setup --remove-skills --json \
+  > "${TEST_OUTPUT_DIR}/setup-remove-output.json" \
+  2> "${TEST_OUTPUT_DIR}/setup-remove-error.txt"; then
+  for client_dir in .claude .cursor .codex; do
+    for skill in datadog-code-security-remediation datadog-code-security-verification datadog-code-security-toolchain; do
+      if [[ -e "${SETUP_HOME}/${client_dir}/skills/${skill}" ]]; then
+        echo -e "${RED}❌ ${skill} survived --remove-skills for ${client_dir}${NC}"
+        SETUP_OK=false
+      fi
+    done
+  done
+  if [[ ! -d "${SETUP_HOME}/.cursor/skills/user-skill" ]]; then
+    echo -e "${RED}❌ Setup --remove-skills deleted unmarked user skill${NC}"
+    SETUP_OK=false
+  fi
+  if [[ ! -d "${SETUP_HOME}/.codex/skills/.system" ]]; then
+    echo -e "${RED}❌ Setup --remove-skills deleted Codex .system directory${NC}"
+    SETUP_OK=false
+  fi
+else
+  if [[ "${SETUP_OK}" == "true" ]]; then
+    echo -e "${RED}❌ Setup --remove-skills failed${NC}"
+    [[ -f "${TEST_OUTPUT_DIR}/setup-remove-output.json" ]] && cat "${TEST_OUTPUT_DIR}/setup-remove-output.json"
+    [[ -f "${TEST_OUTPUT_DIR}/setup-remove-error.txt" ]] && cat "${TEST_OUTPUT_DIR}/setup-remove-error.txt"
+    SETUP_OK=false
+  fi
+fi
+
 rm -rf "${SETUP_HOME}"
 if [[ "${SETUP_OK}" == "true" ]]; then
-  echo -e "${GREEN}✓ Setup dry-run and sandbox installation successful${NC}"
+  echo -e "${GREEN}✓ Setup dry-run, sandbox installation, and --remove-skills successful${NC}"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
   TESTS_FAILED=$((TESTS_FAILED + 1))
@@ -674,6 +721,8 @@ echo "  ${TEST_OUTPUT_DIR}/sbom-output.json"
 echo "  ${TEST_OUTPUT_DIR}/iac-output.json"
 echo "  ${TEST_OUTPUT_DIR}/setup-output.json"
 echo "  ${TEST_OUTPUT_DIR}/setup-error.txt"
+echo "  ${TEST_OUTPUT_DIR}/setup-remove-output.json"
+echo "  ${TEST_OUTPUT_DIR}/setup-remove-error.txt"
 echo ""
 
 if [[ $TESTS_FAILED -gt 0 ]]; then

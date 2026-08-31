@@ -84,6 +84,68 @@ func TestSetupCommandRejectsUnknownClient(t *testing.T) {
 	}
 }
 
+func TestSetupCommandRemoveSkillsLeavesUnmarkedDirectories(t *testing.T) {
+	home := setSetupTestHome(t)
+	if err := os.Mkdir(filepath.Join(home, ".cursor"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	install := newSetupCmd()
+	install.SetArgs([]string{"--client", "cursor"})
+	if err := install.Execute(); err != nil {
+		t.Fatal(err)
+	}
+
+	userSkill := filepath.Join(home, ".cursor", "skills", "user-skill")
+	if err := os.MkdirAll(userSkill, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	managed := filepath.Join(home, ".cursor", "skills", "datadog-code-security-remediation", "SKILL.md")
+
+	var preview bytes.Buffer
+	dryRun := newSetupCmd()
+	dryRun.SetOut(&preview)
+	dryRun.SetArgs([]string{"--client", "cursor", "--remove-skills", "--dry-run"})
+	if err := dryRun.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(preview.String(), "would be removed") {
+		t.Fatalf("remove dry-run output = %q", preview.String())
+	}
+	if _, err := os.Stat(managed); err != nil {
+		t.Fatalf("remove dry-run deleted managed skills: %v", err)
+	}
+
+	var output bytes.Buffer
+	remove := newSetupCmd()
+	remove.SetOut(&output)
+	remove.SetArgs([]string{"--client", "cursor", "--remove-skills", "--json"})
+	if err := remove.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	var report setupJSONReport
+	if err := json.Unmarshal(output.Bytes(), &report); err != nil {
+		t.Fatalf("invalid JSON output %q: %v", output.String(), err)
+	}
+	if len(report.Clients) != 1 || report.Clients[0].Status != setupcmd.ClientStatusApplied {
+		t.Fatalf("remove JSON result = %+v", report)
+	}
+	if len(report.Clients[0].Changes) != 3 {
+		t.Fatalf("removed changes = %d, want 3", len(report.Clients[0].Changes))
+	}
+	for _, change := range report.Clients[0].Changes {
+		if change.Action != setupcmd.SkillActionRemoved {
+			t.Fatalf("unexpected change: %+v", change)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(home, ".cursor", "skills", "datadog-code-security-remediation")); !os.IsNotExist(err) {
+		t.Fatalf("managed skill survived --remove-skills: %v", err)
+	}
+	if _, err := os.Stat(userSkill); err != nil {
+		t.Fatalf("unmarked skill was removed: %v", err)
+	}
+}
+
 func TestSetupCommandReturnsFailureWithoutWrites(t *testing.T) {
 	home := setSetupTestHome(t)
 	collision := filepath.Join(home, ".cursor", "skills", "datadog-code-security-remediation")
