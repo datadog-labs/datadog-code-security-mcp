@@ -24,6 +24,7 @@ make clean          # Remove build artifacts
 go run ./cmd/datadog-code-security-mcp version
 go run ./cmd/datadog-code-security-mcp scan all ./
 go run ./cmd/datadog-code-security-mcp start  # MCP server mode
+go run ./cmd/datadog-code-security-mcp setup --dry-run
 ```
 
 ### Release
@@ -37,6 +38,7 @@ make build-all      # Build for all 5 platforms → dist/
 ```
 cmd/datadog-code-security-mcp/  # CLI entry point (Cobra)
   ├── main.go         # Setup & router
+  ├── setup.go        # AI client skill installation
   ├── scan.go         # Direct scan command
   ├── start.go        # MCP server (STDIO transport)
   ├── generate-sbom.go # SBOM generation command
@@ -68,7 +70,31 @@ internal/
   └── auth/           # Authentication (API keys)
       ├── config.go   # Load from environment (DD_API_KEY, DD_SITE, etc.)
       └── provider.go # Credential management with caching
+
+skills/                       # Skills embedded into release binaries
+  ├── embed.go                # go:embed datadog-* trees
+  ├── datadog-code-security-remediation/
+  ├── datadog-code-security-verification/
+  └── datadog-code-security-toolchain/
 ```
+
+## Skills
+
+The root `skills/` package embeds every `datadog-*` directory recursively.
+`internal/setup/` detects Claude Code, Cursor, and Codex and installs those
+trees into each client's user-level skills directory.
+
+Every installed skill root gets `.datadog-managed.json`. This marker is the
+**only** authority for updates and deletion:
+
+- Never overwrite an existing skill directory without a marker owned by
+  `datadog-code-security-mcp`.
+- Never prune by the `datadog-` name prefix.
+- Skip dot-directories such as Codex's `.system/`.
+- A removed embedded skill may be pruned only when its direct child directory
+  carries our marker.
+- Nested content such as remediation `references/` is managed as part of the
+  marked skill tree.
 
 ## Code Patterns
 
@@ -253,7 +279,10 @@ export DD_SITE=datadoghq.com
 4. ✅ **SAST scanner** - Detects SQL injection, XSS, path traversal
 5. ✅ **Secrets scanner** - Detects AWS keys, GitHub tokens, API keys
 6. ✅ **Negative testing** - Verifies no false positives on clean code
-7. ✅ **Claude Desktop** - Configures local build (full mode only)
+7. ✅ **SBOM generation** - Generates and validates a component inventory
+8. ✅ **Setup command** - Verifies dry-run and installation in an isolated home
+9. ✅ **IaC scanner** - Detects infrastructure misconfigurations
+10. ✅ **Claude Desktop** - Configures local build (full mode only)
 
 **Option 2: Manual Step-by-Step Testing**
 
@@ -543,7 +572,7 @@ func runCommand(userInput string) error {
 
 **Before pushing code:**
 1. ✅ Run `./scripts/test-e2e.sh --ci` locally
-2. ✅ Verify all 7 test steps pass
+2. ✅ Verify all 9 CI test steps pass
 3. ✅ Check test outputs in `/tmp/*-output.json`
 4. ✅ Test with Claude Desktop (`--full` mode) for MCP changes
 5. ✅ Review any warnings in test output

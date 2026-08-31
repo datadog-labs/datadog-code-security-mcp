@@ -103,6 +103,9 @@ func TestCategorizeErrorKnownKinds(t *testing.T) {
 		{"scanner execution failed: exit status 127", ErrKindScanError},
 		{"error retrieving remote `origin`: remote not found", ErrKindGitError},
 		{"Unable to parse git ignores: open .git/info/exclude: not a directory", ErrKindGitError},
+		{"setup failed for: Cursor", ErrKindSetupError},
+		{"resolve user home directory: HOME is not set", ErrKindSetupError},
+		{`unsupported client "other" (valid options: claude-code, cursor, codex)`, ErrKindInvalidArguments},
 	}
 	for _, tc := range cases {
 		if got := CategorizeError(fmt.Errorf("%s", tc.msg)); got != tc.want {

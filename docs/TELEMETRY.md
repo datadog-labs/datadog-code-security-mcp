@@ -15,6 +15,7 @@ Every scan emits **one telemetry event per scan type** plus, when multiple types
 | Single-type (`scan sast`, `datadog_sast_scan`) | One per-scan event (`operation=sast_scan`, `standalone=true`) |
 | Multi-type (`scan all`, `datadog_code_security_scan`) | One aggregate event (`operation=code_security_scan`) **plus** one per-scan event per executed type (`standalone=false`) |
 | Initialization failure (binary missing, bad path) | One aggregate event only (`success=false`) — no per-scan events since nothing executed |
+| Other CLI command (`setup`, `version`, `generate-sbom`) | One operation event for the command |
 
 ### Fields
 
@@ -22,11 +23,11 @@ Every scan emits **one telemetry event per scan type** plus, when multiple types
 
 | Field | Description |
 | -------------------------- | ------------------------------------------------------------------------------------------------ |
-| `operation`                | Stable operation name (e.g. `sast_scan`, `code_security_scan`, `generate_sbom`)                  |
+| `operation`                | Stable operation name (e.g. `sast_scan`, `code_security_scan`, `generate_sbom`, `setup`)         |
 | `interface`                | `cli` or `mcp`                                                                                   |
 | `duration_ms`              | Wall-clock time for this event: per-scan time for per-scan events; total elapsed time for aggregate |
 | `success`                  | Whether the invocation succeeded                                                                 |
-| `error.kind`               | Categorized error type (`BinaryNotFound`, `AuthRequired`, `InvalidArguments`, `PathNotFound`, `Timeout`, `Network`, `ScanError`, `GitError`, `Unknown`) |
+| `error.kind`               | Categorized error type (`BinaryNotFound`, `AuthRequired`, `InvalidArguments`, `PathNotFound`, `Timeout`, `Network`, `ScanError`, `GitError`, `SetupError`, `Unknown`) |
 | `error.message`            | Short curated description for Error Tracking: a per-kind default (e.g. `scan execution failed`) or a more specific string for known sub-cases (optionally suffixed with the process exit code). Hardcoded and path-free — never the raw error text |
 | `os`, `arch`, `go_version` | Runtime platform info                                                                            |
 | `ci`                       | Whether a `CI` environment variable is set                                                       |
@@ -125,7 +126,7 @@ Telemetry is also automatically disabled if the compiled-in client token is abse
 
 On the first invocation, a short notice is printed to **stderr** explaining what is collected and how to turn off data collection. It is shown once and then suppressed for subsequent runs (controlled by `first_run_notice_shown` in `~/.datadog-code-security-mcp/config.json`).
 
-> In **MCP server mode**, stderr is captured by the AI assistant client (Claude Desktop, Cursor, etc.) and not directly visible to the user. The primary disclosure for MCP users is the [README telemetry section](../README.md#telemetry-data-collection) and this document. A future `setup` command will present the disclosure interactively.
+> In **MCP server mode**, stderr is captured by the AI assistant client (Claude Desktop, Cursor, etc.) and not directly visible to the user. The primary disclosure for MCP users is the [README telemetry section](../README.md#telemetry-data-collection) and this document. Running `setup` from a terminal makes the standard one-time stderr notice visible; `setup` is non-interactive and does not introduce a separate consent prompt.
 
 ## Install ID
 

@@ -225,6 +225,12 @@ jobs:
           echo "=== Clean Code Output ==="
           cat /tmp/clean-output.json || echo "File not found"
           echo ""
+          echo "=== SBOM Output ==="
+          cat /tmp/sbom-output.json || echo "File not found"
+          echo ""
+          echo "=== Setup Output ==="
+          cat /tmp/setup-output.json || echo "File not found"
+          echo ""
           echo "=== IaC Output ==="
           cat /tmp/iac-output.json || echo "File not found"
 
@@ -239,6 +245,9 @@ jobs:
             /tmp/sast-output.json
             /tmp/secrets-output.json
             /tmp/clean-output.json
+            /tmp/sbom-output.json
+            /tmp/setup-output.json
+            /tmp/setup-error.txt
             /tmp/iac-output.json
           retention-days: 7
           if-no-files-found: warn

@@ -101,6 +101,7 @@ For more information, visit: https://github.com/datadog-labs/datadog-code-securi
 		newScanCmd(),         // Direct scan mode
 		newGenerateSBOMCmd(), // SBOM generation
 		newVersionCmd(),      // Version info
+		newSetupCmd(),        // AI client skill installation
 	)
 
 	// Execute root command. When RunE returns an error Cobra skips

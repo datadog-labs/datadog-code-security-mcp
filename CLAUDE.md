@@ -23,6 +23,7 @@ make mod            # Tidy and verify Go modules
 go run ./cmd/datadog-code-security-mcp version
 go run ./cmd/datadog-code-security-mcp scan all ./
 go run ./cmd/datadog-code-security-mcp start  # MCP server mode
+go run ./cmd/datadog-code-security-mcp setup --dry-run
 
 # Test specific package
 go test -v ./internal/auth/
@@ -238,8 +239,23 @@ Returns component list (name, version, license)
 - `main.go`: Cobra setup, routes to subcommands
 - `start.go`: MCP server mode (STDIO transport), registers MCP tools
 - `scan.go`: Direct scan CLI mode (no MCP)
+- `setup.go`: Detects AI clients and installs embedded skills
 - `generate-sbom.go`: SBOM generation CLI mode
 - `version.go`: Version info injected at build time via ldflags
+
+**`internal/setup/`** - AI client detection and skill lifecycle
+
+- `clients.go`: Declarative Claude Code, Cursor, and Codex registry
+- `detect.go`: Testable PATH and user-home marker detection
+- `skills.go`: Recursive embedded-skill installation and marker-safe pruning
+- `setup.go`: Per-client plan-then-execute reconcile and structured results
+
+**`skills/`** - Skills embedded into release binaries
+
+- `embed.go`: Recursively embeds every `datadog-*` skill tree
+- `datadog-code-security-remediation/`: Scan/fix/verify workflow and domain playbooks
+- `datadog-code-security-verification/`: Datadog platform enrichment workflow
+- `datadog-code-security-toolchain/`: Scanner diagnosis and installation guidance
 
 **`internal/types/`** - Centralized type definitions
 
@@ -307,6 +323,18 @@ The codebase supports multiple Datadog binaries with **different GitHub release 
 - Provides platform-specific installation instructions when binaries not found
 
 **When adding new binaries**: Specify the `NamingConvention` in `BinaryConfigs` and ensure `SupportedPlatforms` use the correct arch names for that convention.
+
+### Managed Skills Contract
+
+Every skill installed by `setup` carries `.datadog-managed.json`. That marker,
+not the directory name, is the sole authority for updates and deletion:
+
+- Never overwrite an existing skill directory without our valid marker.
+- Never prune by a `datadog-` prefix.
+- Skip dot-directories such as Codex's `.system/`.
+- Prune only direct child directories marked as managed by
+  `datadog-code-security-mcp`.
+- Treat nested `references/` as part of the marked skill tree.
 
 ## Code Patterns
 

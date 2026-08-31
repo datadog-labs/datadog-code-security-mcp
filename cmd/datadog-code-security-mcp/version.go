@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -24,7 +26,7 @@ This command displays:
 - datadog-code-security-mcp version, commit, and build time
 - Go runtime version
 - Operating system and architecture
-- datadog-static-analyzer version (if installed)
+- Status, location, and version of every required scanner binary
 
 Examples:
   # Basic version info
@@ -35,7 +37,7 @@ Examples:
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			start := time.Now()
-			err := printVersion(ctx, detailed)
+			err := printVersion(ctx, cmd.OutOrStdout(), detailed)
 			trackOperation(ctx, telemetry.OperationEvent{
 				Interface: telemetry.InterfaceCLI,
 				Operation: "version",
@@ -52,44 +54,54 @@ Examples:
 	return cmd
 }
 
-func printVersion(ctx context.Context, detailed bool) error {
+func printVersion(ctx context.Context, writer io.Writer, detailed bool) error {
+	var output strings.Builder
+	write := func(format string, args ...any) {
+		_, _ = fmt.Fprintf(&output, format, args...)
+	}
+
 	// Basic version info
-	fmt.Printf("datadog-code-security-mcp version: %s\n", version)
-	fmt.Printf("commit: %s\n", commit)
-	fmt.Printf("built: %s\n", buildTime)
+	write("datadog-code-security-mcp version: %s\n", version)
+	write("commit: %s\n", commit)
+	write("built: %s\n", buildTime)
 
 	if !detailed {
-		return nil
+		_, err := io.WriteString(writer, output.String())
+		return err
 	}
 
 	// Runtime information
-	fmt.Println()
-	fmt.Println("Runtime Information:")
-	fmt.Printf("  Go version: %s\n", runtime.Version())
-	fmt.Printf("  OS/Arch: %s/%s\n", runtime.GOOS, runtime.GOARCH)
-	fmt.Printf("  Num CPU: %d\n", runtime.NumCPU())
+	write("\nRuntime Information:\n")
+	write("  Go version: %s\n", runtime.Version())
+	write("  OS/Arch: %s/%s\n", runtime.GOOS, runtime.GOARCH)
+	write("  Num CPU: %d\n", runtime.NumCPU())
 
 	// Scanner status
-	fmt.Println()
-	fmt.Println("Scanner Status:")
+	write("\nScanner Status:\n")
 
-	// Check if datadog-static-analyzer is installed
-	bm := binary.NewBinaryManager()
-	binaryPath, err := bm.GetBinaryPath(ctx)
+	for index, binaryType := range binary.OrderedBinaryTypes() {
+		if index > 0 {
+			write("\n")
+		}
 
-	if err != nil {
-		fmt.Println("  datadog-static-analyzer: ❌ NOT INSTALLED")
-		fmt.Println()
-		fmt.Println("Installation required:")
-		fmt.Println(err.Error())
-	} else {
-		fmt.Printf("  datadog-static-analyzer: ✅ INSTALLED\n")
-		fmt.Printf("  Location: %s\n", binaryPath)
+		config := binary.BinaryConfigs[binaryType]
+		manager := binary.NewManager(binaryType)
+		binaryPath, err := manager.GetBinaryPath(ctx)
+		if err != nil {
+			write("  %s: ❌ NOT INSTALLED\n", config.BinaryName)
+			write("\nInstallation required:\n")
+			write("%s\n", err.Error())
+			continue
+		}
 
-		// Try to get scanner version
-		// Note: We don't implement version detection in v1.0, just show it's installed
-		fmt.Println("  Capabilities: SAST, Secrets Detection")
+		write("  %s: ✅ INSTALLED\n", config.BinaryName)
+		write("  Location: %s\n", binaryPath)
+		probeCtx, cancel := context.WithTimeout(ctx, binary.VersionProbeTimeout)
+		binaryVersion := manager.GetVersion(probeCtx)
+		cancel()
+		write("  Version: %s\n", binaryVersion)
 	}
 
-	return nil
+	_, err := io.WriteString(writer, output.String())
+	return err
 }

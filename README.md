@@ -37,7 +37,57 @@ sudo install -m 755 datadog-code-security-mcp /usr/local/bin/
 
 ```bash
 datadog-code-security-mcp version
+datadog-code-security-mcp version --detailed # Include every required scanner
 ```
+
+### Install AI Client Skills
+
+The binary ships three skills for Claude Code, Cursor, and Codex:
+
+- **Remediation** — scans local code, loads a focused SAST, Secrets, SCA, or
+  IaC playbook, applies approved fixes, and rescans to verify them.
+- **Verification** — enriches a current local finding with Datadog platform
+  context when a Datadog MCP server is available.
+- **Toolchain** — diagnoses missing scanner binaries and relays the CLI's
+  platform-specific installation instructions with confirmation guardrails.
+
+Install them for every detected client:
+
+```bash
+datadog-code-security-mcp setup
+```
+
+Useful options:
+
+```bash
+# Preview without writing files
+datadog-code-security-mcp setup --dry-run
+
+# Restrict setup to one or more clients
+datadog-code-security-mcp setup --client cursor --client codex
+
+# Remove only skills managed by this binary
+datadog-code-security-mcp setup --remove-skills
+
+# Remove Datadog skills from Cursor only
+datadog-code-security-mcp setup --client cursor --remove-skills
+
+# Machine-readable report
+datadog-code-security-mcp setup --json
+```
+
+Setup detects `claude`, `cursor`/`cursor-agent`, and `codex` on `PATH`, plus
+their user configuration directories. It installs into `~/.claude/skills`,
+`~/.cursor/skills`, and `~/.codex/skills`, then asks you to restart updated
+clients. The accepted `--client` IDs are `claude-code`, `cursor`, and `codex`.
+
+The skills prefer the structured local Code Security MCP tools when available
+and fall back to `datadog-code-security-mcp ... --json`, so skill installation
+does not require MCP registration. Setup does not modify MCP configuration.
+
+The remediation skill never scans after every edit. It runs when explicitly
+asked or when verifying a backend finding; after a task changes security-
+relevant files it offers one changed-file scan and waits for confirmation.
 
 **⚠️ Requirements:**
 

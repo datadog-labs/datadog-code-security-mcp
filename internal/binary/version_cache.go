@@ -3,10 +3,7 @@ package binary
 import (
 	"context"
 	"sync"
-	"time"
 )
-
-const versionProbeTimeout = 2 * time.Second
 
 type binaryVersionTarget struct {
 	name       string
@@ -15,7 +12,8 @@ type binaryVersionTarget struct {
 
 func binaryVersionTargets() []binaryVersionTarget {
 	targets := make([]binaryVersionTarget, 0, len(BinaryConfigs))
-	for binaryType, config := range BinaryConfigs {
+	for _, binaryType := range OrderedBinaryTypes() {
+		config := BinaryConfigs[binaryType]
 		targets = append(targets, binaryVersionTarget{
 			name:       config.TelemetryKey,
 			binaryType: binaryType,
@@ -88,7 +86,7 @@ func (c *BinaryVersionCache) Refresh() {
 func (c *BinaryVersionCache) probe(target binaryVersionTarget) {
 	defer c.wg.Done()
 
-	ctx, cancel := context.WithTimeout(c.ctx, versionProbeTimeout)
+	ctx, cancel := context.WithTimeout(c.ctx, VersionProbeTimeout)
 	defer cancel()
 	version := c.getVersion(ctx, target.binaryType)
 	if version == "" {
