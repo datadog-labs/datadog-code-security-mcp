@@ -10,13 +10,26 @@ the two sources.
 
 ## Ordering
 
-1. Run the relevant local Code Security scan first. Prefer the local Datadog
-   Code Security MCP tool; fall back to `datadog-code-security-mcp scan
-   <type> <path> --json`.
+Choose the order from the information supplied:
+
+- **Datadog finding URL or ID without a known local file:** query the Datadog
+  MCP first to identify the repository, file, line, rule, and detection type.
+  Use this initial response only to locate the relevant code and choose the
+  local scan; it is not evidence that the current checkout is vulnerable.
+  Match the reported repository and file to the current checkout without
+  guessing. If they cannot be matched safely, ask the user for the checkout or
+  file instead of scanning the entire repository.
+- **Known local file or finding:** run the relevant local Code Security scan
+  first.
+
+Once the local target is known:
+
+1. Run the narrowest relevant local scan. Prefer the local Datadog Code
+   Security MCP tool; fall back to `datadog-code-security-mcp scan <type>
+   <path> --json`.
 2. Treat the local result as authoritative for the code currently on disk.
-3. If a Datadog MCP server is available, query it for the matching repository,
-   file, rule, vulnerability or package.
-4. Present platform data only as enrichment: triage state, first/last seen,
+3. Use the initial Datadog response, and query the Datadog MCP again only when
+   needed, to enrich the result with triage state, first/last seen,
    service/repository exposure, owner, and remediation status.
 
 Platform data must never override or suppress a current local finding. A

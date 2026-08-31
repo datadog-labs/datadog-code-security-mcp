@@ -18,6 +18,12 @@ Run this workflow only in these cases:
    In this case, **offer once; never scan without an affirmative answer**:
    "I modified `<files>`; want me to scan them for security issues?"
 
+For case 2, when the link does not already provide a known local file, use the
+finding-verification workflow to query Datadog first and identify the
+repository, file, line, rule, and detection type. Then run the narrowest
+matching local scan. Do not scan the entire repository merely to discover
+which file the backend finding refers to.
+
 For case 3:
 
 - Offer only at task completion, never after each edit.
