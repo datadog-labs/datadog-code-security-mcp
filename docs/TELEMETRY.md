@@ -65,6 +65,10 @@ Every scan emits **one telemetry event per scan type** plus, when multiple types
 | `paths_count`              | Number of file paths passed to the scan                                                          |
 | `output_format`            | `human` or `json` — CLI events only                                                              |
 
+SAST includes LOW findings by default. When the caller selects a higher
+minimum severity, `findings_count` and `severity_breakdown` reflect the
+filtered result. In-source-suppressed results remain excluded.
+
 **Aggregate event only** (`code_security_scan`):
 
 | Field | Description |

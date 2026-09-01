@@ -704,7 +704,7 @@ func TestRunDirectScan_InvalidScanTypeUsesSentinel(t *testing.T) {
 	// positional args are misused. Already lowercase so it survives the
 	// strings.ToLower normalization in runDirectScan unchanged.
 	rawArg := "/tmp/super-secret-token-abc123"
-	err := runDirectScan(rawArg, []string{"."}, "", false)
+	err := runDirectScan(rawArg, []string{"."}, "", false, types.SeverityLow)
 	if err == nil {
 		t.Fatal("expected an error for an invalid scan type")
 	}

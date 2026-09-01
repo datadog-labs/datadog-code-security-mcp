@@ -109,19 +109,11 @@ Every installed skill root gets `.datadog-managed.json`. This marker is the
 5. Add CLI flag in `cmd/scan.go`
 6. Add MCP tool in `cmd/start.go` → `registerSecurityTools()`
 
-**Example: SAST vs Secrets (both use BaseStaticAnalyzerScanner)**
+**Example: configurable SAST severity threshold**
 ```go
-// SAST scanner with severity filtering
-func NewSASTScanner(binMgr *binary.BinaryManager) Scanner {
-    return &BaseStaticAnalyzerScanner{
-        config: ScannerConfig{
-            DetectionType: types.DetectionTypeSAST,
-            FilterViolations: func(v types.Violation) bool {
-                return v.Severity != types.SeverityLow
-            },
-        },
-        binaryManager: binMgr,
-    }
+args := ScanArgs{
+    FilePaths:   []string{"./src"},
+    MinSeverity: types.SeverityHigh, // Omit for LOW and above.
 }
 ```
 
@@ -142,7 +134,7 @@ The codebase uses a **template method pattern** for scanners that share common l
   - Handles: binary execution, SARIF parsing, error handling
 
 - **Specialized Scanners** (extend base or implement Scanner interface)
-  - `SASTScanner` - Filters out low-severity findings
+  - `SASTScanner` - Applies the requested severity threshold (LOW by default)
   - `SecretsScanner` - Filters by confidence level
   - `SCAScanner` - Uses different binary (datadog-security-cli), custom parsing
 

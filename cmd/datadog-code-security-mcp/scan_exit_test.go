@@ -74,6 +74,33 @@ func TestRenderScanResult_ExitConsistentAcrossFormats(t *testing.T) {
 	}
 }
 
+func TestScanCommandMinSeverityDefaultsToLow(t *testing.T) {
+	flag := newScanCmd().Flags().Lookup("min-severity")
+	if flag == nil {
+		t.Fatal("min-severity flag is not registered")
+	}
+	if flag.DefValue != types.SeverityLow {
+		t.Fatalf("min-severity default = %q, want %q", flag.DefValue, types.SeverityLow)
+	}
+}
+
+func TestRenderScanResult_LowFindingControlsExit(t *testing.T) {
+	result := &scan.ScanResult{
+		Summary: types.ScanSummary{Total: 1, Low: 1},
+		Results: map[types.DetectionType][]types.Violation{
+			types.DetectionTypeSAST: {
+				{Severity: types.SeverityLow, DetectionType: types.DetectionTypeSAST},
+			},
+		},
+	}
+
+	withSuppressedStdout(t, func() {
+		if err := renderScanResult(result, "sast", true); !errors.Is(err, errViolationsFound) {
+			t.Fatalf("err = %v, want errViolationsFound", err)
+		}
+	})
+}
+
 // TestRenderLibraryScanResult_ExitConsistentAcrossFormats is the same guard for
 // the library-scan path, which had the identical early-return shape.
 func TestRenderLibraryScanResult_ExitConsistentAcrossFormats(t *testing.T) {

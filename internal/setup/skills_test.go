@@ -1,9 +1,11 @@
 package setup
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -28,9 +30,12 @@ func mustApplyPlan(t *testing.T, dest, version string, desired []string, now tim
 	if err != nil {
 		t.Fatal(err)
 	}
-	applied, err := applySkills(dest, ops)
+	applied, warnings, err := applySkills(dest, ops)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if len(warnings) != 0 {
+		t.Fatalf("unexpected apply warnings: %v", warnings)
 	}
 	return applied
 }
@@ -129,6 +134,41 @@ func TestStageSkillFailureLeavesNoPartialDirectory(t *testing.T) {
 	}
 }
 
+func TestReplaceSkillCleanupFailureKeepsUpdateAndReturnsWarning(t *testing.T) {
+	root := t.TempDir()
+	skillPath := filepath.Join(root, "datadog-remediation")
+	stagedPath := filepath.Join(root, ".staged")
+	if err := os.MkdirAll(skillPath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skillPath, "SKILL.md"), []byte("old"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(stagedPath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(stagedPath, "SKILL.md"), []byte("new"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	warning, err := replaceSkillWithCleanup(stagedPath, skillPath, func(string) error {
+		return errors.New("backup is locked")
+	})
+	if err != nil {
+		t.Fatalf("replaceSkillWithCleanup() error = %v", err)
+	}
+	if !strings.Contains(warning, "could not remove backup") {
+		t.Fatalf("warning = %q", warning)
+	}
+	content, err := os.ReadFile(filepath.Join(skillPath, "SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(content) != "new" {
+		t.Fatalf("active skill content = %q, want new", content)
+	}
+}
+
 func TestPlanSkillsRefusesSymlinkedSkillDirectory(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("symlink creation requires additional privileges on Windows")
@@ -200,9 +240,12 @@ func TestPlanPruneRemovesOnlyStaleManagedSkills(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	applied, err := applySkills(dest, ops)
+	applied, warnings, err := applySkills(dest, ops)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if len(warnings) != 0 {
+		t.Fatalf("unexpected apply warnings: %v", warnings)
 	}
 	if len(applied) != 1 || applied[0].SkillID != "datadog-stale" {
 		t.Fatalf("prune changes = %+v", applied)

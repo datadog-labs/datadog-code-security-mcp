@@ -21,7 +21,7 @@ type FilterConfig struct {
 
 // Default configuration values
 const (
-	DefaultMinSeverity   = types.SeverityMedium
+	DefaultMinSeverity   = types.SeverityLow
 	DefaultFilterEnabled = true
 )
 
@@ -39,7 +39,7 @@ func NewSASTScanner(binMgr *binary.BinaryManager) *SASTScanner {
 			},
 		},
 		filterConfig: FilterConfig{
-			MinSeverity: DefaultMinSeverity, // Default: filter out LOW severity
+			MinSeverity: DefaultMinSeverity,
 			Enabled:     DefaultFilterEnabled,
 		},
 	}
@@ -55,7 +55,11 @@ func (s *SASTScanner) Execute(ctx context.Context, args ScanArgs) (ScannerResult
 
 	// Apply SAST-specific severity filtering
 	if s.filterConfig.Enabled {
-		res.Findings = s.filterBySeverity(res.Findings, s.filterConfig.MinSeverity)
+		minSeverity := args.MinSeverity
+		if minSeverity == "" {
+			minSeverity = s.filterConfig.MinSeverity
+		}
+		res.Findings = s.filterBySeverity(res.Findings, minSeverity)
 	}
 
 	return res, nil

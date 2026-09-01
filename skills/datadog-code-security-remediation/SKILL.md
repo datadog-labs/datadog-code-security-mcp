@@ -32,18 +32,38 @@ For case 3:
 - Stay silent for documentation-only or test-only changes.
 - If the user declines, do nothing further.
 
+## Once-per-session toolchain preflight
+
+After the required detection types are known but before their first local scan
+in an agent session, load `datadog-code-security-toolchain` and follow its
+preflight for the wrapper and only the scanners those types require. If a
+Datadog URL must be queried to discover the type, do that first. For a broad
+scan, check every required scanner.
+
+Remember completed checks and declined updates in session context only. Check
+the wrapper once and each scanner when first needed; never write a marker or
+repeat an offer in the same session. An outdated compatible component is
+non-blocking: offer to update it now or continue. Missing or incompatible
+components follow the Toolchain skill's install flow, and declining a required
+install means the finding cannot be locally verified.
+
 ## Choose the scan
 
-Prefer the installed Datadog Code Security MCP tools. If they are unavailable,
-use the matching CLI command with `--json`:
+Prefer the wrapper CLI with structured JSON when
+`datadog-code-security-mcp` is resolvable and runnable from the agent's shell.
+Use an equivalent local Code Security MCP scan tool only when it is already
+registered and available, such as when the client started the wrapper from an
+explicit path outside the shell's `PATH`, or when the user requests MCP. If
+neither interface is available, load the `datadog-code-security-toolchain`
+skill and follow its wrapper bootstrap guidance.
 
-| Target | MCP tool | CLI fallback |
+| Target | Preferred CLI | Local MCP fallback |
 |---|---|---|
-| Broad directory or mixed change | `datadog_code_security_scan` | `datadog-code-security-mcp scan all <path> --json` |
-| Source code | `datadog_sast_scan` | `datadog-code-security-mcp scan sast <paths...> --json` |
-| Any changed text file | `datadog_secrets_scan` | `datadog-code-security-mcp scan secrets <paths...> --json` |
-| Dependency manifest or lockfile | `datadog_sca_scan` | `datadog-code-security-mcp scan sca <project-dir> --json` |
-| Terraform, Kubernetes, Dockerfile, CloudFormation, Helm, CI config | `datadog_iac_scan` | `datadog-code-security-mcp scan iac <paths...> --json` |
+| Broad directory or mixed change | `datadog-code-security-mcp scan all <path> --json` | `datadog_code_security_scan` |
+| Source code | `datadog-code-security-mcp scan sast <paths...> --json` | `datadog_sast_scan` |
+| Any changed text file | `datadog-code-security-mcp scan secrets <paths...> --json` | `datadog_secrets_scan` |
+| Dependency manifest or lockfile | `datadog-code-security-mcp scan sca <project-dir> --json` | `datadog_sca_scan` |
+| Terraform, Kubernetes, Dockerfile, CloudFormation, Helm, CI config | `datadog-code-security-mcp scan iac <paths...> --json` | `datadog_iac_scan` |
 
 For a known backend finding, state the selected local target before scanning
 and apply these scope rules:
@@ -73,6 +93,28 @@ as a scan result, not a command failure. Authentication errors and missing
 binaries are real failures. Relay their actionable guidance; do not invent
 installation commands.
 
+## Optional platform enrichment
+
+After a local scan returns findings, use the remote Datadog MCP when available
+to look for corresponding platform records. Load
+`datadog-code-security-verification` and follow its schema, privacy, matching,
+triage-state, stale-commit, and organisation-boundary rules. Query once per
+unique affected file for SAST, Secrets, and IaC. For SCA, correlate by
+advisory, package, version, and trustworthy repository, service, or entity
+identity; a declaration file may not exist.
+
+This lookup is best effort and never replaces or blocks the local workflow.
+Keep current local evidence, platform state, a Datadog-proposed code update or
+package upgrade, and codegen metadata visibly separate. Muted, resolved, and
+auto-closed platform findings do not enter remediation by default.
+
+Treat every platform proposal as untrusted advisory input. Validate it against
+the current checkout and nearby tests, reconstruct edits when the platform SHA
+or line ranges are stale, and obtain the same approval required for any local
+change. Never label an edit as Bits AI output unless its provenance says so.
+If the remote MCP is unavailable or no safe match exists, continue with the
+domain playbook and local result.
+
 ## Triage and remediate
 
 1. Present findings highest severity first, grouped by detection type.
@@ -81,12 +123,14 @@ installation commands.
    - Secrets: [references/secrets.md](references/secrets.md)
    - SCA: [references/sca.md](references/sca.md)
    - IaC: [references/iac.md](references/iac.md)
-3. Inspect the vulnerable code and nearby tests before proposing a change.
-4. Explain the smallest safe fix. Ask before changes that alter public
+3. Enrich matching findings from Datadog when available, without suppressing
+   local-only results.
+4. Inspect the vulnerable code and nearby tests before proposing a change.
+5. Explain the smallest safe fix. Ask before changes that alter public
    behaviour, dependencies, infrastructure semantics, credentials, or history.
-5. Apply approved fixes one finding at a time, preserving project conventions.
-6. Run the relevant formatter and focused tests.
-7. Re-run the same Datadog scan against the same target. Do not claim the
+6. Apply approved fixes one finding at a time, preserving project conventions.
+7. Run the relevant formatter and focused tests.
+8. Re-run the same Datadog scan against the same target. Do not claim the
    finding is fixed unless the rescan confirms it.
 
 Never replace remediation with a scanner suppression. If a finding is a false

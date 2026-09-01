@@ -88,8 +88,8 @@ func TestNewSASTScanner_DefaultConfig(t *testing.T) {
 	binMgr := binary.NewBinaryManager()
 	s := NewSASTScanner(binMgr)
 
-	if s.filterConfig.MinSeverity != "MEDIUM" {
-		t.Errorf("Expected default MinSeverity=MEDIUM, got %s", s.filterConfig.MinSeverity)
+	if s.filterConfig.MinSeverity != "LOW" {
+		t.Errorf("Expected default MinSeverity=LOW, got %s", s.filterConfig.MinSeverity)
 	}
 
 	if !s.filterConfig.Enabled {
@@ -144,19 +144,12 @@ func TestSASTScanner_FilteringWithDifferentSeverities(t *testing.T) {
 		{Severity: "LOW", Rule: "low4"},
 	}
 
-	// Test default behavior (MEDIUM and above)
+	// Test default behavior (LOW and above)
 	filtered := s.filterBySeverity(findings, s.filterConfig.MinSeverity)
 
-	// Should filter out 4 LOW findings
-	expectedCount := 11 - 4 // Total - LOW count
+	// All scanner severities are visible by default.
+	expectedCount := len(findings)
 	if len(filtered) != expectedCount {
-		t.Errorf("Expected %d findings with default filter (MEDIUM), got %d", expectedCount, len(filtered))
-	}
-
-	// Verify no LOW severity in results
-	for _, f := range filtered {
-		if f.Severity == "LOW" {
-			t.Error("Found LOW severity finding in filtered results, should have been filtered out")
-		}
+		t.Errorf("Expected %d findings with default filter (LOW), got %d", expectedCount, len(filtered))
 	}
 }

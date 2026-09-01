@@ -38,9 +38,10 @@ type Vulnerability struct {
 
 // ScanArgs contains the input parameters for a security scan
 type ScanArgs struct {
-	FilePaths  []string `json:"file_paths" jsonschema:"description=Paths to files or directories to scan. Relative paths are resolved against working_dir"`
-	WorkingDir string   `json:"working_dir,omitempty" jsonschema:"description=Working directory for the scan. Default: current directory"`
-	ScanTypes  []string `json:"scan_types,omitempty" jsonschema:"description=Types of scans to run: sast, secrets. Default: all scan types"`
+	FilePaths   []string `json:"file_paths" jsonschema:"description=Paths to files or directories to scan. Relative paths are resolved against working_dir"`
+	WorkingDir  string   `json:"working_dir,omitempty" jsonschema:"description=Working directory for the scan. Default: current directory"`
+	ScanTypes   []string `json:"scan_types,omitempty" jsonschema:"description=Types of scans to run: sast, secrets. Default: all scan types"`
+	MinSeverity string   `json:"min_severity,omitempty" jsonschema:"description=Minimum SAST severity to return: LOW, MEDIUM, HIGH, or CRITICAL. Default: LOW"`
 }
 
 // ScanSummary provides aggregated statistics about scan results

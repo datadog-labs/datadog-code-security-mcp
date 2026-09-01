@@ -37,31 +37,26 @@ make build-all      # Outputs to dist/
 
 When working on a feature branch, test your changes with Claude Desktop before pushing:
 
-### ⚠️ IMPORTANT: Prefer MCP Tools Over CLI
+### ⚠️ IMPORTANT: Prefer CLI JSON for Skill Workflows
 
-**When the user asks you to run scans or test functionality, ALWAYS use the MCP tools if available, NOT the CLI commands.** The MCP tools are the primary interface for this project and represent the actual user experience.
+For remediation and verification workflows, prefer the exact installed
+`datadog-code-security-mcp scan ... --json` CLI. Use a registered local MCP
+scan tool when the wrapper is unavailable from the agent shell, when the user
+requests MCP, or when testing MCP interface parity. The remote Datadog MCP is
+for platform context and does not replace a local scan.
 
-**Available MCP Tools (use these first):**
+**Available local MCP compatibility tools:**
 
-- `mcp__datadog-code-security__datadog_code_security_scan` - Comprehensive scan (SAST + Secrets + SCA)
+- `mcp__datadog-code-security__datadog_code_security_scan` - Comprehensive scan (SAST + Secrets + SCA + IaC)
 - `mcp__datadog-code-security__datadog_sast_scan` - SAST only
 - `mcp__datadog-code-security__datadog_secrets_scan` - Secrets only
 - `mcp__datadog-code-security__datadog_sca_scan` - SCA only
+- `mcp__datadog-code-security__datadog_iac_scan` - IaC only
 - `mcp__datadog-code-security__datadog_generate_sbom` - Generate SBOM
 
-**CLI Commands (for development/debugging only):**
-
-Use CLI commands (`go run ./cmd/datadog-code-security-mcp ...`) ONLY when:
-
-- Testing the CLI interface specifically
-- Debugging binary execution issues
-- MCP tools are not working or not available
-- Running in CI/CD pipelines
-
-**Example:**
-
-- ❌ Wrong: `go run ./cmd/datadog-code-security-mcp scan all ./`
-- ✅ Correct: Use `mcp__datadog-code-security__datadog_code_security_scan` tool
+Build the wrapper first when testing local source changes. Exercise the CLI
+JSON path as the primary skill interface and run focused checks through the
+tools above when changing handlers or schemas.
 
 ### Step 1: Build the binary
 
@@ -268,7 +263,7 @@ Returns component list (name, version, license)
 - `scan.go`: Main entry point, input validation, coordinates scanners
 - `executor.go`: **Parallel scan execution** with goroutines, error aggregation
 - `base_static_analyzer.go`: **Template method pattern** for SAST/Secrets scanners
-- `sast.go`: SAST scanner with severity filtering (extends base)
+- `sast.go`: SAST scanner with configurable severity filtering, LOW by default (extends base)
 - `secrets.go`: Secrets scanner with confidence filtering (extends base)
 - `sca.go`: **SCA scanner (two-step process)**:
   - Step 1: Calls `internal/sbom/generator.go` to generate SBOM

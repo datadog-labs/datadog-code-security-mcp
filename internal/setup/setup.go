@@ -33,6 +33,7 @@ type ClientResult struct {
 	Reason      string        `json:"reason,omitempty"`
 	SkillsDir   string        `json:"skills_dir"`
 	Changes     []SkillChange `json:"changes,omitempty"`
+	Warnings    []string      `json:"warnings,omitempty"`
 }
 
 // ClientStatus describes the outcome of applying setup to one client.
@@ -110,8 +111,9 @@ func reconcileClient(client Client, options Options, execute bool) ClientResult 
 		return clientResult
 	}
 
-	applied, err := applySkills(clientResult.SkillsDir, ops)
+	applied, warnings, err := applySkills(clientResult.SkillsDir, ops)
 	clientResult.Changes = applied
+	clientResult.Warnings = warnings
 	if err != nil {
 		clientResult.Status = ClientStatusFailed
 		clientResult.Reason = err.Error()

@@ -32,8 +32,9 @@ const invalidScanType = "invalid_scan"
 
 func newScanCmd() *cobra.Command {
 	var (
-		workingDir string
-		outputJSON bool
+		workingDir  string
+		outputJSON  bool
+		minSeverity string
 	)
 
 	cmd := &cobra.Command{
@@ -61,6 +62,9 @@ Examples:
   # Scan source directory for SAST issues
   datadog-code-security-mcp scan sast ./src
 
+  # Return only HIGH and CRITICAL SAST findings
+  datadog-code-security-mcp scan sast ./src --min-severity HIGH
+
   # Scan config files for hardcoded secrets
   datadog-code-security-mcp scan secrets ./config
 
@@ -76,12 +80,13 @@ Examples:
 		RunE: func(cmd *cobra.Command, args []string) error {
 			scanType := args[0]
 			paths := args[1:]
-			return runDirectScan(scanType, paths, workingDir, outputJSON)
+			return runDirectScan(scanType, paths, workingDir, outputJSON, minSeverity)
 		},
 	}
 
 	cmd.Flags().StringVarP(&workingDir, "working-dir", "w", "", "Working directory for resolving relative paths (defaults to current directory)")
 	cmd.Flags().BoolVarP(&outputJSON, "json", "j", false, "Output results in JSON format")
+	cmd.Flags().StringVar(&minSeverity, "min-severity", types.SeverityLow, "Minimum SAST severity to return: LOW, MEDIUM, HIGH, or CRITICAL (ignored when SAST is not selected)")
 
 	cmd.AddCommand(newLibraryScanCmd())
 
@@ -122,7 +127,7 @@ func resolveScanTypes(scanType string) ([]string, error) {
 	}
 }
 
-func runDirectScan(scanType string, paths []string, workingDir string, outputJSON bool) error {
+func runDirectScan(scanType string, paths []string, workingDir string, outputJSON bool, minSeverity string) error {
 	ctx := context.Background()
 	start := time.Now()
 	authMethod := loadAuthToEnv(ctx)
@@ -172,9 +177,10 @@ func runDirectScan(scanType string, paths []string, workingDir string, outputJSO
 	}
 
 	scanArgs := scan.ScanArgs{
-		FilePaths:  paths,
-		WorkingDir: workingDir,
-		ScanTypes:  scanTypes,
+		FilePaths:   paths,
+		WorkingDir:  workingDir,
+		ScanTypes:   scanTypes,
+		MinSeverity: minSeverity,
 	}
 
 	outcome := scan.ExecuteScan(ctx, scanArgs)

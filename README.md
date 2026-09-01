@@ -13,6 +13,10 @@ Datadog Code Security MCP provides all Code Security scan tools to AI coding ass
 5. **`datadog_iac_scan`** - Infrastructure as code scanning
 6. **`datadog_generate_sbom`** - Generate Software Bill of Materials (SBOM)
 
+`datadog_code_security_scan` and `datadog_sast_scan` accept optional
+`min_severity` (`LOW`, `MEDIUM`, `HIGH`, or `CRITICAL`). It affects SAST only
+and defaults to `LOW`; in-source-suppressed findings remain excluded.
+
 ## Quick Start
 
 ### Installation
@@ -29,8 +33,20 @@ brew install datadog-labs/pack/datadog-code-security-mcp
 
 ```bash
 # macOS / Linux (auto-detects platform)
-curl -L "https://github.com/datadog-labs/datadog-code-security-mcp/releases/latest/download/datadog-code-security-mcp-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m).tar.gz" | tar xz
+OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
+case "$(uname -m)" in
+  x86_64)        ARCH="amd64" ;;
+  arm64|aarch64) ARCH="arm64" ;;
+  *) echo "Unsupported architecture: $(uname -m)" >&2; exit 1 ;;
+esac
+
+ASSET="datadog-code-security-mcp-${OS}-${ARCH}.tar.gz"
+curl -fL \
+  "https://github.com/datadog-labs/datadog-code-security-mcp/releases/latest/download/${ASSET}" \
+  -o "/tmp/${ASSET}"
+tar -xzf "/tmp/${ASSET}"
 sudo install -m 755 datadog-code-security-mcp /usr/local/bin/
+rm -f "/tmp/${ASSET}" datadog-code-security-mcp
 ```
 
 **Verify installation:**
@@ -45,9 +61,11 @@ datadog-code-security-mcp version --detailed # Include every required scanner
 The binary ships three Agent Skills for compatible AI coding clients:
 
 - **Remediation** — scans local code, loads a focused SAST, Secrets, SCA, or
-  IaC playbook, applies approved fixes, and rescans to verify them.
+  IaC playbook, optionally enriches matches with Datadog-proposed code or
+  package updates, applies approved fixes, and rescans to verify them.
 - **Verification** — enriches a current local finding with Datadog platform
-  context when a Datadog MCP server is available.
+  context when a Datadog MCP server is available. Platform proposals are
+  advisory and must be matched and verified against the current checkout.
 - **Toolchain** — diagnoses missing scanner binaries and relays the CLI's
   platform-specific installation instructions with confirmation guardrails.
 
@@ -84,9 +102,11 @@ user configuration directories and installs into `~/.claude/skills` and
 `~/.codex/skills` when present. It then asks you to restart updated clients.
 The accepted `--client` IDs are `agents`, `claude-code`, and `codex`.
 
-The skills prefer the structured local Code Security MCP tools when available
-and fall back to `datadog-code-security-mcp ... --json`, so skill installation
-does not require MCP registration. Setup does not modify MCP configuration.
+The skills prefer `datadog-code-security-mcp ... --json` from the local shell
+and use registered local Code Security MCP tools as a compatibility fallback,
+so skill installation does not require MCP registration. The remote Datadog
+MCP, when available, provides platform context rather than performing the
+authoritative local scan. Setup does not modify MCP configuration.
 
 The remediation skill never scans after every edit. It runs when explicitly
 asked or when verifying a backend finding; after a task changes security-
@@ -162,7 +182,7 @@ Once configured, ask your AI assistant to scan your code:
 
 - "Scan this directory for security vulnerabilities"
 - "Check if there are any hardcoded secrets in config/"
-- "Run a full security scan (SAST + Secrets + SCA)"
+- "Run a full security scan (SAST + Secrets + SCA + IaC)"
 - "Find all security issues in this project"
 
 **Dependency Analysis:**
@@ -175,13 +195,17 @@ Once configured, ask your AI assistant to scan your code:
 ## Direct Scanning with CLI
 
 ```bash
-# Comprehensive scan (SAST + Secrets + SCA in parallel)
+# Comprehensive scan (SAST + Secrets + SCA + IaC in parallel)
 datadog-code-security-mcp scan all ./src
 
 # Individual scan types
 datadog-code-security-mcp scan sast ./app      # SAST only
 datadog-code-security-mcp scan secrets ./config # Secrets only
 datadog-code-security-mcp scan sca ./           # SCA only (requires datadog-security-cli)
+datadog-code-security-mcp scan iac ./infra      # IaC only
+
+# SAST returns LOW and above by default; choose a higher threshold if desired
+datadog-code-security-mcp scan sast ./app --min-severity HIGH
 
 # SBOM generation
 datadog-code-security-mcp generate-sbom .           # Generate SBOM

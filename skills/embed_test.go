@@ -2,8 +2,13 @@ package skills
 
 import (
 	"io/fs"
+	"path"
+	"regexp"
+	"strings"
 	"testing"
 )
+
+var markdownLinkRE = regexp.MustCompile(`\[[^\]]+\]\(([^)]+)\)`)
 
 func TestFSContainsShippedSkills(t *testing.T) {
 	skillIDs := []string{
@@ -22,5 +27,42 @@ func TestFSContainsShippedSkills(t *testing.T) {
 		if _, err := fs.Stat(FS, path); err != nil {
 			t.Errorf("missing %s: %v", path, err)
 		}
+	}
+}
+
+func TestShippedSkillMarkdownLinksResolve(t *testing.T) {
+	err := fs.WalkDir(FS, ".", func(filename string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() || path.Ext(filename) != ".md" {
+			return nil
+		}
+
+		data, err := fs.ReadFile(FS, filename)
+		if err != nil {
+			return err
+		}
+		for _, match := range markdownLinkRE.FindAllStringSubmatch(string(data), -1) {
+			target := strings.TrimSpace(match[1])
+			if target == "" || strings.HasPrefix(target, "#") || strings.Contains(target, "://") {
+				continue
+			}
+			if fragment := strings.IndexByte(target, '#'); fragment >= 0 {
+				target = target[:fragment]
+			}
+			resolved := path.Clean(path.Join(path.Dir(filename), target))
+			if resolved == ".." || strings.HasPrefix(resolved, "../") {
+				t.Errorf("%s contains link outside embedded skills: %s", filename, match[1])
+				continue
+			}
+			if _, err := fs.Stat(FS, resolved); err != nil {
+				t.Errorf("%s contains unresolved link %s: %v", filename, match[1], err)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk embedded skills: %v", err)
 	}
 }

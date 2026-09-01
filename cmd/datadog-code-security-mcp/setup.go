@@ -115,9 +115,10 @@ func renderSetupResult(writer io.Writer, result setupcmd.Result, dryRun, outputJ
 		if err := renderClient(writer, client, dryRun); err != nil {
 			return err
 		}
-		if client.Status == setupcmd.ClientStatusApplied {
-			wroteSkills = wroteSkills || hasSkillWrites(client.Changes)
+		if err := renderWarnings(writer, client.Warnings); err != nil {
+			return err
 		}
+		wroteSkills = wroteSkills || hasSkillWrites(client.Changes)
 	}
 
 	if !detected {
@@ -141,8 +142,16 @@ func renderClient(writer io.Writer, client setupcmd.ClientResult, dryRun bool) e
 		_, err := fmt.Fprintf(writer, "○ %s: skipped (%s)\n", client.DisplayName, client.Reason)
 		return err
 	case setupcmd.ClientStatusFailed:
-		_, err := fmt.Fprintf(writer, "✗ %s: failed (%s)\n", client.DisplayName, client.Reason)
-		return err
+		if _, err := fmt.Fprintf(writer, "✗ %s: failed (%s)\n", client.DisplayName, client.Reason); err != nil {
+			return err
+		}
+		if len(client.Changes) == 0 {
+			return nil
+		}
+		if _, err := fmt.Fprintln(writer, "  Partial changes applied before failure:"); err != nil {
+			return err
+		}
+		return renderSkillChanges(writer, client.Changes, false)
 	case setupcmd.ClientStatusApplied:
 		if len(client.Changes) == 0 {
 			_, err := fmt.Fprintf(writer, "✓ %s: no changes\n", client.DisplayName)
@@ -163,6 +172,15 @@ func renderSkillChanges(writer io.Writer, changes []setupcmd.SkillChange, dryRun
 			action = "would be " + action
 		}
 		if _, err := fmt.Fprintf(writer, "  - %s: %s\n", change.SkillID, action); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func renderWarnings(writer io.Writer, warnings []string) error {
+	for _, warning := range warnings {
+		if _, err := fmt.Fprintf(writer, "  ⚠ %s\n", warning); err != nil {
 			return err
 		}
 	}

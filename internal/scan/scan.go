@@ -24,6 +24,12 @@ func ExecuteScan(ctx context.Context, args ScanArgs) *ScanOutcome {
 	}
 	args.ScanTypes = scanTypes
 
+	minSeverity, err := normalizeMinSeverity(args.MinSeverity)
+	if err != nil {
+		return NewFailedOutcome(scanTypes, err)
+	}
+	args.MinSeverity = minSeverity
+
 	// Validate inputs
 	if err := validateScanArgs(args); err != nil {
 		return NewFailedOutcome(scanTypes, err)
@@ -99,6 +105,17 @@ func validateScanArgs(args ScanArgs) error {
 	}
 
 	return nil
+}
+
+func normalizeMinSeverity(value string) (string, error) {
+	severity := strings.ToUpper(strings.TrimSpace(value))
+	if severity == "" {
+		return types.SeverityLow, nil
+	}
+	if _, ok := types.SeverityOrder[severity]; !ok {
+		return "", fmt.Errorf("invalid min_severity: %s (valid options: LOW, MEDIUM, HIGH, CRITICAL)", value)
+	}
+	return severity, nil
 }
 
 // parseScanTypes validates, normalizes, and deduplicates scan type strings.

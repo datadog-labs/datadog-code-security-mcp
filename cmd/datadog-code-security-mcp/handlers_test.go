@@ -15,6 +15,34 @@ func makeLibraryScanRequest(args any) mcp.CallToolRequest {
 	return req
 }
 
+func TestParseScanArgs_MinSeverity(t *testing.T) {
+	args, err := parseScanArgs(map[string]any{
+		"file_paths":   []any{"src"},
+		"min_severity": "HIGH",
+	})
+	if err != nil {
+		t.Fatalf("parseScanArgs() error = %v", err)
+	}
+	if args.MinSeverity != "HIGH" {
+		t.Fatalf("MinSeverity = %q, want HIGH", args.MinSeverity)
+	}
+}
+
+func TestParseScanArgs_RejectsNonStringMinSeverity(t *testing.T) {
+	for _, value := range []any{42, true, []any{"HIGH"}, map[string]any{"value": "HIGH"}} {
+		_, err := parseScanArgs(map[string]any{
+			"file_paths":   []any{"src"},
+			"min_severity": value,
+		})
+		if err == nil {
+			t.Fatalf("parseScanArgs() accepted min_severity value %#v", value)
+		}
+		if !strings.Contains(err.Error(), "min_severity must be a string") {
+			t.Fatalf("parseScanArgs() error = %q", err)
+		}
+	}
+}
+
 func TestHandleLibraryVulnerabilityScan_InvalidArguments(t *testing.T) {
 	req := makeLibraryScanRequest("not-a-map")
 	result, err := handleLibraryVulnerabilityScan(context.Background(), req)

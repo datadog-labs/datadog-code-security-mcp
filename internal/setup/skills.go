@@ -173,42 +173,47 @@ func planPrune(dest string, keep map[string]bool) ([]skillOp, error) {
 	return ops, nil
 }
 
-func applySkills(dest string, ops []skillOp) ([]SkillChange, error) {
+func applySkills(dest string, ops []skillOp) ([]SkillChange, []string, error) {
 	if skillDirRequired(ops) {
 		if err := os.MkdirAll(dest, 0o700); err != nil {
-			return nil, fmt.Errorf("create skills directory %s: %w", dest, err)
+			return nil, nil, fmt.Errorf("create skills directory %s: %w", dest, err)
 		}
 	}
 
 	var applied []SkillChange
+	var warnings []string
 	for _, op := range ops {
-		if err := applyOp(dest, op); err != nil {
-			return applied, err
+		warning, err := applyOp(dest, op)
+		if err != nil {
+			return applied, warnings, err
 		}
 		applied = append(applied, op.change)
+		if warning != "" {
+			warnings = append(warnings, warning)
+		}
 	}
-	return applied, nil
+	return applied, warnings, nil
 }
 
-func applyOp(dest string, op skillOp) error {
+func applyOp(dest string, op skillOp) (string, error) {
 	switch op.change.Action {
 	case SkillActionRemoved:
 		if err := os.RemoveAll(op.change.Path); err != nil {
-			return fmt.Errorf("remove stale managed skill %s: %w", op.change.Path, err)
+			return "", fmt.Errorf("remove stale managed skill %s: %w", op.change.Path, err)
 		}
-		return nil
+		return "", nil
 	case SkillActionInstalled, SkillActionUpdated:
 		if _, _, err := inspectExistingSkill(op.change.Path, op.change.SkillID); err != nil {
-			return err
+			return "", err
 		}
 		stagedPath, err := stageSkill(dest, op.change.SkillID, op.entries, op.marker)
 		if err != nil {
-			return err
+			return "", err
 		}
 		defer func() { _ = os.RemoveAll(stagedPath) }()
 		return replaceSkill(stagedPath, op.change.Path)
 	default:
-		return fmt.Errorf("unknown skill action %q", op.change.Action)
+		return "", fmt.Errorf("unknown skill action %q", op.change.Action)
 	}
 }
 
@@ -267,36 +272,40 @@ func stageSkill(dest, skillID string, entries []sourceEntry, marker ManagedMarke
 	return stagedPath, nil
 }
 
-func replaceSkill(stagedPath, skillPath string) error {
+func replaceSkill(stagedPath, skillPath string) (string, error) {
+	return replaceSkillWithCleanup(stagedPath, skillPath, os.RemoveAll)
+}
+
+func replaceSkillWithCleanup(stagedPath, skillPath string, cleanup func(string) error) (string, error) {
 	_, err := os.Lstat(skillPath)
 	if os.IsNotExist(err) {
 		if err := os.Rename(stagedPath, skillPath); err != nil {
-			return fmt.Errorf("install staged skill %s: %w", skillPath, err)
+			return "", fmt.Errorf("install staged skill %s: %w", skillPath, err)
 		}
-		return nil
+		return "", nil
 	}
 	if err != nil {
-		return fmt.Errorf("inspect skill destination %s: %w", skillPath, err)
+		return "", fmt.Errorf("inspect skill destination %s: %w", skillPath, err)
 	}
 
 	backupPath, err := reservePath(filepath.Dir(skillPath), "."+filepath.Base(skillPath)+".backup-")
 	if err != nil {
-		return fmt.Errorf("reserve skill backup path %s: %w", skillPath, err)
+		return "", fmt.Errorf("reserve skill backup path %s: %w", skillPath, err)
 	}
 
 	if err := os.Rename(skillPath, backupPath); err != nil {
-		return fmt.Errorf("back up managed skill %s: %w", skillPath, err)
+		return "", fmt.Errorf("back up managed skill %s: %w", skillPath, err)
 	}
 	if err := os.Rename(stagedPath, skillPath); err != nil {
 		if rollbackErr := os.Rename(backupPath, skillPath); rollbackErr != nil {
-			return fmt.Errorf("replace managed skill %s: %w (rollback failed: %v)", skillPath, err, rollbackErr)
+			return "", fmt.Errorf("replace managed skill %s: %w (rollback failed: %v)", skillPath, err, rollbackErr)
 		}
-		return fmt.Errorf("replace managed skill %s: %w", skillPath, err)
+		return "", fmt.Errorf("replace managed skill %s: %w", skillPath, err)
 	}
-	if err := os.RemoveAll(backupPath); err != nil {
-		return fmt.Errorf("remove managed skill backup %s: %w", backupPath, err)
+	if err := cleanup(backupPath); err != nil {
+		return fmt.Sprintf("updated managed skill %s but could not remove backup %s: %v", skillPath, backupPath, err), nil
 	}
-	return nil
+	return "", nil
 }
 
 // reservePath creates an exclusive sibling name by making a temporary

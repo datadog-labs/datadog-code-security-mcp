@@ -209,6 +209,63 @@ func TestRenderSetupResultDoesNotRestartAfterFailure(t *testing.T) {
 	}
 }
 
+func TestRenderSetupResultReportsPartialChangesAfterFailure(t *testing.T) {
+	var output bytes.Buffer
+	err := renderSetupResult(&output, setupcmd.Result{
+		Clients: []setupcmd.ClientResult{{
+			ClientID:    "agents",
+			DisplayName: "Agent Skills",
+			Status:      setupcmd.ClientStatusFailed,
+			Reason:      "install second skill: disk full",
+			Changes: []setupcmd.SkillChange{{
+				SkillID: "datadog-code-security-remediation",
+				Action:  setupcmd.SkillActionInstalled,
+			}},
+		}},
+	}, false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"Agent Skills: failed",
+		"Partial changes applied before failure:",
+		"datadog-code-security-remediation: installed",
+		"Restart updated clients",
+	} {
+		if !strings.Contains(output.String(), want) {
+			t.Fatalf("partial failure output %q does not contain %q", output.String(), want)
+		}
+	}
+}
+
+func TestRenderSetupResultReportsCleanupWarningAfterUpdate(t *testing.T) {
+	var output bytes.Buffer
+	err := renderSetupResult(&output, setupcmd.Result{
+		Clients: []setupcmd.ClientResult{{
+			ClientID:    "agents",
+			DisplayName: "Agent Skills",
+			Status:      setupcmd.ClientStatusApplied,
+			Changes: []setupcmd.SkillChange{{
+				SkillID: "datadog-code-security-remediation",
+				Action:  setupcmd.SkillActionUpdated,
+			}},
+			Warnings: []string{"updated skill but could not remove its backup"},
+		}},
+	}, false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"datadog-code-security-remediation: updated",
+		"⚠ updated skill but could not remove its backup",
+		"Restart updated clients",
+	} {
+		if !strings.Contains(output.String(), want) {
+			t.Fatalf("cleanup warning output %q does not contain %q", output.String(), want)
+		}
+	}
+}
+
 func names(entries []os.DirEntry) []string {
 	out := make([]string, len(entries))
 	for i, entry := range entries {

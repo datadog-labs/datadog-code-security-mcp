@@ -23,12 +23,24 @@ download URLs, archive names, architectures, or installation commands.
    current, check currency against each component's real release channel
    (see below). Installed version alone is not enough.
 
-If the wrapper itself is absent, the bootstrap commands are:
+When remediation or verification invokes this skill as a session preflight,
+check the wrapper only if it has not been checked in the current session and
+check only the scanners required by the selected detection types. Remember
+completed checks and declined updates in session context, never on disk. Return
+to the calling workflow after the user updates or chooses to continue.
+
+If the wrapper itself is absent and Homebrew is installed, offer:
 
 ```bash
 brew tap datadog-labs/pack
 brew install datadog-labs/pack/datadog-code-security-mcp
 ```
+
+If Homebrew is unavailable, retrieve and follow the current instructions for
+the detected operating system from the project's published
+[Installation section](https://github.com/datadog-labs/datadog-code-security-mcp#installation).
+Do not present Homebrew as a universal prerequisite or translate its commands
+into an invented Linux or Windows installation procedure.
 
 ## Currency
 
@@ -100,9 +112,11 @@ After an upgrade:
 1. Run the upgraded executable by exact path with `version --detailed`.
 2. Offer to run that same executable with `setup` so installed managed skills
    are refreshed from the new wrapper. Obtain confirmation before writing.
-3. Tell the user to restart the MCP client. Replacing the binary does not
-   update an already-running server process or a skill already loaded by the
-   client.
+3. A subsequent CLI command starts the upgraded wrapper immediately. If an
+   already-running local MCP server will be used, restart or reconnect that
+   server first; restart the whole client only when it cannot restart one
+   server. A skill already loaded into the current session may also require a
+   client or session reload after `setup`.
 
 ## Installation guardrails
 
