@@ -115,6 +115,67 @@ The remediation skill never scans after every edit. It runs when explicitly
 asked or when verifying a backend finding; after a task changes security-
 relevant files it offers one changed-file scan and waits for confirmation.
 
+### Claude Code: skills missing or not auto-triggering
+
+After `setup`, Claude Code should list `dd-codesec-scan-and-fix`,
+`dd-codesec-verify-findings`, and `dd-codesec-setup-toolchain`. Restart
+Claude Code if they are missing from `/skills`. Confirm the trees exist under
+`~/.claude/skills` (native) or `~/.agents/skills` (shared). You can still
+invoke a skill by name, for example `/dd-codesec-scan-and-fix`.
+
+If a skill is listed but never auto-triggers, Claude Code may have dropped
+its **description** from context. It caps how much of the skill listing
+(names + descriptions) it loads each turn. When that cap is exceeded, it
+keeps every skill's **name** but drops the **description** for the skills
+you invoke least. A skill you rarely call — including these, right after
+install — can lose its description before a heavily used native one does.
+Renaming the skill or rewriting its description does not fix this; it is a
+budget and priority issue, not a wording issue.
+
+This is a known upstream pattern. See anthropics/claude-code
+[#57515](https://github.com/anthropics/claude-code/issues/57515),
+[#59921](https://github.com/anthropics/claude-code/issues/59921),
+[#68677](https://github.com/anthropics/claude-code/issues/68677),
+[#78270](https://github.com/anthropics/claude-code/issues/78270), and
+[#85027](https://github.com/anthropics/claude-code/issues/85027).
+
+Check `/context` and run `/doctor` to see whether the skill listing is over
+budget. Two project settings can help. Add either to this project's
+`.claude/settings.json` (not your global user settings), so it only affects
+sessions in that project:
+
+**Option A — raise the skill-listing budget:**
+
+```json
+{
+  "skillListingBudgetFraction": 0.02
+}
+```
+
+The default is `0.01` (1% of the context window). This is a blunt
+instrument: it gives more room to every skill's description, not just
+Datadog's, and may need raising again as more skills get installed.
+
+**Option B — turn off a competing skill (recommended first):**
+
+```json
+{
+  "skillOverrides": {
+    "security-review": "off"
+  }
+}
+```
+
+Claude Code ships a native `security-review` skill that can win the "most
+invoked" slot and push Datadog descriptions out first. `"off"` (or
+`"name-only"`) removes it from contention without changing the global
+budget. You can also set this from the `/skills` menu: highlight the skill,
+press `Space` to cycle its state, then `Esc` to save.
+
+Prefer Option B: it targets the usual cause instead of raising the budget
+for every skill. Full reference: [Claude Code settings](https://code.claude.com/docs/en/settings-reference)
+(`skillListingBudgetFraction`, `skillListingMaxDescChars`, `skillOverrides`).
+
 **⚠️ Requirements:**
 
 The MCP server requires external Datadog security binaries to perform scans.
@@ -126,6 +187,9 @@ The MCP server requires external Datadog security binaries to perform scans.
 The MCP Server requires [Datadog API key and application](https://docs.datadoghq.com/es/account_management/api-app-keys/) key as DD_API_KEY and DD_APP_KEY
 
 ### Claude Configuration
+
+For Claude Code skills that do not appear or do not auto-trigger, see
+[Claude Code: skills missing or not auto-triggering](#claude-code-skills-missing-or-not-auto-triggering).
 
 ```bash
 # Configure with API keys
