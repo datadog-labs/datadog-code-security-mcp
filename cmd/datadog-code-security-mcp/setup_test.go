@@ -94,7 +94,7 @@ func TestSetupCommandRemoveSkillsLeavesUnmarkedDirectories(t *testing.T) {
 	if err := os.MkdirAll(userSkill, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	managed := filepath.Join(home, ".agents", "skills", "datadog-code-security-remediation", "SKILL.md")
+	managed := filepath.Join(home, ".agents", "skills", "dd-codesec-scan-and-fix", "SKILL.md")
 
 	var preview bytes.Buffer
 	dryRun := newSetupCmd()
@@ -132,7 +132,7 @@ func TestSetupCommandRemoveSkillsLeavesUnmarkedDirectories(t *testing.T) {
 			t.Fatalf("unexpected change: %+v", change)
 		}
 	}
-	if _, err := os.Stat(filepath.Join(home, ".agents", "skills", "datadog-code-security-remediation")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(home, ".agents", "skills", "dd-codesec-scan-and-fix")); !os.IsNotExist(err) {
 		t.Fatalf("managed skill survived --remove-skills: %v", err)
 	}
 	if _, err := os.Stat(userSkill); err != nil {
@@ -142,7 +142,7 @@ func TestSetupCommandRemoveSkillsLeavesUnmarkedDirectories(t *testing.T) {
 
 func TestSetupCommandReturnsFailureWithoutWrites(t *testing.T) {
 	home := setSetupTestHome(t)
-	collision := filepath.Join(home, ".agents", "skills", "datadog-code-security-remediation")
+	collision := filepath.Join(home, ".agents", "skills", "dd-codesec-scan-and-fix")
 	if err := os.MkdirAll(collision, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -165,7 +165,7 @@ func TestSetupCommandReturnsFailureWithoutWrites(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) != 1 || entries[0].Name() != "datadog-code-security-remediation" {
+	if len(entries) != 1 || entries[0].Name() != "dd-codesec-scan-and-fix" {
 		t.Fatalf("blocked client mutated skills dir: %v", names(entries))
 	}
 }
@@ -218,7 +218,7 @@ func TestRenderSetupResultReportsPartialChangesAfterFailure(t *testing.T) {
 			Status:      setupcmd.ClientStatusFailed,
 			Reason:      "install second skill: disk full",
 			Changes: []setupcmd.SkillChange{{
-				SkillID: "datadog-code-security-remediation",
+				SkillID: "dd-codesec-scan-and-fix",
 				Action:  setupcmd.SkillActionInstalled,
 			}},
 		}},
@@ -229,7 +229,7 @@ func TestRenderSetupResultReportsPartialChangesAfterFailure(t *testing.T) {
 	for _, want := range []string{
 		"Agent Skills: failed",
 		"Partial changes applied before failure:",
-		"datadog-code-security-remediation: installed",
+		"dd-codesec-scan-and-fix: installed",
 		"Restart updated clients",
 	} {
 		if !strings.Contains(output.String(), want) {
@@ -246,7 +246,7 @@ func TestRenderSetupResultReportsCleanupWarningAfterUpdate(t *testing.T) {
 			DisplayName: "Agent Skills",
 			Status:      setupcmd.ClientStatusApplied,
 			Changes: []setupcmd.SkillChange{{
-				SkillID: "datadog-code-security-remediation",
+				SkillID: "dd-codesec-scan-and-fix",
 				Action:  setupcmd.SkillActionUpdated,
 			}},
 			Warnings: []string{"updated skill but could not remove its backup"},
@@ -256,7 +256,7 @@ func TestRenderSetupResultReportsCleanupWarningAfterUpdate(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, want := range []string{
-		"datadog-code-security-remediation: updated",
+		"dd-codesec-scan-and-fix: updated",
 		"⚠ updated skill but could not remove its backup",
 		"Restart updated clients",
 	} {

@@ -1,9 +1,9 @@
 ---
-name: datadog-code-security-toolchain
-description: Diagnose and safely repair the local Datadog Code Security scanner toolchain. Use when a Datadog scan reports a missing binary, when the user asks whether scanners are installed or current, or when installing or upgrading the Code Security CLI.
+name: dd-codesec-setup-toolchain
+description: "Install, update, and diagnose the local Datadog Code Security scanner toolchain. Use when a Datadog scan reports a missing binary, when the user asks whether the scanners are installed or current, or when installing or upgrading them."
 ---
 
-# Datadog Code Security toolchain
+# Datadog Code Security toolchain setup
 
 Keep scanner installation knowledge in the compiled CLI. Do not invent
 download URLs, archive names, architectures, or installation commands.
@@ -136,7 +136,7 @@ After an upgrade:
 
 - Show the exact commands and explain what they change.
 - Obtain explicit confirmation immediately before running any installer.
-  A confirmed wrapper upgrade already authorises the follow-up `setup`
+  A confirmed wrapper upgrade already authorizes the follow-up `setup`
   run; do not ask again for that step.
 - Prefer the CLI's no-sudo `~/.local/bin` route when it offers one.
 - Never pipe a remote download directly into a shell.

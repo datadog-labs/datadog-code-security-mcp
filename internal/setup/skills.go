@@ -62,7 +62,7 @@ func EmbeddedSkillIDs(source fs.FS) ([]string, error) {
 
 	var skillIDs []string
 	for _, entry := range entries {
-		if entry.IsDir() && strings.HasPrefix(entry.Name(), "datadog-") {
+		if entry.IsDir() && strings.HasPrefix(entry.Name(), "dd-codesec-") {
 			skillIDs = append(skillIDs, entry.Name())
 		}
 	}

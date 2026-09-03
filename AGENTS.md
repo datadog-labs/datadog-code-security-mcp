@@ -72,15 +72,15 @@ internal/
       └── provider.go # Credential management with caching
 
 skills/                       # Skills embedded into release binaries
-  ├── embed.go                # go:embed datadog-* trees
-  ├── datadog-code-security-remediation/
-  ├── datadog-code-security-verification/
-  └── datadog-code-security-toolchain/
+  ├── embed.go                # go:embed dd-codesec-* trees
+  ├── dd-codesec-scan-and-fix/
+  ├── dd-codesec-verify-findings/
+  └── dd-codesec-setup-toolchain/
 ```
 
 ## Skills
 
-The root `skills/` package embeds every `datadog-*` directory recursively.
+The root `skills/` package embeds every `dd-codesec-*` directory recursively.
 `internal/setup/` always installs those trees into the shared
 `~/.agents/skills/` directory and also installs them into the native Claude
 Code and Codex skill directories when those clients are detected.
@@ -94,7 +94,7 @@ Every installed skill root gets `.datadog-managed.json`. This marker is the
 - Skip dot-directories such as Codex's `.system/`.
 - A removed embedded skill may be pruned only when its direct child directory
   carries our marker.
-- Nested content such as remediation `references/` is managed as part of the
+- Nested content such as a skill's `references/` is managed as part of the
   marked skill tree.
 
 ## Code Patterns

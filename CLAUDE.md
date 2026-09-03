@@ -247,10 +247,10 @@ Returns component list (name, version, license)
 
 **`skills/`** - Skills embedded into release binaries
 
-- `embed.go`: Recursively embeds every `datadog-*` skill tree
-- `datadog-code-security-remediation/`: Scan/fix/verify workflow and domain playbooks
-- `datadog-code-security-verification/`: Datadog platform enrichment workflow
-- `datadog-code-security-toolchain/`: Scanner diagnosis and installation guidance
+- `embed.go`: Recursively embeds every `dd-codesec-*` skill tree
+- `dd-codesec-scan-and-fix/`: Scan/fix/verify workflow and domain playbooks
+- `dd-codesec-verify-findings/`: Datadog platform enrichment workflow
+- `dd-codesec-setup-toolchain/`: Scanner install, update, and diagnosis guidance
 
 **`internal/types/`** - Centralized type definitions
 

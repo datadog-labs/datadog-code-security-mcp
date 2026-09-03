@@ -1,9 +1,9 @@
 ---
-name: datadog-code-security-remediation
-description: Scan and remediate local code-security findings with Datadog. Use when the user explicitly asks to scan or fix code, when a Datadog finding link identifies local code to verify, or after finishing a task that changed source, IaC, or dependency files to offer one optional changed-file scan.
+name: dd-codesec-scan-and-fix
+description: "Scan and remediate local code-security findings with Datadog. Use when the user explicitly asks to scan or fix code, when a Datadog finding link identifies local code to verify, or after finishing a task that changed source, IaC, or dependency files to offer one optional changed-file scan."
 ---
 
-# Datadog Code Security remediation
+# Datadog Code Security scan and fix
 
 Use Datadog scanners to find, explain, fix, and verify security issues in local
 code. Local scan results are authoritative for the code currently on disk.
@@ -20,7 +20,7 @@ step, silently check that a wrapper executable exists:
 Do not run the binary, print the check, or diagnose scanners.
 
 If neither path exists, stop this skill immediately. Do not offer a scan,
-load `datadog-code-security-toolchain`, follow wrapper bootstrap guidance,
+load `dd-codesec-setup-toolchain`, follow wrapper bootstrap guidance,
 or report a skill or command failure. Do not fabricate scan results.
 
 If the user explicitly asked to scan or remediate, you may say once that the
@@ -45,7 +45,7 @@ Run this workflow only in these cases:
    "I modified `<files>`; want me to scan them for security issues?"
 
 For case 2, when the link does not already provide a known local file, use the
-finding-verification workflow to query Datadog first and identify the
+`dd-codesec-verify-findings` workflow to query Datadog first and identify the
 repository, file, line, rule, and detection type. Then run the narrowest
 matching local scan. Do not scan the entire repository merely to discover
 which file the backend finding refers to.
@@ -61,7 +61,7 @@ For case 3:
 ## Once-per-session toolchain preflight
 
 After the required detection types are known but before their first local scan
-in an agent session, load `datadog-code-security-toolchain` and follow its
+in an agent session, load `dd-codesec-setup-toolchain` and follow its
 preflight for the wrapper and only the scanners those types require. If a
 Datadog URL must be queried to discover the type, do that first. For a broad
 scan, check every required scanner.
@@ -70,9 +70,10 @@ Remember completed checks and declined updates in session context only. Check
 the wrapper once and each scanner when first needed; never write a marker or
 repeat an offer in the same session. An outdated compatible component is
 non-blocking: offer to update it now or continue. Missing or incompatible
-scanners follow the Toolchain skill's install flow, and declining a required
-install means the finding cannot be locally verified. The wrapper-presence
-gate already handled a missing wrapper; do not offer to install it here.
+scanners follow the `dd-codesec-setup-toolchain` install flow, and declining
+a required install means the finding cannot be locally verified. The
+wrapper-presence gate already handled a missing wrapper; do not offer to
+install it here.
 
 ## Choose the scan
 
@@ -121,11 +122,11 @@ installation commands.
 ## Optional platform enrichment
 
 After a local scan returns findings, use the remote Datadog MCP when available
-to look for corresponding platform records. Load
-`datadog-code-security-verification` and follow its schema, privacy, matching,
-triage-state, stale-commit, and organisation-boundary rules. Query once per
-unique affected file for SAST, Secrets, and IaC. For SCA, correlate by
-advisory, package, version, and trustworthy repository, service, or entity
+to look for corresponding platform records. Load `dd-codesec-verify-findings`,
+which points to the platform-matching contract covering schema, privacy,
+matching, triage-state, stale-commit, and organization-boundary rules. Query
+once per unique affected file for SAST, Secrets, and IaC. For SCA, correlate
+by advisory, package, version, and trustworthy repository, service, or entity
 identity; a declaration file may not exist.
 
 This lookup is best effort and never replaces or blocks the local workflow.
@@ -152,7 +153,7 @@ domain playbook and local result.
    local-only results.
 4. Inspect the vulnerable code and nearby tests before proposing a change.
 5. Explain the smallest safe fix. Ask before changes that alter public
-   behaviour, dependencies, infrastructure semantics, credentials, or history.
+   behavior, dependencies, infrastructure semantics, credentials, or history.
 6. Apply approved fixes one finding at a time, preserving project conventions.
 7. Run the relevant formatter and focused tests.
 8. Re-run the same Datadog scan against the same target. Do not claim the

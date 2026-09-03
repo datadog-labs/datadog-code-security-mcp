@@ -35,7 +35,7 @@ the credential:
 - **Stripe:** Developers API keys for the correct test or live mode. Preserve
   restricted-key scope rather than replacing it with a broader key.
 - **Database connection string:** the database or managed-service credential
-  owner must rotate the password/user and update every authorised consumer.
+  owner must rotate the password/user and update every authorized consumer.
 - **Private key or certificate:** revoke/replace through the owning PKI, CA, or
   cloud certificate service; replacing a PEM file alone is not revocation.
 

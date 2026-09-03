@@ -1,6 +1,6 @@
 # SAST remediation playbook
 
-Fix the vulnerability at its source while preserving intended behaviour.
+Fix the vulnerability at its source while preserving intended behavior.
 
 ## Fix by vulnerability class
 
@@ -41,7 +41,7 @@ Fix the vulnerability at its source while preserving intended behaviour.
 Before editing, trace untrusted data from source to sink and read nearby tests.
 Make the smallest change that breaks that flow. Add or extend a regression test
 when the project has a test suite. Preserve valid inputs and intended error
-behaviour; if the secure design changes semantics, explain it and ask first.
+behavior; if the secure design changes semantics, explain it and ask first.
 
 LOW findings are still findings. Present them after higher severities and
 evaluate their actual data flow and reachability rather than dismissing them

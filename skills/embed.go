@@ -3,8 +3,8 @@ package skills
 
 import "embed"
 
-// FS holds the skills shipped with this release. Adding a datadog-* directory
-// automatically includes its complete subtree in the binary.
+// FS holds the skills shipped with this release. Adding a dd-codesec-*
+// directory automatically includes its complete subtree in the binary.
 //
-//go:embed datadog-*
+//go:embed dd-codesec-*
 var FS embed.FS

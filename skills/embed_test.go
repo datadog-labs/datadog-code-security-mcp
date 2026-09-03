@@ -17,9 +17,9 @@ var wrapperCLIInvocationRE = regexp.MustCompile(`datadog-code-security-mcp\s+(?:
 
 func TestFSContainsShippedSkills(t *testing.T) {
 	skillIDs := []string{
-		"datadog-code-security-remediation",
-		"datadog-code-security-verification",
-		"datadog-code-security-toolchain",
+		"dd-codesec-scan-and-fix",
+		"dd-codesec-verify-findings",
+		"dd-codesec-setup-toolchain",
 	}
 	for _, skillID := range skillIDs {
 		if _, err := fs.Stat(FS, skillID+"/SKILL.md"); err != nil {
@@ -28,7 +28,7 @@ func TestFSContainsShippedSkills(t *testing.T) {
 	}
 
 	for _, playbook := range []string{"sast.md", "sca.md", "iac.md", "secrets.md"} {
-		path := "datadog-code-security-remediation/references/" + playbook
+		path := "dd-codesec-scan-and-fix/references/" + playbook
 		if _, err := fs.Stat(FS, path); err != nil {
 			t.Errorf("missing %s: %v", path, err)
 		}

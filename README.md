@@ -60,14 +60,17 @@ datadog-code-security-mcp version --detailed # Include every required scanner
 
 The binary ships three Agent Skills for compatible AI coding clients:
 
-- **Remediation** — scans local code, loads a focused SAST, Secrets, SCA, or
-  IaC playbook, optionally enriches matches with Datadog-proposed code or
-  package updates, applies approved fixes, and rescans to verify them.
-- **Verification** — enriches a current local finding with Datadog platform
-  context when a Datadog MCP server is available. Platform proposals are
-  advisory and must be matched and verified against the current checkout.
-- **Toolchain** — diagnoses missing scanner binaries and relays the CLI's
-  platform-specific installation instructions with confirmation guardrails.
+- **`dd-codesec-scan-and-fix`** — scans local code, loads a focused SAST,
+  Secrets, SCA, or IaC playbook, optionally enriches matches with
+  Datadog-proposed code or package updates, applies approved fixes, and
+  rescans to verify them.
+- **`dd-codesec-verify-findings`** — enriches a current local finding with
+  Datadog platform context when a Datadog MCP server is available. Platform
+  proposals are advisory and must be matched and verified against the current
+  checkout.
+- **`dd-codesec-setup-toolchain`** — installs, updates, and diagnoses the
+  scanner binaries, relaying the CLI's platform-specific installation
+  instructions with confirmation guardrails.
 
 Install them into the shared Agent Skills directory and every detected native
 client directory:

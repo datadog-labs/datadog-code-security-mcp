@@ -441,7 +441,7 @@ if [[ "${SETUP_OK}" == "true" ]] && \
   > "${TEST_OUTPUT_DIR}/setup-output.json" \
   2> "${TEST_OUTPUT_DIR}/setup-error.txt"; then
   for client_dir in .agents .claude .codex; do
-    for skill in datadog-code-security-remediation datadog-code-security-verification datadog-code-security-toolchain; do
+    for skill in dd-codesec-scan-and-fix dd-codesec-verify-findings dd-codesec-setup-toolchain; do
       if [[ ! -f "${SETUP_HOME}/${client_dir}/skills/${skill}/SKILL.md" ]] || \
          [[ ! -f "${SETUP_HOME}/${client_dir}/skills/${skill}/.datadog-managed.json" ]]; then
         echo -e "${RED}❌ Missing ${skill} for ${client_dir}${NC}"
@@ -449,7 +449,7 @@ if [[ "${SETUP_OK}" == "true" ]] && \
       fi
     done
     for playbook in sast sca iac secrets; do
-      if [[ ! -f "${SETUP_HOME}/${client_dir}/skills/datadog-code-security-remediation/references/${playbook}.md" ]]; then
+      if [[ ! -f "${SETUP_HOME}/${client_dir}/skills/dd-codesec-scan-and-fix/references/${playbook}.md" ]]; then
         echo -e "${RED}❌ Missing ${playbook} playbook for ${client_dir}${NC}"
         SETUP_OK=false
       fi
@@ -471,7 +471,7 @@ if [[ "${SETUP_OK}" == "true" ]]; then
   if HOME="${SETUP_HOME}" USERPROFILE="${SETUP_HOME}" \
     ./bin/datadog-code-security-mcp --no-telemetry setup --remove-skills --dry-run \
     > "${TEST_OUTPUT_DIR}/setup-remove-dry-run.txt" 2>&1; then
-    REMOVE_DRY_RUN_FILES=$(find "${SETUP_HOME}" -path '*/datadog-*/SKILL.md' | wc -l | tr -d ' ')
+    REMOVE_DRY_RUN_FILES=$(find "${SETUP_HOME}" -path '*/dd-codesec-*/SKILL.md' | wc -l | tr -d ' ')
     if [[ "${REMOVE_DRY_RUN_FILES}" == "0" ]]; then
       echo -e "${RED}❌ Setup --remove-skills dry run deleted managed skills${NC}"
       SETUP_OK=false
@@ -489,7 +489,7 @@ if [[ "${SETUP_OK}" == "true" ]] && \
   > "${TEST_OUTPUT_DIR}/setup-remove-output.json" \
   2> "${TEST_OUTPUT_DIR}/setup-remove-error.txt"; then
   for client_dir in .agents .claude .codex; do
-    for skill in datadog-code-security-remediation datadog-code-security-verification datadog-code-security-toolchain; do
+    for skill in dd-codesec-scan-and-fix dd-codesec-verify-findings dd-codesec-setup-toolchain; do
       if [[ -e "${SETUP_HOME}/${client_dir}/skills/${skill}" ]]; then
         echo -e "${RED}❌ ${skill} survived --remove-skills for ${client_dir}${NC}"
         SETUP_OK=false

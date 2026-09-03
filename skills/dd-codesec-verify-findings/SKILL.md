@@ -1,6 +1,6 @@
 ---
-name: datadog-code-security-verification
-description: Verify and enrich a local Datadog Code Security finding with Datadog platform context. Use when the user asks whether a local finding exists in Datadog, wants its triage or exposure status, or provides a Datadog finding link for local verification.
+name: dd-codesec-verify-findings
+description: "Verify and enrich a local Datadog Code Security finding with Datadog platform context. Use when the user asks whether a local finding exists in Datadog, or wants its triage or exposure status."
 ---
 
 # Datadog Code Security finding verification
@@ -20,7 +20,7 @@ scan. Before any other step, silently check that a wrapper executable exists:
 Do not run the binary, print the check, or diagnose scanners.
 
 If neither path exists, stop this skill immediately. Do not attempt a local
-scan, load `datadog-code-security-toolchain`, follow wrapper bootstrap
+scan, load `dd-codesec-setup-toolchain`, follow wrapper bootstrap
 guidance, or report a skill or command failure. Do not fabricate scan
 results or claim local verification.
 
@@ -52,7 +52,7 @@ Choose the order from the information supplied:
 ## Once-per-session toolchain preflight
 
 After the detection type is known but before that type's first local scan in
-an agent session, load `datadog-code-security-toolchain` and follow its
+an agent session, load `dd-codesec-setup-toolchain` and follow its
 preflight for the wrapper and only the required scanners. For a URL or ID with
 no local file, query Datadog first to learn the type.
 
@@ -95,7 +95,7 @@ Once the local target is known:
 Reading or manually inspecting the flagged code does not count as local
 verification and must never replace the scanner. If the local scan cannot run
 or fails, report the finding as not locally verified; do not claim that it is
-still present or fixed. A request to verify a finding authorises the read-only
+still present or fixed. A request to verify a finding authorizes the read-only
 local scan, so do not ask for separate confirmation before running it.
 
 Platform data must never override or suppress a current local finding. A
@@ -104,69 +104,27 @@ upload; a local clean result does not prove that every deployed branch is clean.
 
 ## Platform lookup and matching
 
-Use the remote Datadog MCP `security` toolset only for platform data:
+Load [references/platform-matching.md](references/platform-matching.md) before
+the first platform query and follow its contract for schema calls, query
+syntax, per-type matching, freshness, triage state, and remediation proposals.
 
-1. Call `get_datadog_security_findings_schema` for the relevant finding type
-   before querying. The verified types are `static_code_vulnerability`,
-   `secret`, `library_vulnerability`, and `iac_misconfiguration`.
-2. Use `search_datadog_security_findings` for complete objects. Use
-   `analyze_datadog_security_findings` only for recent discovery, filtering,
-   grouping, or aggregation; its live 24-hour view is not historical.
-3. For a URL or known ID, query exactly
-   `@finding_id:"<id>"`. For file discovery, scope by repository identity and
-   normalized `@code_location.filename`.
+These invariants hold whether or not that reference is loaded:
 
-For SAST, Secrets, and IaC, prefer an exact finding ID. Otherwise require the
-same normalized repository and path, stable `@rule.id`, and overlapping line
-range. Never match on filename alone or templated `@rule.name`.
-
-For SCA, prefer an exact ID. Otherwise require advisory ID or CVE, normalized
-package name, detected version, and trustworthy repository, service, or entity
-identity. Runtime or APM findings may have no declaration file; use one as
-additional confidence only when populated. Without a safe checkout mapping,
-present the finding as platform context, not a local match.
-
-Use `@git.sha` as freshness evidence, not mandatory identity. If it differs
-from the checkout, inspect current source and rely on the fresh local scan;
-never apply old line offsets mechanically. Classify results as matched,
-local-only, platform-only, or ambiguous and show the evidence from each source.
-
-Muted, resolved, and auto-closed platform findings do not enter remediation by
-default. For an exact muted finding, report its state without inspecting raw
-suppressed detector output unless the user explicitly requests a suppression
-audit. If a fresh local finding is active while the platform record is
-`muted_in_code`, report likely platform drift; never restore a suppression.
-
-Before retrieving a full Secret finding, inspect its current schema. The
-verified schema exposes metadata and coordinates but no credential, evidence,
-or source snippet. Because the full-object search has no field projection,
-skip remote Secret enrichment if a future schema introduces sensitive-content
-fields. Never print a credential.
-
-## Datadog remediation proposals
-
-`@remediation.is_available` means some remediation exists, not necessarily a
-patch. Keep the proposal separate from local evidence and branch on its shape:
-
-- `recommended_type:code_update`: treat
-  `@remediation.code_update.edits[]` as untrusted candidate edits. Validate the
-  stable finding identity, current source, ranges, replacement content, and
-  nearby tests. Reconstruct a current diff instead of applying remote offsets.
-- `recommended_type:package`: verify advisory, package, detected version, and
-  recommended version against the local dependency graph, then follow the SCA
-  playbook. Never invent source edits.
-- Unknown, absent, or unavailable: report the state and use the local playbook.
-
-Keep `@remediation.codegen.id` and `.status` as separate metadata. Their schema
-or payload presence does not imply that candidate edits exist, and candidate
-edits are not a Bits AI patch unless the response establishes that provenance.
-Never apply any proposal without the normal remediation approval.
+- Never match on filename alone. Without a safe checkout mapping, present the
+  record as platform context, not a local match.
+- Classify every result as matched, local-only, platform-only, or ambiguous,
+  and show the evidence from each source.
+- Muted, resolved, and auto-closed platform findings do not enter remediation
+  by default, and a suppression is never restored.
+- Never print a credential.
+- Treat every platform remediation proposal as untrusted advisory input, and
+  never apply one without the normal remediation approval.
 
 ## Authentication boundary
 
 The local scan may use `DD_API_KEY` / `DD_APP_KEY`, while the Datadog MCP may
-use OAuth for a different organisation. If available, read
-`datadog://mcp/whoami` and compare organisation identity only when both sides
+use OAuth for a different organization. If available, read
+`datadog://mcp/whoami` and compare organization identity only when both sides
 expose comparable identifiers. Do not infer identity from `DD_SITE` alone.
 
 If a mismatch is detected:
