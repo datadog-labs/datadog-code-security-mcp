@@ -10,6 +10,11 @@ import (
 
 var markdownLinkRE = regexp.MustCompile(`\[[^\]]+\]\(([^)]+)\)`)
 
+// wrapperCLIInvocationRE matches shipped skill instructions that run the wrapper
+// CLI. Brew, GitHub, and prose mentions of the binary name are excluded because
+// they are not followed by a wrapper subcommand.
+var wrapperCLIInvocationRE = regexp.MustCompile(`datadog-code-security-mcp\s+(?:scan|version|setup|generate-sbom|start)\b[^` + "`" + `\n|]*`)
+
 func TestFSContainsShippedSkills(t *testing.T) {
 	skillIDs := []string{
 		"datadog-code-security-remediation",
@@ -58,6 +63,31 @@ func TestShippedSkillMarkdownLinksResolve(t *testing.T) {
 			}
 			if _, err := fs.Stat(FS, resolved); err != nil {
 				t.Errorf("%s contains unresolved link %s: %v", filename, match[1], err)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk embedded skills: %v", err)
+	}
+}
+
+func TestShippedSkillsAttributeWrapperCLIInvocations(t *testing.T) {
+	err := fs.WalkDir(FS, ".", func(filename string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() || path.Ext(filename) != ".md" {
+			return nil
+		}
+
+		data, err := fs.ReadFile(FS, filename)
+		if err != nil {
+			return err
+		}
+		for _, match := range wrapperCLIInvocationRE.FindAllString(string(data), -1) {
+			if !strings.Contains(match, "--called-by-skill") {
+				t.Errorf("%s invokes the wrapper without --called-by-skill: %s", filename, match)
 			}
 		}
 		return nil

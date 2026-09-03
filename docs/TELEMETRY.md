@@ -41,6 +41,7 @@ Every scan emits **one telemetry event per scan type** plus, when multiple types
 
 | Field | Description |
 | -------------------------- | ------------------------------------------------------------------------------------------------ |
+| `caller`                   | `skill` when a Datadog agent skill invokes the CLI with `--called-by-skill`; omitted for direct CLI and MCP calls |
 | `auth_method`              | Authentication source category (`none`, `env_var`, or `auth_provider`); never credentials         |
 | `binary_versions`          | Installed scanner version/status by scanner (`X.Y.Z`, `not_found`, or `unknown`)                 |
 | `used_binary_versions`     | Installed version/status of only the binaries this scan type or operation actually invokes (e.g. `{"static_analyzer":"1.2.3"}` for SAST; `{"sbom_generator":"…","security_cli":"…"}` for SCA; `{"sbom_generator":"…"}` for `generate_sbom`). A scoped subset of `binary_versions` — use this for per-binary version distributions to avoid double-counting the full inventory carried on every event. Present on per-scan events and on the `generate_sbom` operation event |
@@ -98,7 +99,8 @@ filtered result. In-source-suppressed results remain excluded.
 - Stack traces
 - Machine identifiers or IP addresses (beyond what the server logs server-side)
 - Arbitrary command arguments or user-provided flag values; only explicitly
-  documented coarse modes such as `output_format` and `detailed` are collected
+  documented coarse modes such as `output_format`, `detailed`, and
+  `caller=skill` are collected
 - Any user-identifiable information
 
 ## Data retention

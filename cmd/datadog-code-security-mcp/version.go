@@ -40,6 +40,7 @@ Examples:
 			err := printVersion(ctx, cmd.OutOrStdout(), detailed)
 			trackOperation(ctx, telemetry.OperationEvent{
 				Interface: telemetry.InterfaceCLI,
+				Caller:    cliCaller(),
 				Operation: "version",
 				StartedAt: start,
 				Detailed:  &detailed,

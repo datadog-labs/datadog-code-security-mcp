@@ -150,6 +150,7 @@ var errorRules = []errorRule{
 	// error constructors use — never a bare "invalid".
 	{kind: ErrKindInvalidArguments, contains: []string{constants.ErrInvalidArguments}},
 	{kind: ErrKindInvalidArguments, contains: []string{"unsupported client \""}},
+	{kind: ErrKindInvalidArguments, contains: []string{"invalid min_severity"}, message: "invalid min_severity"},
 	{kind: ErrKindInvalidArguments, contains: []string{"is required"}},
 	{kind: ErrKindInvalidArguments, contains: []string{"must be"}},
 

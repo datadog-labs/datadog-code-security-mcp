@@ -40,6 +40,9 @@ func TestVersionCommandTracksAllBinaryVersions(t *testing.T) {
 	if event["interface"] != "cli" {
 		t.Errorf("interface = %v, want cli", event["interface"])
 	}
+	if _, ok := event["caller"]; ok {
+		t.Errorf("caller must be omitted for direct CLI usage, got %v", event["caller"])
+	}
 	versions, ok := event["binary_versions"].(map[string]any)
 	if !ok {
 		t.Fatalf("binary_versions has wrong type: %T", event["binary_versions"])
@@ -48,6 +51,33 @@ func TestVersionCommandTracksAllBinaryVersions(t *testing.T) {
 		if _, ok := versions[config.TelemetryKey]; !ok {
 			t.Errorf("binary_versions missing %q: %v", config.TelemetryKey, versions)
 		}
+	}
+}
+
+func TestVersionCommandTracksSkillCaller(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	srv, ch := captureCmdServer(t)
+	telemetryClient = newCmdTestTelemetryClient(t, srv)
+	calledBySkill = true
+	t.Cleanup(func() {
+		telemetryClient = nil
+		calledBySkill = false
+	})
+
+	cmd := newVersionCmd()
+	if err := cmd.ExecuteContext(context.Background()); err != nil {
+		t.Fatalf("version command failed: %v", err)
+	}
+	flushTelemetry()
+
+	event := waitCmdEvent(t, ch)
+	if event["interface"] != "cli" {
+		t.Errorf("interface = %v, want cli", event["interface"])
+	}
+	if event["caller"] != "skill" {
+		t.Errorf("caller = %v, want skill", event["caller"])
 	}
 }
 

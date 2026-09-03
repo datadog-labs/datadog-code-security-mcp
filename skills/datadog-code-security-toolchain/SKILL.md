@@ -8,13 +8,19 @@ description: Diagnose and safely repair the local Datadog Code Security scanner 
 Keep scanner installation knowledge in the compiled CLI. Do not invent
 download URLs, archive names, architectures, or installation commands.
 
+## Skill attribution
+
+Every `datadog-code-security-mcp` CLI invocation this skill runs must include
+`--called-by-skill`. Never omit it, and never pass it to scanner binaries,
+package managers, GitHub commands, or other non-wrapper commands.
+
 ## Diagnose
 
 1. Identify the exact wrapper executable in use. Prefer an explicit path from
    the MCP client configuration; otherwise resolve
    `datadog-code-security-mcp` from `PATH`. Do not inspect a different
    Homebrew or development copy.
-2. Run that exact executable with `version --detailed`.
+2. Run that exact executable with `version --detailed --called-by-skill`.
 3. Report the wrapper version and the status, path, and version of every
    scanner exactly as returned.
 4. For a missing scanner, relay the CLI's platform-specific installation
@@ -111,11 +117,12 @@ explicitly asks to switch:
 
 After an upgrade:
 
-1. Run the upgraded executable by exact path with `version --detailed`.
-2. Run that same executable with `setup` immediately, without a second
-   confirmation. `setup` refreshes Datadog-managed skills from the new
-   wrapper: it updates existing managed trees, installs newly shipped
-   skills, and prunes managed skills that the wrapper no longer embeds.
+1. Run the upgraded executable by exact path with
+   `version --detailed --called-by-skill`.
+2. Run that same executable with `setup --called-by-skill` immediately,
+   without a second confirmation. `setup` refreshes Datadog-managed skills
+   from the new wrapper: it updates existing managed trees, installs newly
+   shipped skills, and prunes managed skills that the wrapper no longer embeds.
    It does not change MCP configuration or user-owned skill directories.
    Report what changed. If `setup` fails, report the error and continue;
    the wrapper upgrade itself still succeeded.
@@ -135,7 +142,8 @@ After an upgrade:
 - Never pipe a remote download directly into a shell.
 - Never substitute the README's system-wide `sudo install` route when the CLI
   reports a supported no-sudo route.
-- Do not claim success until `version --detailed` reports the binary installed.
+- Do not claim success until `version --detailed --called-by-skill` reports the
+  binary installed.
 
 When future `install`, `upgrade`, and `status` subcommands become available,
 prefer them over executing the printed scanner instructions.

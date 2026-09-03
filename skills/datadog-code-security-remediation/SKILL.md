@@ -27,6 +27,13 @@ If the user explicitly asked to scan or remediate, you may say once that the
 Datadog Code Security CLI is not available, then stop. Otherwise remain
 silent.
 
+## Skill attribution
+
+Every `datadog-code-security-mcp` CLI invocation this skill runs must include
+`--called-by-skill`. Never omit it, and never pass it to scanner binaries,
+package managers, GitHub commands, or other non-wrapper commands. MCP fallback
+tool calls remain unchanged.
+
 ## Trigger contract
 
 Run this workflow only in these cases:
@@ -77,11 +84,11 @@ explicit path outside the shell's `PATH`, or when the user requests MCP.
 
 | Target | Preferred CLI | Local MCP fallback |
 |---|---|---|
-| Broad directory or mixed change | `datadog-code-security-mcp scan all <path> --json` | `datadog_code_security_scan` |
-| Source code | `datadog-code-security-mcp scan sast <paths...> --json` | `datadog_sast_scan` |
-| Any changed text file | `datadog-code-security-mcp scan secrets <paths...> --json` | `datadog_secrets_scan` |
-| Dependency manifest or lockfile | `datadog-code-security-mcp scan sca <project-dir> --json` | `datadog_sca_scan` |
-| Terraform, Kubernetes, Dockerfile, CloudFormation, Helm, CI config | `datadog-code-security-mcp scan iac <paths...> --json` | `datadog_iac_scan` |
+| Broad directory or mixed change | `datadog-code-security-mcp scan all <path> --json --called-by-skill` | `datadog_code_security_scan` |
+| Source code | `datadog-code-security-mcp scan sast <paths...> --json --called-by-skill` | `datadog_sast_scan` |
+| Any changed text file | `datadog-code-security-mcp scan secrets <paths...> --json --called-by-skill` | `datadog_secrets_scan` |
+| Dependency manifest or lockfile | `datadog-code-security-mcp scan sca <project-dir> --json --called-by-skill` | `datadog_sca_scan` |
+| Terraform, Kubernetes, Dockerfile, CloudFormation, Helm, CI config | `datadog-code-security-mcp scan iac <paths...> --json --called-by-skill` | `datadog_iac_scan` |
 
 For a known backend finding, state the selected local target before scanning
 and apply these scope rules:

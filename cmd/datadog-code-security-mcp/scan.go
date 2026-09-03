@@ -141,6 +141,7 @@ func runDirectScan(scanType string, paths []string, workingDir string, outputJSO
 	}
 	tracking := telemetry.ScanEvent{
 		Interface:    telemetry.InterfaceCLI,
+		Caller:       cliCaller(),
 		StartedAt:    start,
 		OutputFormat: outputFormat,
 		WorkingDir:   workingDir,
@@ -399,6 +400,7 @@ func runLibraryScan(purls []string, workingDir string, outputJSON bool) error {
 	libraryCount := len(purls)
 	event := telemetry.OperationEvent{
 		Interface:      telemetry.InterfaceCLI,
+		Caller:         cliCaller(),
 		Operation:      "library_scan",
 		StartedAt:      time.Now(),
 		LibrariesCount: &libraryCount,

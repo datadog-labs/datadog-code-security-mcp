@@ -31,6 +31,25 @@ var (
 // Initialised once in main() before any subcommand runs.
 var telemetryClient *telemetry.Client
 
+// calledBySkill is set by the hidden persistent --called-by-skill flag. Skills
+// use it to distinguish their CLI invocations from direct human CLI usage.
+var calledBySkill bool
+
+func cliCaller() telemetry.Caller {
+	if calledBySkill {
+		return telemetry.CallerSkill
+	}
+	return ""
+}
+
+func registerRootFlags(rootCmd *cobra.Command, noTelemetry *bool) {
+	rootCmd.PersistentFlags().BoolVar(noTelemetry, "no-telemetry", false,
+		"Disable anonymous usage telemetry")
+	rootCmd.PersistentFlags().BoolVar(&calledBySkill, "called-by-skill", false,
+		"Mark this invocation as originating from a Datadog agent skill")
+	_ = rootCmd.PersistentFlags().MarkHidden("called-by-skill")
+}
+
 // flushTelemetry drains any in-flight telemetry POST and reaps the scanner
 // version-lookup subprocesses before the process exits. Call this immediately
 // before os.Exit so both have a chance to finish. Both steps are nil-safe, so
@@ -91,9 +110,7 @@ For more information, visit: https://github.com/datadog-labs/datadog-code-securi
 		},
 	}
 
-	// --no-telemetry is a persistent flag visible on all subcommands.
-	rootCmd.PersistentFlags().BoolVar(&noTelemetry, "no-telemetry", false,
-		"Disable anonymous usage telemetry")
+	registerRootFlags(rootCmd, &noTelemetry)
 
 	// Add commands
 	rootCmd.AddCommand(

@@ -35,6 +35,7 @@ never changes MCP configuration or removes user-managed skills.`,
 		RunE: func(cmd *cobra.Command, args []string) (runErr error) {
 			event := telemetry.OperationEvent{
 				Interface: telemetry.InterfaceCLI,
+				Caller:    cliCaller(),
 				Operation: "setup",
 				StartedAt: time.Now(),
 			}

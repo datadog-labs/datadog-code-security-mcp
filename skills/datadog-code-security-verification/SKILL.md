@@ -28,6 +28,13 @@ If the user explicitly asked to verify a finding, you may say once that the
 Datadog Code Security CLI is not available, then stop. Otherwise remain
 silent.
 
+## Skill attribution
+
+Every `datadog-code-security-mcp` CLI invocation this skill runs must include
+`--called-by-skill`. Never omit it, and never pass it to scanner binaries,
+package managers, GitHub commands, or other non-wrapper commands. MCP fallback
+tool calls remain unchanged.
+
 ## Ordering
 
 Choose the order from the information supplied:
@@ -73,10 +80,10 @@ Once the local target is known:
    against exactly that target. Generic directory-scan examples in project
    documentation do not override this requirement. When the wrapper is
    resolvable from the agent's shell, prefer
-   `datadog-code-security-mcp scan <type> <path> --json`. Use an equivalent
-   local Code Security MCP scan tool only when it is already registered and
-   available, such as when the client started the wrapper from an explicit
-   path outside the shell's `PATH`, or when the user requests MCP.
+   `datadog-code-security-mcp scan <type> <path> --json --called-by-skill`.
+   Use an equivalent local Code Security MCP scan tool only when it is already
+   registered and available, such as when the client started the wrapper from
+   an explicit path outside the shell's `PATH`, or when the user requests MCP.
 3. If a Terraform file scan does not reproduce the finding and the flagged
    expression depends on sibling resources or module context, explain why and
    retry with the smallest containing Terraform module directory before
