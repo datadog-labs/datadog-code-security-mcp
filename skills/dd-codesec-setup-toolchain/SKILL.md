@@ -1,9 +1,13 @@
 ---
 name: dd-codesec-setup-toolchain
-description: "Install, update, and diagnose the local Datadog Code Security scanner toolchain. Use when a Datadog scan reports a missing binary, when the user asks whether the scanners are installed or current, or when installing or upgrading them."
+description: "Install, update, and diagnose the Datadog Code Security toolchain: the datadog-code-security-mcp wrapper CLI itself and its scanner binaries (datadog-static-analyzer, datadog-sbom-generator, datadog-iac-scanner, datadog-security-cli). Use whenever the user asks whether datadog-code-security-mcp or any scanner is installed, up to date, outdated, or on the latest version, asks which version is running, asks to install or upgrade any of them, or when a Datadog scan reports a missing binary."
 ---
 
 # Datadog Code Security toolchain setup
+
+The toolchain is the `datadog-code-security-mcp` wrapper CLI plus the scanner
+binaries it drives. Both are in scope: a question about the wrapper's own
+version or currency belongs here, not only questions about the scanners.
 
 Keep scanner installation knowledge in the compiled CLI. Do not invent
 download URLs, archive names, architectures, or installation commands.
