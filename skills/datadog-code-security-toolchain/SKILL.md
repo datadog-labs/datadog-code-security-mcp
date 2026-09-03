@@ -25,9 +25,11 @@ download URLs, archive names, architectures, or installation commands.
 
 When remediation or verification invokes this skill as a session preflight,
 check the wrapper only if it has not been checked in the current session and
-check only the scanners required by the selected detection types. Remember
-completed checks and declined updates in session context, never on disk. Return
-to the calling workflow after the user updates or chooses to continue.
+check only the scanners required by the selected detection types. If the
+wrapper executable is not resolvable, return immediately without offering
+installation. Remember completed checks and declined updates in session
+context, never on disk. Return to the calling workflow after the user updates
+or chooses to continue.
 
 If the wrapper itself is absent and Homebrew is installed, offer:
 
@@ -110,8 +112,13 @@ explicitly asks to switch:
 After an upgrade:
 
 1. Run the upgraded executable by exact path with `version --detailed`.
-2. Offer to run that same executable with `setup` so installed managed skills
-   are refreshed from the new wrapper. Obtain confirmation before writing.
+2. Run that same executable with `setup` immediately, without a second
+   confirmation. `setup` refreshes Datadog-managed skills from the new
+   wrapper: it updates existing managed trees, installs newly shipped
+   skills, and prunes managed skills that the wrapper no longer embeds.
+   It does not change MCP configuration or user-owned skill directories.
+   Report what changed. If `setup` fails, report the error and continue;
+   the wrapper upgrade itself still succeeded.
 3. A subsequent CLI command starts the upgraded wrapper immediately. If an
    already-running local MCP server will be used, restart or reconnect that
    server first; restart the whole client only when it cannot restart one
@@ -122,6 +129,8 @@ After an upgrade:
 
 - Show the exact commands and explain what they change.
 - Obtain explicit confirmation immediately before running any installer.
+  A confirmed wrapper upgrade already authorises the follow-up `setup`
+  run; do not ask again for that step.
 - Prefer the CLI's no-sudo `~/.local/bin` route when it offers one.
 - Never pipe a remote download directly into a shell.
 - Never substitute the README's system-wide `sudo install` route when the CLI

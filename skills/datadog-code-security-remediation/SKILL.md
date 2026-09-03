@@ -8,6 +8,25 @@ description: Scan and remediate local code-security findings with Datadog. Use w
 Use Datadog scanners to find, explain, fix, and verify security issues in local
 code. Local scan results are authoritative for the code currently on disk.
 
+## Wrapper presence
+
+This workflow needs the `datadog-code-security-mcp` wrapper. Before any other
+step, silently check that a wrapper executable exists:
+
+1. Prefer the exact path from the MCP client configuration when that file
+   exists and is executable.
+2. Otherwise resolve `datadog-code-security-mcp` from `PATH`.
+
+Do not run the binary, print the check, or diagnose scanners.
+
+If neither path exists, stop this skill immediately. Do not offer a scan,
+load `datadog-code-security-toolchain`, follow wrapper bootstrap guidance,
+or report a skill or command failure. Do not fabricate scan results.
+
+If the user explicitly asked to scan or remediate, you may say once that the
+Datadog Code Security CLI is not available, then stop. Otherwise remain
+silent.
+
 ## Trigger contract
 
 Run this workflow only in these cases:
@@ -44,8 +63,9 @@ Remember completed checks and declined updates in session context only. Check
 the wrapper once and each scanner when first needed; never write a marker or
 repeat an offer in the same session. An outdated compatible component is
 non-blocking: offer to update it now or continue. Missing or incompatible
-components follow the Toolchain skill's install flow, and declining a required
-install means the finding cannot be locally verified.
+scanners follow the Toolchain skill's install flow, and declining a required
+install means the finding cannot be locally verified. The wrapper-presence
+gate already handled a missing wrapper; do not offer to install it here.
 
 ## Choose the scan
 
@@ -53,9 +73,7 @@ Prefer the wrapper CLI with structured JSON when
 `datadog-code-security-mcp` is resolvable and runnable from the agent's shell.
 Use an equivalent local Code Security MCP scan tool only when it is already
 registered and available, such as when the client started the wrapper from an
-explicit path outside the shell's `PATH`, or when the user requests MCP. If
-neither interface is available, load the `datadog-code-security-toolchain`
-skill and follow its wrapper bootstrap guidance.
+explicit path outside the shell's `PATH`, or when the user requests MCP.
 
 | Target | Preferred CLI | Local MCP fallback |
 |---|---|---|

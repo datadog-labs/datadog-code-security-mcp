@@ -8,6 +8,26 @@ description: Verify and enrich a local Datadog Code Security finding with Datado
 Combine current local evidence with Datadog platform context without confusing
 the two sources.
 
+## Wrapper presence
+
+This workflow needs the `datadog-code-security-mcp` wrapper for the local
+scan. Before any other step, silently check that a wrapper executable exists:
+
+1. Prefer the exact path from the MCP client configuration when that file
+   exists and is executable.
+2. Otherwise resolve `datadog-code-security-mcp` from `PATH`.
+
+Do not run the binary, print the check, or diagnose scanners.
+
+If neither path exists, stop this skill immediately. Do not attempt a local
+scan, load `datadog-code-security-toolchain`, follow wrapper bootstrap
+guidance, or report a skill or command failure. Do not fabricate scan
+results or claim local verification.
+
+If the user explicitly asked to verify a finding, you may say once that the
+Datadog Code Security CLI is not available, then stop. Otherwise remain
+silent.
+
 ## Ordering
 
 Choose the order from the information supplied:
@@ -32,9 +52,10 @@ no local file, query Datadog first to learn the type.
 Remember completed checks and declined updates in session context only. Check
 the wrapper once and each scanner when first needed; never write a marker or
 repeat an offer in the same session. An outdated compatible component is
-non-blocking: offer to update it now or continue. If a required component is
+non-blocking: offer to update it now or continue. If a required scanner is
 missing or incompatible and the user declines installation, report the
-finding as not locally verified.
+finding as not locally verified. The wrapper-presence gate already handled
+a missing wrapper; do not offer to install it here.
 
 Once the local target is known:
 
@@ -55,9 +76,7 @@ Once the local target is known:
    `datadog-code-security-mcp scan <type> <path> --json`. Use an equivalent
    local Code Security MCP scan tool only when it is already registered and
    available, such as when the client started the wrapper from an explicit
-   path outside the shell's `PATH`, or when the user requests MCP. If neither
-   is available, follow the `datadog-code-security-toolchain` wrapper
-   bootstrap guidance.
+   path outside the shell's `PATH`, or when the user requests MCP.
 3. If a Terraform file scan does not reproduce the finding and the flagged
    expression depends on sibling resources or module context, explain why and
    retry with the smallest containing Terraform module directory before
