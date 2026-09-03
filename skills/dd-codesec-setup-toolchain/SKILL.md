@@ -8,6 +8,8 @@ description: "Install, update, and diagnose the Datadog Code Security toolchain:
 The toolchain is the `datadog-code-security-mcp` wrapper CLI plus the scanner
 binaries it drives. Both are in scope: a question about the wrapper's own
 version or currency belongs here, not only questions about the scanners.
+Diagnose and report the whole toolchain even when the user names only one
+part of it.
 
 Keep scanner installation knowledge in the compiled CLI. Do not invent
 download URLs, archive names, architectures, or installation commands.
@@ -29,9 +31,14 @@ package managers, GitHub commands, or other non-wrapper commands.
    scanner exactly as returned.
 4. For a missing scanner, relay the CLI's platform-specific installation
    instructions without rewriting them.
-5. If the user asked whether the wrapper, scanners, or whole toolchain are
-   current, check currency against each component's real release channel
-   (see below). Installed version alone is not enough.
+5. If the user asked whether anything is current, check currency against each
+   component's real release channel (see below). Installed version alone is
+   not enough. A currency question that names only one component, such as
+   "is datadog-code-security-mcp up to date?", still covers the whole
+   toolchain: check the wrapper *and* every installed scanner, and report a
+   verdict for each. Narrow the check only when the user explicitly limits it
+   to a named component, or when a workflow invokes this skill as the
+   preflight described below.
 
 When remediation or verification invokes this skill as a session preflight,
 check the wrapper only if it has not been checked in the current session and
@@ -101,6 +108,12 @@ second source.
 
 If the package manager reports a newer version, the scanner is outdated.
 If it reports current, the scanner is current.
+
+Report one verdict per component the diagnosis found — current, outdated,
+unknown, or missing — with its installed version and, when known, the latest
+version of its channel. Do not answer "the toolchain is up to date" while any
+component is outdated, unknown, or unchecked; say which ones and why. Then
+offer the upgrades that apply, wrapper and scanners alike.
 
 ## Wrapper upgrade
 
