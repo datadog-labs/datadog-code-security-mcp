@@ -8,31 +8,44 @@ description: "Scan and remediate local code-security findings with Datadog. Use 
 Use Datadog scanners to find, explain, fix, and verify security issues in local
 code. Local scan results are authoritative for the code currently on disk.
 
-## Wrapper presence
+## Local toolchain presence
 
-This workflow needs the `datadog-code-security-mcp` wrapper. Before any other
-step, silently check that a wrapper executable exists:
+This workflow needs either the local Datadog Code Security MCP server or the
+`datadog-code-security-mcp` wrapper CLI.
 
-1. Prefer the exact path from the MCP client configuration when that file
-   exists and is executable.
-2. Otherwise resolve `datadog-code-security-mcp` from `PATH`.
+1. If local Code Security MCP scan tools are registered and available
+   (`datadog_code_security_scan`, `datadog_sast_scan`, `datadog_secrets_scan`,
+   `datadog_sca_scan`, `datadog_iac_scan`), use them. Do not require the
+   wrapper on `PATH`.
+2. Otherwise, silently check that a wrapper executable exists:
+   - Prefer the exact path from the MCP client configuration when that file
+     exists and is executable.
+   - Otherwise resolve `datadog-code-security-mcp` from `PATH`.
+   Do not run the binary, print the check, or diagnose scanners.
 
-Do not run the binary, print the check, or diagnose scanners.
+Before concluding that MCP scan tools are unavailable, inspect the complete
+tool registry, including deferred or initially omitted tools. When the runtime
+provides a discovery mechanism such as `ALL_TOOLS`, search it for the canonical
+scan-tool names. Absence from the initially displayed tool declarations does
+not mean a tool is unavailable.
 
-If neither path exists, stop this skill immediately. Do not offer a scan,
-load `dd-codesec-setup-toolchain`, follow wrapper bootstrap guidance,
-or report a skill or command failure. Do not fabricate scan results.
+Use the wrapper CLI only after complete registry discovery finds no matching
+MCP scan tool, or a discovered MCP scan tool is called and fails.
 
-If the user explicitly asked to scan or remediate, you may say once that the
-Datadog Code Security CLI is not available, then stop. Otherwise remain
-silent.
+If neither the MCP tools nor a wrapper path exists, stop this skill
+immediately. Do not offer a scan, load `dd-codesec-setup-toolchain`, follow
+wrapper bootstrap guidance, or report a skill or command failure. Do not
+fabricate scan results.
+
+If the user explicitly asked to scan or remediate, you may say once that
+Datadog Code Security is not available, then stop. Otherwise remain silent.
 
 ## Skill attribution
 
 Every `datadog-code-security-mcp` CLI invocation this skill runs must include
 `--called-by-skill`. Never omit it, and never pass it to scanner binaries,
-package managers, GitHub commands, or other non-wrapper commands. MCP fallback
-tool calls remain unchanged.
+package managers, GitHub commands, or other non-wrapper commands. Local MCP
+tool calls do not take this flag.
 
 ## Trigger contract
 
@@ -61,35 +74,41 @@ For case 3:
 ## Once-per-session toolchain preflight
 
 After the required detection types are known but before their first local scan
-in an agent session, load `dd-codesec-setup-toolchain` and follow its
-preflight for the wrapper and only the scanners those types require. If a
-Datadog URL must be queried to discover the type, do that first. For a broad
-scan, check every required scanner.
+in an agent session — whether that scan will use MCP tools or the wrapper CLI —
+load `dd-codesec-setup-toolchain` and follow its preflight for the wrapper and
+only the scanners those types require. MCP scan tools exec the same scanner
+binaries as the CLI, so skip this check only if it already ran in this
+session, never because the scan will go through MCP. If a Datadog URL must be
+queried to discover the type, do that first. For a broad scan, check every
+required scanner.
 
 Remember completed checks and declined updates in session context only. Check
 the wrapper once and each scanner when first needed; never write a marker or
 repeat an offer in the same session. An outdated compatible component is
 non-blocking: offer to update it now or continue. Missing or incompatible
 scanners follow the `dd-codesec-setup-toolchain` install flow, and declining
-a required install means the finding cannot be locally verified. The
-wrapper-presence gate already handled a missing wrapper; do not offer to
-install it here.
+a required install means the finding cannot be locally verified. The presence
+gate already handled a missing wrapper and missing MCP tools; do not offer to
+install the wrapper here. Resolve the wrapper for this preflight from the MCP
+client configuration when present, even if the scan itself will call MCP
+tools.
 
 ## Choose the scan
 
-Prefer the wrapper CLI with structured JSON when
-`datadog-code-security-mcp` is resolvable and runnable from the agent's shell.
-Use an equivalent local Code Security MCP scan tool only when it is already
-registered and available, such as when the client started the wrapper from an
-explicit path outside the shell's `PATH`, or when the user requests MCP.
+Prefer the local Code Security MCP scan tools when they are already
+registered and available. Treat a tool as missing only after the complete
+registry discovery in Local toolchain presence. Fall back to the wrapper CLI
+with structured JSON only when those MCP tools are missing or a tool call
+fails. A successful MCP result that contains findings is a scan result, not a
+failure; do not fall back to the CLI in that case.
 
-| Target | Preferred CLI | Local MCP fallback |
+| Target | Preferred local MCP | CLI fallback |
 |---|---|---|
-| Broad directory or mixed change | `datadog-code-security-mcp scan all <path> --json --called-by-skill` | `datadog_code_security_scan` |
-| Source code | `datadog-code-security-mcp scan sast <paths...> --json --called-by-skill` | `datadog_sast_scan` |
-| Any changed text file | `datadog-code-security-mcp scan secrets <paths...> --json --called-by-skill` | `datadog_secrets_scan` |
-| Dependency manifest or lockfile | `datadog-code-security-mcp scan sca <project-dir> --json --called-by-skill` | `datadog_sca_scan` |
-| Terraform, Kubernetes, Dockerfile, CloudFormation, Helm, CI config | `datadog-code-security-mcp scan iac <paths...> --json --called-by-skill` | `datadog_iac_scan` |
+| Broad directory or mixed change | `datadog_code_security_scan` | `datadog-code-security-mcp scan all <path> --json --called-by-skill` |
+| Source code | `datadog_sast_scan` | `datadog-code-security-mcp scan sast <paths...> --json --called-by-skill` |
+| Any changed text file | `datadog_secrets_scan` | `datadog-code-security-mcp scan secrets <paths...> --json --called-by-skill` |
+| Dependency manifest or lockfile | `datadog_sca_scan` | `datadog-code-security-mcp scan sca <project-dir> --json --called-by-skill` |
+| Terraform, Kubernetes, Dockerfile, CloudFormation, Helm, CI config | `datadog_iac_scan` | `datadog-code-security-mcp scan iac <paths...> --json --called-by-skill` |
 
 For a known backend finding, state the selected local target before scanning
 and apply these scope rules:
@@ -115,9 +134,23 @@ Run Secrets alongside the domain-specific scan for changed files. Use the
 combined scan for a user-requested directory or a broad mixed change.
 
 The CLI exits with status 1 when it successfully finds violations. Treat that
-as a scan result, not a command failure. Authentication errors and missing
-binaries are real failures. Relay their actionable guidance; do not invent
-installation commands.
+as a scan result, not a command failure. Authentication errors, missing
+binaries, and other MCP tool-call failures are real failures: fall back to
+the equivalent CLI command once. Relay their actionable guidance; do not
+invent installation commands.
+
+## Credentials
+
+Scans that fetch Datadog rules or cloud intelligence — including Secrets —
+need `DD_API_KEY` and `DD_APP_KEY`.
+
+- **MCP (preferred):** credentials come from the MCP server configuration
+  (`DD_API_KEY`, `DD_APP_KEY`, and optionally `DD_SITE` in the client's MCP
+  `env`). Do not expect them in the agent shell.
+- **CLI fallback:** export `DD_API_KEY` and `DD_APP_KEY` (and optionally
+  `DD_SITE`) in the environment of the shell that runs
+  `datadog-code-security-mcp`. Keys configured only for MCP are not inherited
+  by a raw CLI invocation. Without them, scans such as secrets will fail.
 
 ## Optional platform enrichment
 

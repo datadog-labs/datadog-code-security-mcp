@@ -42,11 +42,12 @@ package managers, GitHub commands, or other non-wrapper commands.
 
 When remediation or verification invokes this skill as a session preflight,
 check the wrapper only if it has not been checked in the current session and
-check only the scanners required by the selected detection types. If the
-wrapper executable is not resolvable, return immediately without offering
-installation. Remember completed checks and declined updates in session
-context, never on disk. Return to the calling workflow after the user updates
-or chooses to continue.
+check only the scanners required by the selected detection types. Run this
+preflight for MCP-tool scans and CLI scans alike: both drive the same wrapper
+and scanner binaries. If the wrapper executable is not resolvable, return
+immediately without offering installation. Remember completed checks and
+declined updates in session context, never on disk. Return to the calling
+workflow after the user updates or chooses to continue.
 
 If the wrapper itself is absent and Homebrew is installed, offer:
 

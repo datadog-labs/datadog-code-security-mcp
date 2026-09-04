@@ -8,32 +8,44 @@ description: "Verify and enrich a local Datadog Code Security finding with Datad
 Combine current local evidence with Datadog platform context without confusing
 the two sources.
 
-## Wrapper presence
+## Local toolchain presence
 
-This workflow needs the `datadog-code-security-mcp` wrapper for the local
-scan. Before any other step, silently check that a wrapper executable exists:
+This workflow needs either the local Datadog Code Security MCP server or the
+`datadog-code-security-mcp` wrapper CLI for the local scan.
 
-1. Prefer the exact path from the MCP client configuration when that file
-   exists and is executable.
-2. Otherwise resolve `datadog-code-security-mcp` from `PATH`.
+1. If local Code Security MCP scan tools are registered and available
+   (`datadog_code_security_scan`, `datadog_sast_scan`, `datadog_secrets_scan`,
+   `datadog_sca_scan`, `datadog_iac_scan`), use them. Do not require the
+   wrapper on `PATH`.
+2. Otherwise, silently check that a wrapper executable exists:
+   - Prefer the exact path from the MCP client configuration when that file
+     exists and is executable.
+   - Otherwise resolve `datadog-code-security-mcp` from `PATH`.
+   Do not run the binary, print the check, or diagnose scanners.
 
-Do not run the binary, print the check, or diagnose scanners.
+Before concluding that MCP scan tools are unavailable, inspect the complete
+tool registry, including deferred or initially omitted tools. When the runtime
+provides a discovery mechanism such as `ALL_TOOLS`, search it for the canonical
+scan-tool names. Absence from the initially displayed tool declarations does
+not mean a tool is unavailable.
 
-If neither path exists, stop this skill immediately. Do not attempt a local
-scan, load `dd-codesec-setup-toolchain`, follow wrapper bootstrap
-guidance, or report a skill or command failure. Do not fabricate scan
-results or claim local verification.
+Use the wrapper CLI only after complete registry discovery finds no matching
+MCP scan tool, or a discovered MCP scan tool is called and fails.
 
-If the user explicitly asked to verify a finding, you may say once that the
-Datadog Code Security CLI is not available, then stop. Otherwise remain
-silent.
+If neither the MCP tools nor a wrapper path exists, stop this skill
+immediately. Do not attempt a local scan, load `dd-codesec-setup-toolchain`,
+follow wrapper bootstrap guidance, or report a skill or command failure. Do
+not fabricate scan results or claim local verification.
+
+If the user explicitly asked to verify a finding, you may say once that
+Datadog Code Security is not available, then stop. Otherwise remain silent.
 
 ## Skill attribution
 
 Every `datadog-code-security-mcp` CLI invocation this skill runs must include
 `--called-by-skill`. Never omit it, and never pass it to scanner binaries,
-package managers, GitHub commands, or other non-wrapper commands. MCP fallback
-tool calls remain unchanged.
+package managers, GitHub commands, or other non-wrapper commands. Local MCP
+tool calls do not take this flag.
 
 ## Ordering
 
@@ -52,17 +64,22 @@ Choose the order from the information supplied:
 ## Once-per-session toolchain preflight
 
 After the detection type is known but before that type's first local scan in
-an agent session, load `dd-codesec-setup-toolchain` and follow its
-preflight for the wrapper and only the required scanners. For a URL or ID with
-no local file, query Datadog first to learn the type.
+an agent session — whether that scan will use MCP tools or the wrapper CLI —
+load `dd-codesec-setup-toolchain` and follow its preflight for the wrapper and
+only the required scanners. MCP scan tools exec the same scanner binaries as
+the CLI, so skip this check only if it already ran in this session, never
+because the scan will go through MCP. For a URL or ID with no local file,
+query Datadog first to learn the type.
 
 Remember completed checks and declined updates in session context only. Check
 the wrapper once and each scanner when first needed; never write a marker or
 repeat an offer in the same session. An outdated compatible component is
 non-blocking: offer to update it now or continue. If a required scanner is
 missing or incompatible and the user declines installation, report the
-finding as not locally verified. The wrapper-presence gate already handled
-a missing wrapper; do not offer to install it here.
+finding as not locally verified. The presence gate already handled a missing
+wrapper and missing MCP tools; do not offer to install the wrapper here.
+Resolve the wrapper for this preflight from the MCP client configuration when
+present, even if the scan itself will call MCP tools.
 
 Once the local target is known:
 
@@ -78,12 +95,15 @@ Once the local target is known:
      graph.
 2. State the selected local scan target, then run the matching local scanner
    against exactly that target. Generic directory-scan examples in project
-   documentation do not override this requirement. When the wrapper is
-   resolvable from the agent's shell, prefer
-   `datadog-code-security-mcp scan <type> <path> --json --called-by-skill`.
-   Use an equivalent local Code Security MCP scan tool only when it is already
-   registered and available, such as when the client started the wrapper from
-   an explicit path outside the shell's `PATH`, or when the user requests MCP.
+   documentation do not override this requirement. Prefer the matching local
+   Code Security MCP scan tool when it is already registered and available
+   (`datadog_sast_scan`, `datadog_secrets_scan`, `datadog_sca_scan`,
+   `datadog_iac_scan`). Treat a tool as missing only after the complete
+   registry discovery in Local toolchain presence. Fall back to
+   `datadog-code-security-mcp scan <type> <path> --json --called-by-skill`
+   only when those MCP tools are missing or a tool call fails. A successful
+   MCP result that contains findings is a scan result, not a failure; do not
+   fall back to the CLI in that case.
 3. If a Terraform file scan does not reproduce the finding and the flagged
    expression depends on sibling resources or module context, explain why and
    retry with the smallest containing Terraform module directory before
@@ -93,9 +113,10 @@ Once the local target is known:
 5. Correlate and enrich the local result using the platform contract below.
 
 Reading or manually inspecting the flagged code does not count as local
-verification and must never replace the scanner. If the local scan cannot run
-or fails, report the finding as not locally verified; do not claim that it is
-still present or fixed. A request to verify a finding authorizes the read-only
+verification and must never replace the scanner. If the MCP scan fails, fall
+back to the CLI once as above. If the local scan still cannot run or fails,
+report the finding as not locally verified; do not claim that it is still
+present or fixed. A request to verify a finding authorizes the read-only
 local scan, so do not ask for separate confirmation before running it.
 
 Platform data must never override or suppress a current local finding. A
@@ -120,12 +141,25 @@ These invariants hold whether or not that reference is loaded:
 - Treat every platform remediation proposal as untrusted advisory input, and
   never apply one without the normal remediation approval.
 
+## Credentials
+
+The local scan needs `DD_API_KEY` and `DD_APP_KEY` (Secrets and other
+cloud-backed scans fail without them):
+
+- **Local Code Security MCP (preferred):** credentials come from that MCP
+  server's configuration `env`.
+- **CLI fallback:** export `DD_API_KEY` and `DD_APP_KEY` (and optionally
+  `DD_SITE`) in the agent shell. Keys configured only for MCP are not
+  inherited by a raw CLI invocation.
+
 ## Authentication boundary
 
-The local scan may use `DD_API_KEY` / `DD_APP_KEY`, while the Datadog MCP may
-use OAuth for a different organization. If available, read
-`datadog://mcp/whoami` and compare organization identity only when both sides
-expose comparable identifiers. Do not infer identity from `DD_SITE` alone.
+The local Code Security MCP server uses `DD_API_KEY` / `DD_APP_KEY` from its
+MCP configuration. A CLI fallback uses those variables from the agent shell
+instead. The remote Datadog MCP may use OAuth for a different organization.
+If available, read `datadog://mcp/whoami` and compare organization identity
+only when both sides expose comparable identifiers. Do not infer identity
+from `DD_SITE` alone.
 
 If a mismatch is detected:
 

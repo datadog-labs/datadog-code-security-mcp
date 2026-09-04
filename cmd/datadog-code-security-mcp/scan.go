@@ -55,6 +55,12 @@ Use 'scan library' to scan specific libraries by PURL via the Datadog cloud API.
 The scan will analyze the specified files or directories and output results
 in human-readable format (default) or JSON format (with --json flag).
 
+Direct CLI scans need DD_API_KEY and DD_APP_KEY in the process environment
+(and optionally DD_SITE) to fetch security rules. Secrets and other
+cloud-backed scans fail without them. When used through the MCP server, set
+those variables in the MCP server configuration instead. MCP env values are
+not inherited by a raw CLI invocation.
+
 Examples:
   # Scan everything in current directory
   datadog-code-security-mcp scan all .

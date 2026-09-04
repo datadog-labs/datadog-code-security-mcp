@@ -96,3 +96,33 @@ func TestShippedSkillsAttributeWrapperCLIInvocations(t *testing.T) {
 		t.Fatalf("walk embedded skills: %v", err)
 	}
 }
+
+func TestScanSkillsPreferLocalMCP(t *testing.T) {
+	for _, skillID := range []string{
+		"dd-codesec-scan-and-fix",
+		"dd-codesec-verify-findings",
+	} {
+		data, err := fs.ReadFile(FS, skillID+"/SKILL.md")
+		if err != nil {
+			t.Fatalf("read %s/SKILL.md: %v", skillID, err)
+		}
+		text := strings.Join(strings.Fields(string(data)), " ")
+		prefersMCP := strings.Contains(text, "Prefer the local Code Security MCP") ||
+			strings.Contains(text, "Prefer the matching local Code Security MCP")
+		if !prefersMCP {
+			t.Errorf("%s does not prefer local Code Security MCP scan tools", skillID)
+		}
+		if !strings.Contains(text, "Fall back to") {
+			t.Errorf("%s does not describe CLI as a fallback", skillID)
+		}
+		if strings.Contains(text, "Preferred CLI") || strings.Contains(text, "Local MCP fallback") {
+			t.Errorf("%s still presents the CLI as the preferred scan path", skillID)
+		}
+		if !strings.Contains(text, "ALL_TOOLS") || !strings.Contains(text, "deferred") {
+			t.Errorf("%s does not require complete MCP tool-registry discovery before CLI fallback", skillID)
+		}
+		if !strings.Contains(text, "same scanner binaries") {
+			t.Errorf("%s does not require toolchain preflight for MCP and CLI scans alike", skillID)
+		}
+	}
+}

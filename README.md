@@ -105,11 +105,15 @@ user configuration directories and installs into `~/.claude/skills` and
 `~/.codex/skills` when present. It then asks you to restart updated clients.
 The accepted `--client` IDs are `agents`, `claude-code`, and `codex`.
 
-The skills prefer `datadog-code-security-mcp ... --json` from the local shell
-and use registered local Code Security MCP tools as a compatibility fallback,
-so skill installation does not require MCP registration. The remote Datadog
-MCP, when available, provides platform context rather than performing the
-authoritative local scan. Setup does not modify MCP configuration.
+The skills prefer the local Code Security MCP scan tools when that MCP
+server is registered in the client. They fall back to
+`datadog-code-security-mcp ... --json` from the local shell only if those
+MCP tools are unavailable or a tool call fails. Skill installation does not
+register the MCP server; configure it separately so the preferred path
+works. Direct CLI fallback requires `DD_API_KEY` and `DD_APP_KEY` in the
+shell environment. The remote Datadog MCP, when available, provides
+platform context rather than performing the authoritative local scan. Setup
+does not modify MCP configuration.
 
 The remediation skill never scans after every edit. It runs when explicitly
 asked or when verifying a backend finding; after a task changes security-
@@ -182,9 +186,21 @@ The MCP server requires external Datadog security binaries to perform scans.
 
 **Note:** If a required binary is missing, the MCP server will detect this and provide platform-specific installation instructions.
 
-## Integrations
+## Authentication
 
-The MCP Server requires [Datadog API key and application](https://docs.datadoghq.com/es/account_management/api-app-keys/) key as DD_API_KEY and DD_APP_KEY
+Datadog Code Security needs a [Datadog API key and application key](https://docs.datadoghq.com/account_management/api-app-keys/)
+as `DD_API_KEY` and `DD_APP_KEY`. Where you set them depends on how you run
+the tool:
+
+- **MCP server (recommended for AI assistants):** put the keys in the MCP
+  server `env` in your client configuration (examples below). The MCP process
+  inherits those values. Skills use this server when it is available.
+- **Direct CLI:** export `DD_API_KEY` and `DD_APP_KEY` in your shell
+  environment (optionally `DD_SITE`). MCP `env` values are not visible to a
+  raw `datadog-code-security-mcp scan ...` process. Without these variables,
+  some scans fail — Secrets in particular cannot fetch security rules.
+
+Optional: `DD_SITE` (your Datadog site, for example `datadoghq.com`).
 
 ### Claude Configuration
 
@@ -221,7 +237,7 @@ claude mcp list | grep datadog-code-security
 }
 ```
 
-## Cursor Configuration
+### Cursor Configuration
 
 Cursor supports MCP servers through its settings. Add the following to your Cursor MCP configuration:
 
@@ -240,6 +256,25 @@ Cursor supports MCP servers through its settings. Add the following to your Curs
   }
 }
 ```
+
+### Codex Configuration
+
+Add the following to `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.datadog-code-security]
+command = "datadog-code-security-mcp"
+args = ["start"]
+
+[mcp_servers.datadog-code-security.env]
+DD_API_KEY = "<your-api-key>"
+DD_APP_KEY = "<your-app-key>"
+DD_SITE = "datadoghq.com"
+```
+
+Restart Codex after saving the file so it picks up the new server. Skills
+installed by `datadog-code-security-mcp setup` live in `~/.codex/skills` and
+`~/.agents/skills`.
 
 ## Usage
 
@@ -260,6 +295,11 @@ Once configured, ask your AI assistant to scan your code:
 - "What dependencies does this project have?"
 
 ## Direct Scanning with CLI
+
+You can run scans without an MCP client. Export `DD_API_KEY` and
+`DD_APP_KEY` in the same environment as the CLI (see
+[Authentication](#authentication)). MCP configuration does not apply to these
+commands.
 
 ```bash
 # Comprehensive scan (SAST + Secrets + SCA + IaC in parallel)

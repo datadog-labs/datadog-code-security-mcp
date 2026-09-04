@@ -37,15 +37,15 @@ make build-all      # Outputs to dist/
 
 When working on a feature branch, test your changes with Claude Desktop before pushing:
 
-### ⚠️ IMPORTANT: Prefer CLI JSON for Skill Workflows
+### Prefer local MCP for skill workflows
 
-For remediation and verification workflows, prefer the exact installed
-`datadog-code-security-mcp scan ... --json` CLI. Use a registered local MCP
-scan tool when the wrapper is unavailable from the agent shell, when the user
-requests MCP, or when testing MCP interface parity. The remote Datadog MCP is
-for platform context and does not replace a local scan.
+For remediation and verification workflows, prefer the registered local Code
+Security MCP scan tools when they are available. Fall back to
+`datadog-code-security-mcp scan ... --json` CLI only when those MCP tools are
+missing or a tool call fails. The remote Datadog MCP is for platform context
+and does not replace a local scan.
 
-**Available local MCP compatibility tools:**
+**Available local MCP scan tools:**
 
 - `mcp__datadog-code-security__datadog_code_security_scan` - Comprehensive scan (SAST + Secrets + SCA + IaC)
 - `mcp__datadog-code-security__datadog_sast_scan` - SAST only
@@ -54,9 +54,10 @@ for platform context and does not replace a local scan.
 - `mcp__datadog-code-security__datadog_iac_scan` - IaC only
 - `mcp__datadog-code-security__datadog_generate_sbom` - Generate SBOM
 
-Build the wrapper first when testing local source changes. Exercise the CLI
-JSON path as the primary skill interface and run focused checks through the
-tools above when changing handlers or schemas.
+Build the wrapper first when testing local source changes. Configure the
+client MCP server to use that local binary, then exercise the MCP path as the
+primary skill interface. Use the CLI JSON path when testing CLI fallback or
+when MCP is not registered.
 
 ### Step 1: Build the binary
 
