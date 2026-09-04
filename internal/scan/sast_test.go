@@ -84,6 +84,60 @@ func TestSASTScanner_FilterBySeverity_AllFiltered(t *testing.T) {
 	}
 }
 
+func TestSASTScannerEffectiveMinSeverity(t *testing.T) {
+	s := NewSASTScanner(binary.NewBinaryManager())
+	findings := []types.Violation{
+		{Severity: types.SeverityLow, Rule: "low"},
+		{Severity: types.SeverityMedium, Rule: "medium"},
+		{Severity: types.SeverityHigh, Rule: "high"},
+		{Severity: types.SeverityCritical, Rule: "critical"},
+	}
+
+	tests := []struct {
+		name      string
+		args      ScanArgs
+		wantFloor string
+		wantKept  int
+	}{
+		{
+			name:      "omitted uses default LOW",
+			wantFloor: types.SeverityLow,
+			wantKept:  4,
+		},
+		{
+			name:      "explicit LOW",
+			args:      ScanArgs{MinSeverity: types.SeverityLow},
+			wantFloor: types.SeverityLow,
+			wantKept:  4,
+		},
+		{
+			name:      "explicit HIGH",
+			args:      ScanArgs{MinSeverity: types.SeverityHigh},
+			wantFloor: types.SeverityHigh,
+			wantKept:  2,
+		},
+		{
+			name:      "explicit CRITICAL",
+			args:      ScanArgs{MinSeverity: types.SeverityCritical},
+			wantFloor: types.SeverityCritical,
+			wantKept:  1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := s.effectiveMinSeverity(tt.args)
+			if got != tt.wantFloor {
+				t.Fatalf("effectiveMinSeverity() = %q, want %q", got, tt.wantFloor)
+			}
+			filtered := s.filterBySeverity(findings, got)
+			if len(filtered) != tt.wantKept {
+				t.Fatalf("filtered count = %d, want %d", len(filtered), tt.wantKept)
+			}
+		})
+	}
+}
+
 func TestNewSASTScanner_DefaultConfig(t *testing.T) {
 	binMgr := binary.NewBinaryManager()
 	s := NewSASTScanner(binMgr)

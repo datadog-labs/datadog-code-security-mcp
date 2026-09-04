@@ -55,14 +55,19 @@ func (s *SASTScanner) Execute(ctx context.Context, args ScanArgs) (ScannerResult
 
 	// Apply SAST-specific severity filtering
 	if s.filterConfig.Enabled {
-		minSeverity := args.MinSeverity
-		if minSeverity == "" {
-			minSeverity = s.filterConfig.MinSeverity
-		}
-		res.Findings = s.filterBySeverity(res.Findings, minSeverity)
+		res.Findings = s.filterBySeverity(res.Findings, s.effectiveMinSeverity(args))
 	}
 
 	return res, nil
+}
+
+// effectiveMinSeverity returns the caller-requested SAST floor, or the
+// scanner default when the caller omitted it.
+func (s *SASTScanner) effectiveMinSeverity(args ScanArgs) string {
+	if args.MinSeverity != "" {
+		return args.MinSeverity
+	}
+	return s.filterConfig.MinSeverity
 }
 
 // filterBySeverity removes findings below the threshold
