@@ -56,6 +56,7 @@ const (
 	ErrKindScanError        = "ScanError"
 	ErrKindNetwork          = "Network"
 	ErrKindGitError         = "GitError"
+	ErrKindSetupError       = "SetupError"
 	ErrKindUnknown          = "Unknown"
 )
 
@@ -71,6 +72,7 @@ var kindDescriptions = map[string]string{
 	ErrKindScanError:        "scan execution failed",
 	ErrKindNetwork:          "network error",
 	ErrKindGitError:         "git error",
+	ErrKindSetupError:       "skill setup failed",
 	ErrKindUnknown:          "unknown error",
 }
 
@@ -130,6 +132,9 @@ var errorRules = []errorRule{
 	{kind: ErrKindBinaryNotFound, contains: []string{"executable file not found"}},
 	{kind: ErrKindBinaryNotFound, contains: []string{"binary validation failed"}},
 
+	{kind: ErrKindSetupError, contains: []string{"setup failed for:"}},
+	{kind: ErrKindSetupError, contains: []string{"resolve user home directory"}, message: "user home directory unavailable"},
+
 	{kind: ErrKindPathNotFound, contains: []string{"path does not exist"}},
 	{kind: ErrKindPathNotFound, contains: []string{"no such file or directory"}},
 	{kind: ErrKindPathNotFound, contains: []string{"cannot find the path"}},
@@ -144,6 +149,8 @@ var errorRules = []errorRule{
 	// Owned argument-validation errors, matched by the exact phrases our own
 	// error constructors use — never a bare "invalid".
 	{kind: ErrKindInvalidArguments, contains: []string{constants.ErrInvalidArguments}},
+	{kind: ErrKindInvalidArguments, contains: []string{"unsupported client \""}},
+	{kind: ErrKindInvalidArguments, contains: []string{"invalid min_severity"}, message: "invalid min_severity"},
 	{kind: ErrKindInvalidArguments, contains: []string{"is required"}},
 	{kind: ErrKindInvalidArguments, contains: []string{"must be"}},
 

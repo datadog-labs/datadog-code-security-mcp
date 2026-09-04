@@ -13,6 +13,10 @@ Datadog Code Security MCP provides all Code Security scan tools to AI coding ass
 5. **`datadog_iac_scan`** - Infrastructure as code scanning
 6. **`datadog_generate_sbom`** - Generate Software Bill of Materials (SBOM)
 
+`datadog_code_security_scan` and `datadog_sast_scan` accept optional
+`min_severity` (`LOW`, `MEDIUM`, `HIGH`, or `CRITICAL`). It affects SAST only
+and defaults to `LOW`; in-source-suppressed findings remain excluded.
+
 ## Quick Start
 
 ### Installation
@@ -29,15 +33,152 @@ brew install datadog-labs/pack/datadog-code-security-mcp
 
 ```bash
 # macOS / Linux (auto-detects platform)
-curl -L "https://github.com/datadog-labs/datadog-code-security-mcp/releases/latest/download/datadog-code-security-mcp-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m).tar.gz" | tar xz
+OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
+case "$(uname -m)" in
+  x86_64)        ARCH="amd64" ;;
+  arm64|aarch64) ARCH="arm64" ;;
+  *) echo "Unsupported architecture: $(uname -m)" >&2; exit 1 ;;
+esac
+
+ASSET="datadog-code-security-mcp-${OS}-${ARCH}.tar.gz"
+curl -fL \
+  "https://github.com/datadog-labs/datadog-code-security-mcp/releases/latest/download/${ASSET}" \
+  -o "/tmp/${ASSET}"
+tar -xzf "/tmp/${ASSET}"
 sudo install -m 755 datadog-code-security-mcp /usr/local/bin/
+rm -f "/tmp/${ASSET}" datadog-code-security-mcp
 ```
 
 **Verify installation:**
 
 ```bash
 datadog-code-security-mcp version
+datadog-code-security-mcp version --detailed # Include every required scanner
 ```
+
+### Install AI Client Skills
+
+The binary ships three Agent Skills for compatible AI coding clients:
+
+- **`dd-codesec-scan-and-fix`** — scans local code, loads a focused SAST,
+  Secrets, SCA, or IaC playbook, optionally enriches matches with
+  Datadog-proposed code or package updates, applies approved fixes, and
+  rescans to verify them.
+- **`dd-codesec-verify-findings`** — enriches a current local finding with
+  Datadog platform context when a Datadog MCP server is available. Platform
+  proposals are advisory and must be matched and verified against the current
+  checkout.
+- **`dd-codesec-setup-toolchain`** — installs, updates, and diagnoses the
+  scanner binaries, relaying the CLI's platform-specific installation
+  instructions with confirmation guardrails.
+
+Install them into the shared Agent Skills directory and every detected native
+client directory:
+
+```bash
+datadog-code-security-mcp setup
+```
+
+Useful options:
+
+```bash
+# Preview without writing files
+datadog-code-security-mcp setup --dry-run
+
+# Restrict setup to one or more clients
+datadog-code-security-mcp setup --client agents --client codex
+
+# Remove only skills managed by this binary
+datadog-code-security-mcp setup --remove-skills
+
+# Remove Datadog skills from the shared Agent Skills directory only
+datadog-code-security-mcp setup --client agents --remove-skills
+
+# Machine-readable report
+datadog-code-security-mcp setup --json
+```
+
+Setup always installs into `~/.agents/skills`, the shared directory used by
+Cursor, OpenCode, Pi, Gemini CLI, and other clients that follow the Agent
+Skills convention. It also detects Claude Code and Codex from their CLIs or
+user configuration directories and installs into `~/.claude/skills` and
+`~/.codex/skills` when present. It then asks you to restart updated clients.
+The accepted `--client` IDs are `agents`, `claude-code`, and `codex`.
+
+The skills prefer the local Code Security MCP scan tools when that MCP
+server is registered in the client. They fall back to
+`datadog-code-security-mcp ... --json` from the local shell only if those
+MCP tools are unavailable or a tool call fails. Skill installation does not
+register the MCP server; configure it separately so the preferred path
+works. Direct CLI fallback requires `DD_API_KEY` and `DD_APP_KEY` in the
+shell environment. The remote Datadog MCP, when available, provides
+platform context rather than performing the authoritative local scan. Setup
+does not modify MCP configuration.
+
+The remediation skill never scans after every edit. It runs when explicitly
+asked or when verifying a backend finding; after a task changes security-
+relevant files it offers one changed-file scan and waits for confirmation.
+
+### Claude Code: skills missing or not auto-triggering
+
+After `setup`, Claude Code should list `dd-codesec-scan-and-fix`,
+`dd-codesec-verify-findings`, and `dd-codesec-setup-toolchain`. Restart
+Claude Code if they are missing from `/skills`. Confirm the trees exist under
+`~/.claude/skills` (native) or `~/.agents/skills` (shared). You can still
+invoke a skill by name, for example `/dd-codesec-scan-and-fix`.
+
+If a skill is listed but never auto-triggers, Claude Code may have dropped
+its **description** from context. It caps how much of the skill listing
+(names + descriptions) it loads each turn. When that cap is exceeded, it
+keeps every skill's **name** but drops the **description** for the skills
+you invoke least. A skill you rarely call — including these, right after
+install — can lose its description before a heavily used native one does.
+Renaming the skill or rewriting its description does not fix this; it is a
+budget and priority issue, not a wording issue.
+
+This is a known upstream pattern. See anthropics/claude-code
+[#57515](https://github.com/anthropics/claude-code/issues/57515),
+[#59921](https://github.com/anthropics/claude-code/issues/59921),
+[#68677](https://github.com/anthropics/claude-code/issues/68677),
+[#78270](https://github.com/anthropics/claude-code/issues/78270), and
+[#85027](https://github.com/anthropics/claude-code/issues/85027).
+
+Check `/context` and run `/doctor` to see whether the skill listing is over
+budget. Two project settings can help. Add either to this project's
+`.claude/settings.json` (not your global user settings), so it only affects
+sessions in that project:
+
+**Option A — raise the skill-listing budget:**
+
+```json
+{
+  "skillListingBudgetFraction": 0.02
+}
+```
+
+The default is `0.01` (1% of the context window). This is a blunt
+instrument: it gives more room to every skill's description, not just
+Datadog's, and may need raising again as more skills get installed.
+
+**Option B — turn off a competing skill (recommended first):**
+
+```json
+{
+  "skillOverrides": {
+    "security-review": "off"
+  }
+}
+```
+
+Claude Code ships a native `security-review` skill that can win the "most
+invoked" slot and push Datadog descriptions out first. `"off"` (or
+`"name-only"`) removes it from contention without changing the global
+budget. You can also set this from the `/skills` menu: highlight the skill,
+press `Space` to cycle its state, then `Esc` to save.
+
+Prefer Option B: it targets the usual cause instead of raising the budget
+for every skill. Full reference: [Claude Code settings](https://code.claude.com/docs/en/settings-reference)
+(`skillListingBudgetFraction`, `skillListingMaxDescChars`, `skillOverrides`).
 
 **⚠️ Requirements:**
 
@@ -45,11 +186,26 @@ The MCP server requires external Datadog security binaries to perform scans.
 
 **Note:** If a required binary is missing, the MCP server will detect this and provide platform-specific installation instructions.
 
-## Integrations
+## Authentication
 
-The MCP Server requires [Datadog API key and application](https://docs.datadoghq.com/es/account_management/api-app-keys/) key as DD_API_KEY and DD_APP_KEY
+Datadog Code Security needs a [Datadog API key and application key](https://docs.datadoghq.com/account_management/api-app-keys/)
+as `DD_API_KEY` and `DD_APP_KEY`. Where you set them depends on how you run
+the tool:
+
+- **MCP server (recommended for AI assistants):** put the keys in the MCP
+  server `env` in your client configuration (examples below). The MCP process
+  inherits those values. Skills use this server when it is available.
+- **Direct CLI:** export `DD_API_KEY` and `DD_APP_KEY` in your shell
+  environment (optionally `DD_SITE`). MCP `env` values are not visible to a
+  raw `datadog-code-security-mcp scan ...` process. Without these variables,
+  some scans fail — Secrets in particular cannot fetch security rules.
+
+Optional: `DD_SITE` (your Datadog site, for example `datadoghq.com`).
 
 ### Claude Configuration
+
+For Claude Code skills that do not appear or do not auto-trigger, see
+[Claude Code: skills missing or not auto-triggering](#claude-code-skills-missing-or-not-auto-triggering).
 
 ```bash
 # Configure with API keys
@@ -81,7 +237,7 @@ claude mcp list | grep datadog-code-security
 }
 ```
 
-## Cursor Configuration
+### Cursor Configuration
 
 Cursor supports MCP servers through its settings. Add the following to your Cursor MCP configuration:
 
@@ -101,6 +257,25 @@ Cursor supports MCP servers through its settings. Add the following to your Curs
 }
 ```
 
+### Codex Configuration
+
+Add the following to `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.datadog-code-security]
+command = "datadog-code-security-mcp"
+args = ["start"]
+
+[mcp_servers.datadog-code-security.env]
+DD_API_KEY = "<your-api-key>"
+DD_APP_KEY = "<your-app-key>"
+DD_SITE = "datadoghq.com"
+```
+
+Restart Codex after saving the file so it picks up the new server. Skills
+installed by `datadog-code-security-mcp setup` live in `~/.codex/skills` and
+`~/.agents/skills`.
+
 ## Usage
 
 Once configured, ask your AI assistant to scan your code:
@@ -109,7 +284,7 @@ Once configured, ask your AI assistant to scan your code:
 
 - "Scan this directory for security vulnerabilities"
 - "Check if there are any hardcoded secrets in config/"
-- "Run a full security scan (SAST + Secrets + SCA)"
+- "Run a full security scan (SAST + Secrets + SCA + IaC)"
 - "Find all security issues in this project"
 
 **Dependency Analysis:**
@@ -121,14 +296,23 @@ Once configured, ask your AI assistant to scan your code:
 
 ## Direct Scanning with CLI
 
+You can run scans without an MCP client. Export `DD_API_KEY` and
+`DD_APP_KEY` in the same environment as the CLI (see
+[Authentication](#authentication)). MCP configuration does not apply to these
+commands.
+
 ```bash
-# Comprehensive scan (SAST + Secrets + SCA in parallel)
+# Comprehensive scan (SAST + Secrets + SCA + IaC in parallel)
 datadog-code-security-mcp scan all ./src
 
 # Individual scan types
 datadog-code-security-mcp scan sast ./app      # SAST only
 datadog-code-security-mcp scan secrets ./config # Secrets only
 datadog-code-security-mcp scan sca ./           # SCA only (requires datadog-security-cli)
+datadog-code-security-mcp scan iac ./infra      # IaC only
+
+# SAST returns LOW and above by default; choose a higher threshold if desired
+datadog-code-security-mcp scan sast ./app --min-severity HIGH
 
 # SBOM generation
 datadog-code-security-mcp generate-sbom .           # Generate SBOM

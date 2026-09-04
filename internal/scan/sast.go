@@ -21,7 +21,7 @@ type FilterConfig struct {
 
 // Default configuration values
 const (
-	DefaultMinSeverity   = types.SeverityMedium
+	DefaultMinSeverity   = types.SeverityLow
 	DefaultFilterEnabled = true
 )
 
@@ -39,7 +39,7 @@ func NewSASTScanner(binMgr *binary.BinaryManager) *SASTScanner {
 			},
 		},
 		filterConfig: FilterConfig{
-			MinSeverity: DefaultMinSeverity, // Default: filter out LOW severity
+			MinSeverity: DefaultMinSeverity,
 			Enabled:     DefaultFilterEnabled,
 		},
 	}
@@ -55,10 +55,19 @@ func (s *SASTScanner) Execute(ctx context.Context, args ScanArgs) (ScannerResult
 
 	// Apply SAST-specific severity filtering
 	if s.filterConfig.Enabled {
-		res.Findings = s.filterBySeverity(res.Findings, s.filterConfig.MinSeverity)
+		res.Findings = s.filterBySeverity(res.Findings, s.effectiveMinSeverity(args))
 	}
 
 	return res, nil
+}
+
+// effectiveMinSeverity returns the caller-requested SAST floor, or the
+// scanner default when the caller omitted it.
+func (s *SASTScanner) effectiveMinSeverity(args ScanArgs) string {
+	if args.MinSeverity != "" {
+		return args.MinSeverity
+	}
+	return s.filterConfig.MinSeverity
 }
 
 // filterBySeverity removes findings below the threshold

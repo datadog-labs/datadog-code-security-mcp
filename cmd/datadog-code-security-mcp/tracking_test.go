@@ -135,6 +135,7 @@ func testTrackCLIScan(ctx context.Context, scanType string, outcome *scan.ScanOu
 	}
 	trackScan(ctx, telemetry.ScanEvent{
 		Interface:    telemetry.InterfaceCLI,
+		Caller:       cliCaller(),
 		Outcome:      outcome,
 		StartedAt:    start,
 		PathsCount:   pathsCount,
@@ -176,8 +177,31 @@ func TestTrackCLIScan_OperationAll(t *testing.T) {
 	if item["interface"] != "cli" {
 		t.Errorf("interface = %v, want cli", item["interface"])
 	}
+	if _, ok := item["caller"]; ok {
+		t.Errorf("caller must be omitted for direct CLI usage, got %v", item["caller"])
+	}
 	if v, _ := item["paths_count"].(float64); int(v) != 3 {
 		t.Errorf("paths_count = %v, want 3", item["paths_count"])
+	}
+}
+
+func TestTrackCLIScan_SkillCaller(t *testing.T) {
+	srv, ch := captureCmdServer(t)
+	telemetryClient = newCmdTestTelemetryClient(t, srv)
+	calledBySkill = true
+	t.Cleanup(func() {
+		telemetryClient = nil
+		calledBySkill = false
+	})
+
+	testTrackCLIScan(context.Background(), "sast", nil, time.Now(), 1, true, "", "none", nil)
+
+	item := waitCmdEvent(t, ch)
+	if item["interface"] != "cli" {
+		t.Errorf("interface = %v, want cli", item["interface"])
+	}
+	if item["caller"] != "skill" {
+		t.Errorf("caller = %v, want skill", item["caller"])
 	}
 }
 
@@ -335,6 +359,9 @@ func TestTrackMCPScan_SingleTypeIsPerScanEvent(t *testing.T) {
 	}
 	if item["interface"] != "mcp" {
 		t.Errorf("interface = %v, want mcp", item["interface"])
+	}
+	if _, ok := item["caller"]; ok {
+		t.Errorf("caller must be omitted for MCP usage, got %v", item["caller"])
 	}
 	if item["standalone"] != true {
 		t.Errorf("standalone = %v, want true (standalone single-type scan)", item["standalone"])
@@ -704,7 +731,7 @@ func TestRunDirectScan_InvalidScanTypeUsesSentinel(t *testing.T) {
 	// positional args are misused. Already lowercase so it survives the
 	// strings.ToLower normalization in runDirectScan unchanged.
 	rawArg := "/tmp/super-secret-token-abc123"
-	err := runDirectScan(rawArg, []string{"."}, "", false)
+	err := runDirectScan(rawArg, []string{"."}, "", false, types.SeverityLow)
 	if err == nil {
 		t.Fatal("expected an error for an invalid scan type")
 	}

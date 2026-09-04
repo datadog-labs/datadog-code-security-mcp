@@ -103,11 +103,31 @@ func TestCategorizeErrorKnownKinds(t *testing.T) {
 		{"scanner execution failed: exit status 127", ErrKindScanError},
 		{"error retrieving remote `origin`: remote not found", ErrKindGitError},
 		{"Unable to parse git ignores: open .git/info/exclude: not a directory", ErrKindGitError},
+		{"setup failed for: Agent Skills", ErrKindSetupError},
+		{"resolve user home directory: HOME is not set", ErrKindSetupError},
+		{`unsupported client "other" (valid options: agents, claude-code, codex)`, ErrKindInvalidArguments},
+		{"invalid min_severity: INFO (valid options: LOW, MEDIUM, HIGH, CRITICAL)", ErrKindInvalidArguments},
 	}
 	for _, tc := range cases {
 		if got := CategorizeError(fmt.Errorf("%s", tc.msg)); got != tc.want {
 			t.Errorf("CategorizeError(%q) = %q, want %q", tc.msg, got, tc.want)
 		}
+	}
+}
+
+func TestErrorInfoFromErrorInvalidMinSeverity(t *testing.T) {
+	info := ErrorInfoFromError(fmt.Errorf("invalid min_severity: INFO (valid options: LOW, MEDIUM, HIGH, CRITICAL)"))
+	if info == nil {
+		t.Fatal("expected non-nil ErrorInfo")
+	}
+	if info.Kind != ErrKindInvalidArguments {
+		t.Errorf("kind = %q, want %q", info.Kind, ErrKindInvalidArguments)
+	}
+	if info.Message != "invalid min_severity" {
+		t.Errorf("message = %q, want invalid min_severity", info.Message)
+	}
+	if strings.Contains(info.Message, "INFO") {
+		t.Errorf("curated message leaked user-provided severity: %q", info.Message)
 	}
 }
 

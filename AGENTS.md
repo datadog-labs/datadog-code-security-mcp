@@ -24,6 +24,7 @@ make clean          # Remove build artifacts
 go run ./cmd/datadog-code-security-mcp version
 go run ./cmd/datadog-code-security-mcp scan all ./
 go run ./cmd/datadog-code-security-mcp start  # MCP server mode
+go run ./cmd/datadog-code-security-mcp setup --dry-run
 ```
 
 ### Release
@@ -37,6 +38,7 @@ make build-all      # Build for all 5 platforms → dist/
 ```
 cmd/datadog-code-security-mcp/  # CLI entry point (Cobra)
   ├── main.go         # Setup & router
+  ├── setup.go        # AI client skill installation
   ├── scan.go         # Direct scan command
   ├── start.go        # MCP server (STDIO transport)
   ├── generate-sbom.go # SBOM generation command
@@ -68,7 +70,32 @@ internal/
   └── auth/           # Authentication (API keys)
       ├── config.go   # Load from environment (DD_API_KEY, DD_SITE, etc.)
       └── provider.go # Credential management with caching
+
+skills/                       # Skills embedded into release binaries
+  ├── embed.go                # go:embed dd-codesec-* trees
+  ├── dd-codesec-scan-and-fix/
+  ├── dd-codesec-verify-findings/
+  └── dd-codesec-setup-toolchain/
 ```
+
+## Skills
+
+The root `skills/` package embeds every `dd-codesec-*` directory recursively.
+`internal/setup/` always installs those trees into the shared
+`~/.agents/skills/` directory and also installs them into the native Claude
+Code and Codex skill directories when those clients are detected.
+
+Every installed skill root gets `.datadog-managed.json`. This marker is the
+**only** authority for updates and deletion:
+
+- Never overwrite an existing skill directory without a marker owned by
+  `datadog-code-security-mcp`.
+- Never prune by the `datadog-` name prefix.
+- Skip dot-directories such as Codex's `.system/`.
+- A removed embedded skill may be pruned only when its direct child directory
+  carries our marker.
+- Nested content such as a skill's `references/` is managed as part of the
+  marked skill tree.
 
 ## Code Patterns
 
@@ -82,19 +109,11 @@ internal/
 5. Add CLI flag in `cmd/scan.go`
 6. Add MCP tool in `cmd/start.go` → `registerSecurityTools()`
 
-**Example: SAST vs Secrets (both use BaseStaticAnalyzerScanner)**
+**Example: configurable SAST severity threshold**
 ```go
-// SAST scanner with severity filtering
-func NewSASTScanner(binMgr *binary.BinaryManager) Scanner {
-    return &BaseStaticAnalyzerScanner{
-        config: ScannerConfig{
-            DetectionType: types.DetectionTypeSAST,
-            FilterViolations: func(v types.Violation) bool {
-                return v.Severity != types.SeverityLow
-            },
-        },
-        binaryManager: binMgr,
-    }
+args := ScanArgs{
+    FilePaths:   []string{"./src"},
+    MinSeverity: types.SeverityHigh, // Omit for LOW and above.
 }
 ```
 
@@ -115,7 +134,7 @@ The codebase uses a **template method pattern** for scanners that share common l
   - Handles: binary execution, SARIF parsing, error handling
 
 - **Specialized Scanners** (extend base or implement Scanner interface)
-  - `SASTScanner` - Filters out low-severity findings
+  - `SASTScanner` - Applies the requested severity threshold (LOW by default)
   - `SecretsScanner` - Filters by confidence level
   - `SCAScanner` - Uses different binary (datadog-security-cli), custom parsing
 
@@ -253,7 +272,10 @@ export DD_SITE=datadoghq.com
 4. ✅ **SAST scanner** - Detects SQL injection, XSS, path traversal
 5. ✅ **Secrets scanner** - Detects AWS keys, GitHub tokens, API keys
 6. ✅ **Negative testing** - Verifies no false positives on clean code
-7. ✅ **Claude Desktop** - Configures local build (full mode only)
+7. ✅ **SBOM generation** - Generates and validates a component inventory
+8. ✅ **Setup command** - Verifies dry-run, installation, and `--remove-skills` in an isolated home
+9. ✅ **IaC scanner** - Detects infrastructure misconfigurations
+10. ✅ **Claude Desktop** - Configures local build (full mode only)
 
 **Option 2: Manual Step-by-Step Testing**
 
@@ -543,7 +565,7 @@ func runCommand(userInput string) error {
 
 **Before pushing code:**
 1. ✅ Run `./scripts/test-e2e.sh --ci` locally
-2. ✅ Verify all 7 test steps pass
+2. ✅ Verify all 9 CI test steps pass
 3. ✅ Check test outputs in `/tmp/*-output.json`
 4. ✅ Test with Claude Desktop (`--full` mode) for MCP changes
 5. ✅ Review any warnings in test output

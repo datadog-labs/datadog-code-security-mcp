@@ -19,6 +19,12 @@ const (
 	InterfaceMCP Interface = "mcp"
 )
 
+type Caller string
+
+const (
+	CallerSkill Caller = "skill"
+)
+
 type OutputFormat string
 
 const (
@@ -32,6 +38,7 @@ const (
 // there is never a second, competing source of truth on this struct.
 type ScanEvent struct {
 	Interface      Interface
+	Caller         Caller
 	Outcome        *scan.ScanOutcome
 	StartedAt      time.Time
 	PathsCount     int
@@ -124,6 +131,7 @@ type scanBaseAttributes struct {
 	pathsCount     int
 	authMethod     string
 	binaryVersions map[string]string
+	caller         Caller
 	firstRun       bool
 	outputFormat   OutputFormat
 	isGitRepo      bool
@@ -141,6 +149,7 @@ func (c *Client) scanBaseAttrs(event ScanEvent) scanBaseAttributes {
 		pathsCount:     event.PathsCount,
 		authMethod:     event.AuthMethod,
 		binaryVersions: event.BinaryVersions,
+		caller:         event.Caller,
 		firstRun:       c.IsFirstRun(),
 		outputFormat:   event.OutputFormat,
 		isGitRepo:      workspace.IsGitRepo,
@@ -167,6 +176,9 @@ func addScanBaseAttrs(attrs map[string]any, base scanBaseAttributes) {
 	attrs["first_run"] = base.firstRun
 	attrs["is_git_repo"] = base.isGitRepo
 	attrs["is_worktree"] = base.isWorktree
+	if base.caller != "" {
+		attrs["caller"] = string(base.caller)
+	}
 	if base.outputFormat != "" {
 		attrs["output_format"] = string(base.outputFormat)
 	}
@@ -249,6 +261,7 @@ func severityBreakdown(findings []types.Violation) map[string]int {
 type OperationEvent struct {
 	Operation      string
 	Interface      Interface
+	Caller         Caller
 	StartedAt      time.Time
 	Failure        error
 	BinaryVersions map[string]string
@@ -281,6 +294,9 @@ func (c *Client) TrackOperation(ctx context.Context, event OperationEvent) {
 	// uniformly so operation events aren't biased by interface (CLI vs MCP),
 	// matching per-scan events.
 	attrs["first_run"] = c.IsFirstRun()
+	if event.Caller != "" {
+		attrs["caller"] = string(event.Caller)
+	}
 	if event.AuthMethod != "" {
 		attrs["auth_method"] = event.AuthMethod
 	}

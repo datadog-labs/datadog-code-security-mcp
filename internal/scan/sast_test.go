@@ -84,12 +84,66 @@ func TestSASTScanner_FilterBySeverity_AllFiltered(t *testing.T) {
 	}
 }
 
+func TestSASTScannerEffectiveMinSeverity(t *testing.T) {
+	s := NewSASTScanner(binary.NewBinaryManager())
+	findings := []types.Violation{
+		{Severity: types.SeverityLow, Rule: "low"},
+		{Severity: types.SeverityMedium, Rule: "medium"},
+		{Severity: types.SeverityHigh, Rule: "high"},
+		{Severity: types.SeverityCritical, Rule: "critical"},
+	}
+
+	tests := []struct {
+		name      string
+		args      ScanArgs
+		wantFloor string
+		wantKept  int
+	}{
+		{
+			name:      "omitted uses default LOW",
+			wantFloor: types.SeverityLow,
+			wantKept:  4,
+		},
+		{
+			name:      "explicit LOW",
+			args:      ScanArgs{MinSeverity: types.SeverityLow},
+			wantFloor: types.SeverityLow,
+			wantKept:  4,
+		},
+		{
+			name:      "explicit HIGH",
+			args:      ScanArgs{MinSeverity: types.SeverityHigh},
+			wantFloor: types.SeverityHigh,
+			wantKept:  2,
+		},
+		{
+			name:      "explicit CRITICAL",
+			args:      ScanArgs{MinSeverity: types.SeverityCritical},
+			wantFloor: types.SeverityCritical,
+			wantKept:  1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := s.effectiveMinSeverity(tt.args)
+			if got != tt.wantFloor {
+				t.Fatalf("effectiveMinSeverity() = %q, want %q", got, tt.wantFloor)
+			}
+			filtered := s.filterBySeverity(findings, got)
+			if len(filtered) != tt.wantKept {
+				t.Fatalf("filtered count = %d, want %d", len(filtered), tt.wantKept)
+			}
+		})
+	}
+}
+
 func TestNewSASTScanner_DefaultConfig(t *testing.T) {
 	binMgr := binary.NewBinaryManager()
 	s := NewSASTScanner(binMgr)
 
-	if s.filterConfig.MinSeverity != "MEDIUM" {
-		t.Errorf("Expected default MinSeverity=MEDIUM, got %s", s.filterConfig.MinSeverity)
+	if s.filterConfig.MinSeverity != "LOW" {
+		t.Errorf("Expected default MinSeverity=LOW, got %s", s.filterConfig.MinSeverity)
 	}
 
 	if !s.filterConfig.Enabled {
@@ -144,19 +198,12 @@ func TestSASTScanner_FilteringWithDifferentSeverities(t *testing.T) {
 		{Severity: "LOW", Rule: "low4"},
 	}
 
-	// Test default behavior (MEDIUM and above)
+	// Test default behavior (LOW and above)
 	filtered := s.filterBySeverity(findings, s.filterConfig.MinSeverity)
 
-	// Should filter out 4 LOW findings
-	expectedCount := 11 - 4 // Total - LOW count
+	// All scanner severities are visible by default.
+	expectedCount := len(findings)
 	if len(filtered) != expectedCount {
-		t.Errorf("Expected %d findings with default filter (MEDIUM), got %d", expectedCount, len(filtered))
-	}
-
-	// Verify no LOW severity in results
-	for _, f := range filtered {
-		if f.Severity == "LOW" {
-			t.Error("Found LOW severity finding in filtered results, should have been filtered out")
-		}
+		t.Errorf("Expected %d findings with default filter (LOW), got %d", expectedCount, len(filtered))
 	}
 }

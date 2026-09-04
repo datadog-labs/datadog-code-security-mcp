@@ -32,9 +32,10 @@ const (
 
 // Argument keys for MCP tool requests
 const (
-	ArgFilePaths  = "file_paths"
-	ArgWorkingDir = "working_dir"
-	ArgPath       = "path"
+	ArgFilePaths   = "file_paths"
+	ArgWorkingDir  = "working_dir"
+	ArgMinSeverity = "min_severity"
+	ArgPath        = "path"
 )
 
 // Default values

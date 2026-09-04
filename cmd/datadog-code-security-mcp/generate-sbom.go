@@ -65,6 +65,7 @@ func runGenerateSBOM(path string, workingDir string, outputJSON bool) error {
 	ctx := context.Background()
 	event := telemetry.OperationEvent{
 		Interface: telemetry.InterfaceCLI,
+		Caller:    cliCaller(),
 		Operation: "generate_sbom",
 		StartedAt: time.Now(),
 		ScanType:  string(types.DetectionTypeSBOM),
