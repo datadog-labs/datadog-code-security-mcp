@@ -106,19 +106,19 @@ func TestSASTScannerEffectiveMinSeverity(t *testing.T) {
 		},
 		{
 			name:      "explicit LOW",
-			args:      ScanArgs{MinSeverity: types.SeverityLow},
+			args:      ScanArgs{MinSASTSeverity: types.SeverityLow},
 			wantFloor: types.SeverityLow,
 			wantKept:  4,
 		},
 		{
 			name:      "explicit HIGH",
-			args:      ScanArgs{MinSeverity: types.SeverityHigh},
+			args:      ScanArgs{MinSASTSeverity: types.SeverityHigh},
 			wantFloor: types.SeverityHigh,
 			wantKept:  2,
 		},
 		{
 			name:      "explicit CRITICAL",
-			args:      ScanArgs{MinSeverity: types.SeverityCritical},
+			args:      ScanArgs{MinSASTSeverity: types.SeverityCritical},
 			wantFloor: types.SeverityCritical,
 			wantKept:  1,
 		},

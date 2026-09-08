@@ -19,7 +19,7 @@ func TestExecuteScanEarlyFailureRetainsDefaultScanTypes(t *testing.T) {
 	}
 }
 
-func TestNormalizeMinSeverity(t *testing.T) {
+func TestNormalizeMinSASTSeverity(t *testing.T) {
 	tests := []struct {
 		name    string
 		input   string
@@ -35,7 +35,7 @@ func TestNormalizeMinSeverity(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := normalizeMinSeverity(tt.input)
+			got, err := normalizeMinSASTSeverity(tt.input)
 			if tt.wantErr {
 				if err == nil {
 					t.Fatal("expected validation error")
@@ -43,25 +43,58 @@ func TestNormalizeMinSeverity(t *testing.T) {
 				return
 			}
 			if err != nil {
-				t.Fatalf("normalizeMinSeverity() error = %v", err)
+				t.Fatalf("normalizeMinSASTSeverity() error = %v", err)
 			}
 			if got != tt.want {
-				t.Fatalf("normalizeMinSeverity() = %q, want %q", got, tt.want)
+				t.Fatalf("normalizeMinSASTSeverity() = %q, want %q", got, tt.want)
 			}
 		})
 	}
 }
 
-func TestExecuteScanRejectsInvalidMinSeverityBeforeExecution(t *testing.T) {
-	outcome := ExecuteScan(context.Background(), ScanArgs{
-		FilePaths:   []string{"."},
-		ScanTypes:   []string{"sast"},
-		MinSeverity: "INFO",
-	})
-	if outcome.Err() == nil {
-		t.Fatal("expected invalid min severity to fail")
+func TestExecuteScanRejectsInvalidMinSASTSeverityBeforeExecution(t *testing.T) {
+	cases := []struct {
+		name      string
+		scanTypes []string
+	}{
+		{name: "sast only", scanTypes: []string{"sast"}},
+		{name: "mixed including sast", scanTypes: []string{"secrets", "sast"}},
+		{name: "default scan set", scanTypes: nil},
 	}
-	if !strings.Contains(outcome.Err().Error(), "invalid min_severity") {
-		t.Fatalf("error = %q, want invalid min_severity", outcome.Err())
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			outcome := ExecuteScan(context.Background(), ScanArgs{
+				FilePaths:       []string{"."},
+				ScanTypes:       tt.scanTypes,
+				MinSASTSeverity: "INFO",
+			})
+			if outcome.Err() == nil {
+				t.Fatal("expected invalid min SAST severity to fail")
+			}
+			if !strings.Contains(outcome.Err().Error(), "invalid min_sast_severity") {
+				t.Fatalf("error = %q, want invalid min_sast_severity", outcome.Err())
+			}
+		})
+	}
+}
+
+func TestExecuteScanIgnoresMinSASTSeverityWhenSASTNotSelected(t *testing.T) {
+	for _, scanType := range []string{"secrets", "sca", "iac"} {
+		t.Run(scanType, func(t *testing.T) {
+			outcome := ExecuteScan(context.Background(), ScanArgs{
+				FilePaths:       []string{"does-not-exist"},
+				ScanTypes:       []string{scanType},
+				MinSASTSeverity: "yolo",
+			})
+			if outcome.Err() == nil {
+				t.Fatal("expected missing path to fail")
+			}
+			if strings.Contains(outcome.Err().Error(), "invalid min_sast_severity") {
+				t.Fatalf("non-SAST scan rejected min_sast_severity: %v", outcome.Err())
+			}
+			if !strings.Contains(outcome.Err().Error(), "does not exist") {
+				t.Fatalf("error = %q, want path does not exist", outcome.Err())
+			}
+		})
 	}
 }

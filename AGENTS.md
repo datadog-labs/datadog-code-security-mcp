@@ -112,8 +112,8 @@ Every installed skill root gets `.datadog-managed.json`. This marker is the
 **Example: configurable SAST severity threshold**
 ```go
 args := ScanArgs{
-    FilePaths:   []string{"./src"},
-    MinSeverity: types.SeverityHigh, // Omit for LOW and above.
+    FilePaths:       []string{"./src"},
+    MinSASTSeverity: types.SeverityHigh, // Omit for LOW and above.
 }
 ```
 

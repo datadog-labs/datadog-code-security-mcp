@@ -64,8 +64,8 @@ func (s *SASTScanner) Execute(ctx context.Context, args ScanArgs) (ScannerResult
 // effectiveMinSeverity returns the caller-requested SAST floor, or the
 // scanner default when the caller omitted it.
 func (s *SASTScanner) effectiveMinSeverity(args ScanArgs) string {
-	if args.MinSeverity != "" {
-		return args.MinSeverity
+	if args.MinSASTSeverity != "" {
+		return args.MinSASTSeverity
 	}
 	return s.filterConfig.MinSeverity
 }

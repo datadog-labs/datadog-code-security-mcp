@@ -14,7 +14,7 @@ Datadog Code Security MCP provides all Code Security scan tools to AI coding ass
 6. **`datadog_generate_sbom`** - Generate Software Bill of Materials (SBOM)
 
 `datadog_code_security_scan` and `datadog_sast_scan` accept optional
-`min_severity` (`LOW`, `MEDIUM`, `HIGH`, or `CRITICAL`). It affects SAST only
+`min_sast_severity` (`LOW`, `MEDIUM`, `HIGH`, or `CRITICAL`). It affects SAST only
 and defaults to `LOW`; in-source-suppressed findings remain excluded.
 
 ## Quick Start
@@ -312,7 +312,7 @@ datadog-code-security-mcp scan sca ./           # SCA only (requires datadog-sec
 datadog-code-security-mcp scan iac ./infra      # IaC only
 
 # SAST returns LOW and above by default; choose a higher threshold if desired
-datadog-code-security-mcp scan sast ./app --min-severity HIGH
+datadog-code-security-mcp scan sast ./app --min-sast-severity HIGH
 
 # SBOM generation
 datadog-code-security-mcp generate-sbom .           # Generate SBOM

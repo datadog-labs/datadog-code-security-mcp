@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/datadog-labs/datadog-code-security-mcp/internal/binary"
@@ -24,11 +25,15 @@ func ExecuteScan(ctx context.Context, args ScanArgs) *ScanOutcome {
 	}
 	args.ScanTypes = scanTypes
 
-	minSeverity, err := normalizeMinSeverity(args.MinSeverity)
-	if err != nil {
-		return NewFailedOutcome(scanTypes, err)
+	if includesSAST(scanTypes) {
+		minSeverity, err := normalizeMinSASTSeverity(args.MinSASTSeverity)
+		if err != nil {
+			return NewFailedOutcome(scanTypes, err)
+		}
+		args.MinSASTSeverity = minSeverity
+	} else {
+		args.MinSASTSeverity = ""
 	}
-	args.MinSeverity = minSeverity
 
 	// Validate inputs
 	if err := validateScanArgs(args); err != nil {
@@ -107,13 +112,17 @@ func validateScanArgs(args ScanArgs) error {
 	return nil
 }
 
-func normalizeMinSeverity(value string) (string, error) {
+func includesSAST(scanTypes []string) bool {
+	return slices.Contains(scanTypes, string(types.DetectionTypeSAST))
+}
+
+func normalizeMinSASTSeverity(value string) (string, error) {
 	severity := strings.ToUpper(strings.TrimSpace(value))
 	if severity == "" {
 		return types.SeverityLow, nil
 	}
 	if _, ok := types.SeverityOrder[severity]; !ok {
-		return "", fmt.Errorf("invalid min_severity: %s (valid options: LOW, MEDIUM, HIGH, CRITICAL)", value)
+		return "", fmt.Errorf("invalid min_sast_severity: %s (valid options: LOW, MEDIUM, HIGH, or CRITICAL)", value)
 	}
 	return severity, nil
 }

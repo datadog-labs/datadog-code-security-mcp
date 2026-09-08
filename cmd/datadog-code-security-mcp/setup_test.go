@@ -191,6 +191,29 @@ func TestRenderSetupResultDoesNotRestartWhenAlreadyCurrent(t *testing.T) {
 	}
 }
 
+func TestRenderSetupResultReportsSkippedClient(t *testing.T) {
+	var output bytes.Buffer
+	err := renderSetupResult(&output, setupcmd.Result{
+		Clients: []setupcmd.ClientResult{{
+			ClientID:    "codex",
+			DisplayName: "Codex",
+			Status:      setupcmd.ClientStatusSkipped,
+			Reason:      "client CLI and home markers were not found",
+		}},
+	}, false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"○ Codex: skipped (client CLI and home markers were not found)",
+		"No selected AI clients were detected",
+	} {
+		if !strings.Contains(output.String(), want) {
+			t.Fatalf("skipped client output %q does not contain %q", output.String(), want)
+		}
+	}
+}
+
 func TestRenderSetupResultDoesNotRestartAfterFailure(t *testing.T) {
 	var output bytes.Buffer
 	err := renderSetupResult(&output, setupcmd.Result{

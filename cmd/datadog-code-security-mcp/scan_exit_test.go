@@ -74,13 +74,13 @@ func TestRenderScanResult_ExitConsistentAcrossFormats(t *testing.T) {
 	}
 }
 
-func TestScanCommandMinSeverityDefaultsToLow(t *testing.T) {
-	flag := newScanCmd().Flags().Lookup("min-severity")
+func TestScanCommandMinSASTSeverityDefaultsToLow(t *testing.T) {
+	flag := newScanCmd().Flags().Lookup("min-sast-severity")
 	if flag == nil {
-		t.Fatal("min-severity flag is not registered")
+		t.Fatal("min-sast-severity flag is not registered")
 	}
 	if flag.DefValue != types.SeverityLow {
-		t.Fatalf("min-severity default = %q, want %q", flag.DefValue, types.SeverityLow)
+		t.Fatalf("min-sast-severity default = %q, want %q", flag.DefValue, types.SeverityLow)
 	}
 }
 

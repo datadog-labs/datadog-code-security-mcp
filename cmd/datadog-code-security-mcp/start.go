@@ -130,7 +130,7 @@ func registerSecurityTools(s *server.MCPServer) {
 						"type":        "string",
 						"description": "Base directory for resolving relative paths (defaults to current directory)",
 					},
-					"min_severity": map[string]any{
+					"min_sast_severity": map[string]any{
 						"type":        "string",
 						"enum":        []string{"LOW", "MEDIUM", "HIGH", "CRITICAL"},
 						"default":     "LOW",
@@ -160,11 +160,11 @@ func registerSecurityTools(s *server.MCPServer) {
 						"type":        "string",
 						"description": "Base directory for resolving relative paths",
 					},
-					"min_severity": map[string]any{
+					"min_sast_severity": map[string]any{
 						"type":        "string",
 						"enum":        []string{"LOW", "MEDIUM", "HIGH", "CRITICAL"},
 						"default":     "LOW",
-						"description": "Minimum severity to return",
+						"description": "Minimum SAST severity to return",
 					},
 				},
 				Required: []string{"file_paths"},

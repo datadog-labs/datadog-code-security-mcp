@@ -106,7 +106,7 @@ func TestCategorizeErrorKnownKinds(t *testing.T) {
 		{"setup failed for: Agent Skills", ErrKindSetupError},
 		{"resolve user home directory: HOME is not set", ErrKindSetupError},
 		{`unsupported client "other" (valid options: agents, claude-code, codex)`, ErrKindInvalidArguments},
-		{"invalid min_severity: INFO (valid options: LOW, MEDIUM, HIGH, CRITICAL)", ErrKindInvalidArguments},
+		{"invalid min_sast_severity: INFO (valid options: LOW, MEDIUM, HIGH, or CRITICAL)", ErrKindInvalidArguments},
 	}
 	for _, tc := range cases {
 		if got := CategorizeError(fmt.Errorf("%s", tc.msg)); got != tc.want {
@@ -115,16 +115,16 @@ func TestCategorizeErrorKnownKinds(t *testing.T) {
 	}
 }
 
-func TestErrorInfoFromErrorInvalidMinSeverity(t *testing.T) {
-	info := ErrorInfoFromError(fmt.Errorf("invalid min_severity: INFO (valid options: LOW, MEDIUM, HIGH, CRITICAL)"))
+func TestErrorInfoFromErrorInvalidMinSASTSeverity(t *testing.T) {
+	info := ErrorInfoFromError(fmt.Errorf("invalid min_sast_severity: INFO (valid options: LOW, MEDIUM, HIGH, or CRITICAL)"))
 	if info == nil {
 		t.Fatal("expected non-nil ErrorInfo")
 	}
 	if info.Kind != ErrKindInvalidArguments {
 		t.Errorf("kind = %q, want %q", info.Kind, ErrKindInvalidArguments)
 	}
-	if info.Message != "invalid min_severity" {
-		t.Errorf("message = %q, want invalid min_severity", info.Message)
+	if info.Message != "invalid min_sast_severity" {
+		t.Errorf("message = %q, want invalid min_sast_severity", info.Message)
 	}
 	if strings.Contains(info.Message, "INFO") {
 		t.Errorf("curated message leaked user-provided severity: %q", info.Message)
