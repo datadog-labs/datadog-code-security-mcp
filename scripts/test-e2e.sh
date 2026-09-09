@@ -35,9 +35,9 @@ elif [[ -n "$1" ]]; then
 fi
 
 if [[ "$MODE" == "ci" ]]; then
-  echo -e "${BLUE}==> Running E2E tests in CI mode (8 tests, Claude Desktop skipped)${NC}"
+  echo -e "${BLUE}==> Running E2E tests in CI mode (9 tests, Claude Desktop skipped)${NC}"
 else
-  echo -e "${BLUE}==> Running E2E tests in FULL mode (9 tests, including Claude Desktop)${NC}"
+  echo -e "${BLUE}==> Running E2E tests in FULL mode (10 tests, including Claude Desktop)${NC}"
 fi
 echo ""
 
@@ -57,7 +57,7 @@ echo ""
 # =============================================================================
 # Test 1: BUILD - Build local MCP server
 # =============================================================================
-echo -e "${BLUE}==> Test 1/8: Building MCP server...${NC}"
+echo -e "${BLUE}==> Test 1/9: Building MCP server...${NC}"
 if make clean && make build; then
   if [[ -f "bin/datadog-code-security-mcp" ]]; then
     echo -e "${GREEN}✓ Build successful${NC}"
@@ -78,7 +78,7 @@ echo ""
 # =============================================================================
 # Test 2: CHECK BINARIES - Verify required binaries exist
 # =============================================================================
-echo -e "${BLUE}==> Test 2/8: Checking for required binaries...${NC}"
+echo -e "${BLUE}==> Test 2/9: Checking for required binaries...${NC}"
 
 BINARIES_OK=true
 
@@ -121,7 +121,7 @@ echo ""
 # =============================================================================
 # Test 3: TEST MCP PROTOCOL - Test STDIO directly (no Claude Desktop)
 # =============================================================================
-echo -e "${BLUE}==> Test 3/8: Testing MCP protocol (STDIO)...${NC}"
+echo -e "${BLUE}==> Test 3/9: Testing MCP protocol (STDIO)...${NC}"
 
 # Test initialize method
 echo -e "${BLUE}  Testing MCP initialize...${NC}"
@@ -183,7 +183,7 @@ echo ""
 # =============================================================================
 # Test 4: TEST SAST SCANNER
 # =============================================================================
-echo -e "${BLUE}==> Test 4/8: Testing SAST scanner...${NC}"
+echo -e "${BLUE}==> Test 4/9: Testing SAST scanner...${NC}"
 
 SAST_EXIT_CODE=0
 ./bin/datadog-code-security-mcp scan sast ./testdata/vulnerabilities/sast \
@@ -251,7 +251,7 @@ echo ""
 # =============================================================================
 # Test 5: TEST SECRETS SCANNER
 # =============================================================================
-echo -e "${BLUE}==> Test 5/8: Testing Secrets scanner...${NC}"
+echo -e "${BLUE}==> Test 5/9: Testing Secrets scanner...${NC}"
 
 SECRETS_EXIT_CODE=0
 ./bin/datadog-code-security-mcp scan secrets ./testdata/vulnerabilities/secrets \
@@ -319,7 +319,7 @@ echo ""
 # =============================================================================
 # Test 6: TEST NEGATIVE CASE (Clean Code)
 # =============================================================================
-echo -e "${BLUE}==> Test 6/8: Testing negative case (clean code)...${NC}"
+echo -e "${BLUE}==> Test 6/9: Testing negative case (clean code)...${NC}"
 
 CLEAN_EXIT_CODE=0
 ./bin/datadog-code-security-mcp scan sast ./testdata/vulnerabilities/clean \
@@ -355,7 +355,7 @@ echo ""
 # =============================================================================
 # Test 7: TEST SBOM GENERATION
 # =============================================================================
-echo -e "${BLUE}==> Test 7/8: Testing SBOM generation...${NC}"
+echo -e "${BLUE}==> Test 7/9: Testing SBOM generation...${NC}"
 
 # Check if datadog-sbom-generator is installed
 if command -v datadog-sbom-generator &> /dev/null; then
@@ -413,9 +413,119 @@ fi
 echo ""
 
 # =============================================================================
-# Test 8: TEST IAC SCANNER
+# Test 8: TEST SETUP COMMAND
 # =============================================================================
-echo -e "${BLUE}==> Test 8/8: Testing IaC scanner...${NC}"
+echo -e "${BLUE}==> Test 8/9: Testing setup command...${NC}"
+
+SETUP_HOME=$(mktemp -d)
+mkdir -p "${SETUP_HOME}/.claude" "${SETUP_HOME}/.codex/skills/.system"
+
+SETUP_OK=true
+if HOME="${SETUP_HOME}" USERPROFILE="${SETUP_HOME}" \
+  ./bin/datadog-code-security-mcp --no-telemetry setup --dry-run \
+  > "${TEST_OUTPUT_DIR}/setup-dry-run.txt" 2>&1; then
+  DRY_RUN_FILES=$(find "${SETUP_HOME}" -name "SKILL.md" | wc -l | tr -d ' ')
+  if [[ "${DRY_RUN_FILES}" != "0" ]]; then
+    echo -e "${RED}❌ Setup dry run wrote skill files${NC}"
+    SETUP_OK=false
+  fi
+else
+  echo -e "${RED}❌ Setup dry run failed${NC}"
+  cat "${TEST_OUTPUT_DIR}/setup-dry-run.txt"
+  SETUP_OK=false
+fi
+
+if [[ "${SETUP_OK}" == "true" ]] && \
+  HOME="${SETUP_HOME}" USERPROFILE="${SETUP_HOME}" \
+  ./bin/datadog-code-security-mcp --no-telemetry setup --json \
+  > "${TEST_OUTPUT_DIR}/setup-output.json" \
+  2> "${TEST_OUTPUT_DIR}/setup-error.txt"; then
+  for client_dir in .agents .claude .codex; do
+    for skill in dd-codesec-scan-and-fix dd-codesec-verify-findings dd-codesec-setup-toolchain; do
+      if [[ ! -f "${SETUP_HOME}/${client_dir}/skills/${skill}/SKILL.md" ]] || \
+         [[ ! -f "${SETUP_HOME}/${client_dir}/skills/${skill}/.datadog-managed.json" ]]; then
+        echo -e "${RED}❌ Missing ${skill} for ${client_dir}${NC}"
+        SETUP_OK=false
+      fi
+    done
+    for playbook in sast sca iac secrets; do
+      if [[ ! -f "${SETUP_HOME}/${client_dir}/skills/dd-codesec-scan-and-fix/references/${playbook}.md" ]]; then
+        echo -e "${RED}❌ Missing ${playbook} playbook for ${client_dir}${NC}"
+        SETUP_OK=false
+      fi
+    done
+  done
+  if [[ ! -d "${SETUP_HOME}/.codex/skills/.system" ]]; then
+    echo -e "${RED}❌ Setup removed Codex .system directory${NC}"
+    SETUP_OK=false
+  fi
+else
+  echo -e "${RED}❌ Setup installation failed${NC}"
+  [[ -f "${TEST_OUTPUT_DIR}/setup-output.json" ]] && cat "${TEST_OUTPUT_DIR}/setup-output.json"
+  [[ -f "${TEST_OUTPUT_DIR}/setup-error.txt" ]] && cat "${TEST_OUTPUT_DIR}/setup-error.txt"
+  SETUP_OK=false
+fi
+
+if [[ "${SETUP_OK}" == "true" ]]; then
+  mkdir -p "${SETUP_HOME}/.agents/skills/user-skill"
+  if HOME="${SETUP_HOME}" USERPROFILE="${SETUP_HOME}" \
+    ./bin/datadog-code-security-mcp --no-telemetry setup --remove-skills --dry-run \
+    > "${TEST_OUTPUT_DIR}/setup-remove-dry-run.txt" 2>&1; then
+    REMOVE_DRY_RUN_FILES=$(find "${SETUP_HOME}" -path '*/dd-codesec-*/SKILL.md' | wc -l | tr -d ' ')
+    if [[ "${REMOVE_DRY_RUN_FILES}" == "0" ]]; then
+      echo -e "${RED}❌ Setup --remove-skills dry run deleted managed skills${NC}"
+      SETUP_OK=false
+    fi
+  else
+    echo -e "${RED}❌ Setup --remove-skills dry run failed${NC}"
+    cat "${TEST_OUTPUT_DIR}/setup-remove-dry-run.txt"
+    SETUP_OK=false
+  fi
+fi
+
+if [[ "${SETUP_OK}" == "true" ]] && \
+  HOME="${SETUP_HOME}" USERPROFILE="${SETUP_HOME}" \
+  ./bin/datadog-code-security-mcp --no-telemetry setup --remove-skills --json \
+  > "${TEST_OUTPUT_DIR}/setup-remove-output.json" \
+  2> "${TEST_OUTPUT_DIR}/setup-remove-error.txt"; then
+  for client_dir in .agents .claude .codex; do
+    for skill in dd-codesec-scan-and-fix dd-codesec-verify-findings dd-codesec-setup-toolchain; do
+      if [[ -e "${SETUP_HOME}/${client_dir}/skills/${skill}" ]]; then
+        echo -e "${RED}❌ ${skill} survived --remove-skills for ${client_dir}${NC}"
+        SETUP_OK=false
+      fi
+    done
+  done
+  if [[ ! -d "${SETUP_HOME}/.agents/skills/user-skill" ]]; then
+    echo -e "${RED}❌ Setup --remove-skills deleted unmarked user skill${NC}"
+    SETUP_OK=false
+  fi
+  if [[ ! -d "${SETUP_HOME}/.codex/skills/.system" ]]; then
+    echo -e "${RED}❌ Setup --remove-skills deleted Codex .system directory${NC}"
+    SETUP_OK=false
+  fi
+else
+  if [[ "${SETUP_OK}" == "true" ]]; then
+    echo -e "${RED}❌ Setup --remove-skills failed${NC}"
+    [[ -f "${TEST_OUTPUT_DIR}/setup-remove-output.json" ]] && cat "${TEST_OUTPUT_DIR}/setup-remove-output.json"
+    [[ -f "${TEST_OUTPUT_DIR}/setup-remove-error.txt" ]] && cat "${TEST_OUTPUT_DIR}/setup-remove-error.txt"
+    SETUP_OK=false
+  fi
+fi
+
+rm -rf "${SETUP_HOME}"
+if [[ "${SETUP_OK}" == "true" ]]; then
+  echo -e "${GREEN}✓ Setup dry-run, sandbox installation, and --remove-skills successful${NC}"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+echo ""
+
+# =============================================================================
+# Test 9: TEST IAC SCANNER
+# =============================================================================
+echo -e "${BLUE}==> Test 9/9: Testing IaC scanner...${NC}"
 
 # Check if datadog-iac-scanner is installed
 if command -v datadog-iac-scanner &> /dev/null; then
@@ -526,10 +636,10 @@ fi
 echo ""
 
 # =============================================================================
-# Test 9: FULL MODE - Claude Desktop integration (optional, --full mode only)
+# Test 10: FULL MODE - Claude Desktop integration (optional, --full mode only)
 # =============================================================================
 if [[ "$MODE" == "full" ]]; then
-  echo -e "${BLUE}==> Test 9/9: Configuring Claude Desktop...${NC}"
+  echo -e "${BLUE}==> Test 10/10: Configuring Claude Desktop...${NC}"
 
   # Check if claude CLI is available
   if ! command -v claude &> /dev/null; then
@@ -579,7 +689,7 @@ if [[ "$MODE" == "full" ]]; then
   echo ""
 fi
 
-# In CI mode, we skip Test 9 entirely (no Claude CLI available in CI environment)
+# In CI mode, we skip Test 10 entirely (no Claude CLI available in CI environment)
 
 # =============================================================================
 # SUMMARY
@@ -587,9 +697,9 @@ fi
 echo ""
 echo "=========================================="
 if [[ "$MODE" == "ci" ]]; then
-  echo "E2E Test Summary (CI Mode - 8 tests)"
+  echo "E2E Test Summary (CI Mode - 9 tests)"
 else
-  echo "E2E Test Summary (Full Mode - 9 tests)"
+  echo "E2E Test Summary (Full Mode - 10 tests)"
 fi
 echo "=========================================="
 echo ""
@@ -598,7 +708,7 @@ echo -e "Tests failed:  ${RED}${TESTS_FAILED}${NC}"
 echo -e "Tests warned:  ${YELLOW}${TESTS_WARNED}${NC}"
 echo ""
 if [[ "$MODE" == "ci" ]]; then
-  echo "Note: Claude Desktop integration (Test 9) skipped in CI mode"
+  echo "Note: Claude Desktop integration (Test 10) skipped in CI mode"
   echo ""
 fi
 echo "Test outputs saved to:"
@@ -609,6 +719,10 @@ echo "  ${TEST_OUTPUT_DIR}/secrets-output.json"
 echo "  ${TEST_OUTPUT_DIR}/clean-output.json"
 echo "  ${TEST_OUTPUT_DIR}/sbom-output.json"
 echo "  ${TEST_OUTPUT_DIR}/iac-output.json"
+echo "  ${TEST_OUTPUT_DIR}/setup-output.json"
+echo "  ${TEST_OUTPUT_DIR}/setup-error.txt"
+echo "  ${TEST_OUTPUT_DIR}/setup-remove-output.json"
+echo "  ${TEST_OUTPUT_DIR}/setup-remove-error.txt"
 echo ""
 
 if [[ $TESTS_FAILED -gt 0 ]]; then

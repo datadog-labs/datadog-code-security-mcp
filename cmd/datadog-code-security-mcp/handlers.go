@@ -176,6 +176,14 @@ func parseScanArgs(arguments map[string]any) (scan.ScanArgs, error) {
 		args.WorkingDir = constants.DefaultWorkingDir
 	}
 
+	if value, exists := arguments[constants.ArgMinSASTSeverity]; exists {
+		minSeverity, ok := value.(string)
+		if !ok {
+			return args, fmt.Errorf("min_sast_severity must be a string")
+		}
+		args.MinSASTSeverity = minSeverity
+	}
+
 	return args, nil
 }
 

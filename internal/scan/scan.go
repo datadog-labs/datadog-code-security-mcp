@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/datadog-labs/datadog-code-security-mcp/internal/binary"
@@ -23,6 +24,16 @@ func ExecuteScan(ctx context.Context, args ScanArgs) *ScanOutcome {
 		scanTypes = types.SecurityScanTypes()
 	}
 	args.ScanTypes = scanTypes
+
+	if includesSAST(scanTypes) {
+		minSeverity, err := normalizeMinSASTSeverity(args.MinSASTSeverity)
+		if err != nil {
+			return NewFailedOutcome(scanTypes, err)
+		}
+		args.MinSASTSeverity = minSeverity
+	} else {
+		args.MinSASTSeverity = ""
+	}
 
 	// Validate inputs
 	if err := validateScanArgs(args); err != nil {
@@ -99,6 +110,21 @@ func validateScanArgs(args ScanArgs) error {
 	}
 
 	return nil
+}
+
+func includesSAST(scanTypes []string) bool {
+	return slices.Contains(scanTypes, string(types.DetectionTypeSAST))
+}
+
+func normalizeMinSASTSeverity(value string) (string, error) {
+	severity := strings.ToUpper(strings.TrimSpace(value))
+	if severity == "" {
+		return types.SeverityLow, nil
+	}
+	if _, ok := types.SeverityOrder[severity]; !ok {
+		return "", fmt.Errorf("invalid min_sast_severity: %s (valid options: LOW, MEDIUM, HIGH, or CRITICAL)", value)
+	}
+	return severity, nil
 }
 
 // parseScanTypes validates, normalizes, and deduplicates scan type strings.

@@ -23,6 +23,7 @@ make mod            # Tidy and verify Go modules
 go run ./cmd/datadog-code-security-mcp version
 go run ./cmd/datadog-code-security-mcp scan all ./
 go run ./cmd/datadog-code-security-mcp start  # MCP server mode
+go run ./cmd/datadog-code-security-mcp setup --dry-run
 
 # Test specific package
 go test -v ./internal/auth/
@@ -36,31 +37,27 @@ make build-all      # Outputs to dist/
 
 When working on a feature branch, test your changes with Claude Desktop before pushing:
 
-### ⚠️ IMPORTANT: Prefer MCP Tools Over CLI
+### Prefer local MCP for skill workflows
 
-**When the user asks you to run scans or test functionality, ALWAYS use the MCP tools if available, NOT the CLI commands.** The MCP tools are the primary interface for this project and represent the actual user experience.
+For remediation and verification workflows, prefer the registered local Code
+Security MCP scan tools when they are available. Fall back to
+`datadog-code-security-mcp scan ... --json` CLI only when those MCP tools are
+missing or a tool call fails. The remote Datadog MCP is for platform context
+and does not replace a local scan.
 
-**Available MCP Tools (use these first):**
+**Available local MCP scan tools:**
 
-- `mcp__datadog-code-security__datadog_code_security_scan` - Comprehensive scan (SAST + Secrets + SCA)
+- `mcp__datadog-code-security__datadog_code_security_scan` - Comprehensive scan (SAST + Secrets + SCA + IaC)
 - `mcp__datadog-code-security__datadog_sast_scan` - SAST only
 - `mcp__datadog-code-security__datadog_secrets_scan` - Secrets only
 - `mcp__datadog-code-security__datadog_sca_scan` - SCA only
+- `mcp__datadog-code-security__datadog_iac_scan` - IaC only
 - `mcp__datadog-code-security__datadog_generate_sbom` - Generate SBOM
 
-**CLI Commands (for development/debugging only):**
-
-Use CLI commands (`go run ./cmd/datadog-code-security-mcp ...`) ONLY when:
-
-- Testing the CLI interface specifically
-- Debugging binary execution issues
-- MCP tools are not working or not available
-- Running in CI/CD pipelines
-
-**Example:**
-
-- ❌ Wrong: `go run ./cmd/datadog-code-security-mcp scan all ./`
-- ✅ Correct: Use `mcp__datadog-code-security__datadog_code_security_scan` tool
+Build the wrapper first when testing local source changes. Configure the
+client MCP server to use that local binary, then exercise the MCP path as the
+primary skill interface. Use the CLI JSON path when testing CLI fallback or
+when MCP is not registered.
 
 ### Step 1: Build the binary
 
@@ -238,8 +235,23 @@ Returns component list (name, version, license)
 - `main.go`: Cobra setup, routes to subcommands
 - `start.go`: MCP server mode (STDIO transport), registers MCP tools
 - `scan.go`: Direct scan CLI mode (no MCP)
+- `setup.go`: Detects AI clients and installs embedded skills
 - `generate-sbom.go`: SBOM generation CLI mode
 - `version.go`: Version info injected at build time via ldflags
+
+**`internal/setup/`** - AI client detection and skill lifecycle
+
+- `clients.go`: Declarative shared Agent Skills, Claude Code, and Codex destination registry
+- `detect.go`: Testable PATH and user-home marker detection
+- `skills.go`: Recursive embedded-skill installation and marker-safe pruning
+- `setup.go`: Per-client plan-then-execute reconcile and structured results
+
+**`skills/`** - Skills embedded into release binaries
+
+- `embed.go`: Recursively embeds every `dd-codesec-*` skill tree
+- `dd-codesec-scan-and-fix/`: Scan/fix/verify workflow and domain playbooks
+- `dd-codesec-verify-findings/`: Datadog platform enrichment workflow
+- `dd-codesec-setup-toolchain/`: Scanner install, update, and diagnosis guidance
 
 **`internal/types/`** - Centralized type definitions
 
@@ -252,7 +264,7 @@ Returns component list (name, version, license)
 - `scan.go`: Main entry point, input validation, coordinates scanners
 - `executor.go`: **Parallel scan execution** with goroutines, error aggregation
 - `base_static_analyzer.go`: **Template method pattern** for SAST/Secrets scanners
-- `sast.go`: SAST scanner with severity filtering (extends base)
+- `sast.go`: SAST scanner with configurable severity filtering, LOW by default (extends base)
 - `secrets.go`: Secrets scanner with confidence filtering (extends base)
 - `sca.go`: **SCA scanner (two-step process)**:
   - Step 1: Calls `internal/sbom/generator.go` to generate SBOM
@@ -307,6 +319,18 @@ The codebase supports multiple Datadog binaries with **different GitHub release 
 - Provides platform-specific installation instructions when binaries not found
 
 **When adding new binaries**: Specify the `NamingConvention` in `BinaryConfigs` and ensure `SupportedPlatforms` use the correct arch names for that convention.
+
+### Managed Skills Contract
+
+Every skill installed by `setup` carries `.datadog-managed.json`. That marker,
+not the directory name, is the sole authority for updates and deletion:
+
+- Never overwrite an existing skill directory without our valid marker.
+- Never prune by a `datadog-` prefix.
+- Skip dot-directories such as Codex's `.system/`.
+- Prune only direct child directories marked as managed by
+  `datadog-code-security-mcp`.
+- Treat nested `references/` as part of the marked skill tree.
 
 ## Code Patterns
 

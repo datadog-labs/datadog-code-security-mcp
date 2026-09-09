@@ -7,10 +7,14 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+	"time"
 )
 
 // semverRE extracts the first semver string (X.Y.Z) from binary --version output.
 var semverRE = regexp.MustCompile(`\d+\.\d+\.\d+`)
+
+// VersionProbeTimeout bounds each scanner version subprocess.
+const VersionProbeTimeout = 2 * time.Second
 
 // Binary supported OS/architecture combination
 type Platform struct {
@@ -109,6 +113,18 @@ var BinaryConfigs = map[BinaryType]BinaryConfig{
 			{OS: "windows", Arch: "amd64"},
 		},
 	},
+}
+
+var orderedBinaryTypes = []BinaryType{
+	BinaryTypeStaticAnalyzer,
+	BinaryTypeSBOMGenerator,
+	BinaryTypeSecurity,
+	BinaryTypeIaC,
+}
+
+// OrderedBinaryTypes returns every supported binary in display order.
+func OrderedBinaryTypes() []BinaryType {
+	return append([]BinaryType(nil), orderedBinaryTypes...)
 }
 
 // scanTypeBinaries is the single source of truth for which binaries each scan

@@ -9,6 +9,29 @@ import (
 	"testing"
 )
 
+func TestOrderedBinaryTypesMatchesConfigs(t *testing.T) {
+	ordered := OrderedBinaryTypes()
+	if len(ordered) != len(BinaryConfigs) {
+		t.Fatalf("OrderedBinaryTypes() has %d entries, BinaryConfigs has %d", len(ordered), len(BinaryConfigs))
+	}
+
+	seen := make(map[BinaryType]bool, len(ordered))
+	for _, binaryType := range ordered {
+		if _, ok := BinaryConfigs[binaryType]; !ok {
+			t.Errorf("OrderedBinaryTypes() contains unconfigured binary %q", binaryType)
+		}
+		if seen[binaryType] {
+			t.Errorf("OrderedBinaryTypes() contains duplicate binary %q", binaryType)
+		}
+		seen[binaryType] = true
+	}
+	for binaryType := range BinaryConfigs {
+		if !seen[binaryType] {
+			t.Errorf("OrderedBinaryTypes() is missing configured binary %q", binaryType)
+		}
+	}
+}
+
 func TestScanTypeBinaryMapping(t *testing.T) {
 	tests := []struct {
 		scanType     string
