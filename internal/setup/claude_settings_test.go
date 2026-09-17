@@ -148,6 +148,34 @@ func TestRunInstallsSkillsWhenClaudeSettingsWriteFails(t *testing.T) {
 	assertTestSkillsInstalled(t, filepath.Join(options.ClaudeConfigDir, "skills"))
 }
 
+func TestPreviewWarnsOnBrokenClaudeSettingsSymlink(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("creating symlinks requires additional privileges on Windows")
+	}
+	options, settingsPath := claudeTestOptions(t)
+	if err := os.Symlink(filepath.Join(filepath.Dir(settingsPath), "missing.json"), settingsPath); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Preview(options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.HasFailures() {
+		t.Fatalf("broken settings symlink blocked preview: %+v", result.Clients)
+	}
+	if result.Clients[0].Settings != nil {
+		t.Fatalf("broken settings symlink reported as planned update: %+v", result.Clients[0].Settings)
+	}
+	assertClaudeSettingsWarning(t, result.Clients[0].Warnings)
+	if len(result.Clients[0].Changes) == 0 {
+		t.Fatal("preview omitted skill changes after settings symlink failure")
+	}
+	if _, err := os.Stat(filepath.Join(options.ClaudeConfigDir, "skills")); !os.IsNotExist(err) {
+		t.Fatalf("preview installed skills: %v", err)
+	}
+}
+
 func TestRunDoesNotLowerHigherClaudeBudget(t *testing.T) {
 	options, settingsPath := claudeTestOptions(t)
 	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o700); err != nil {

@@ -29,6 +29,7 @@ type claudeSettingsPlan struct {
 	change SettingsChange
 	data   []byte
 	mode   os.FileMode
+	target string
 }
 
 func claudeSettingsWarning(err error) string {
@@ -46,12 +47,17 @@ func planClaudeSettings(path string, skip bool) (claudeSettingsPlan, error) {
 		}}, nil
 	}
 
+	targetPath, err := claudeSettingsWriteTarget(path)
+	if err != nil {
+		return claudeSettingsPlan{}, err
+	}
+
 	settings := make(map[string]json.RawMessage)
 	mode := os.FileMode(0o600)
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(targetPath)
 	switch {
 	case err == nil:
-		info, statErr := os.Stat(path)
+		info, statErr := os.Stat(targetPath)
 		if statErr != nil {
 			return claudeSettingsPlan{}, fmt.Errorf("inspect Claude Code settings %s: %w", path, statErr)
 		}
@@ -82,7 +88,11 @@ func planClaudeSettings(path string, skip bool) (claudeSettingsPlan, error) {
 		}
 	}
 
-	settings["skillListingBudgetFraction"] = json.RawMessage("0.02")
+	budgetJSON, err := json.Marshal(skillListingBudgetFloor)
+	if err != nil {
+		return claudeSettingsPlan{}, fmt.Errorf("encode skillListingBudgetFraction: %w", err)
+	}
+	settings["skillListingBudgetFraction"] = budgetJSON
 	updated, err := json.MarshalIndent(settings, "", "  ")
 	if err != nil {
 		return claudeSettingsPlan{}, fmt.Errorf("encode Claude Code settings %s: %w", path, err)
@@ -93,10 +103,11 @@ func planClaudeSettings(path string, skip bool) (claudeSettingsPlan, error) {
 		change: SettingsChange{
 			Path:   path,
 			Action: SettingsActionUpdated,
-			Reason: "set skillListingBudgetFraction floor to 0.02",
+			Reason: fmt.Sprintf("set skillListingBudgetFraction floor to %g", skillListingBudgetFloor),
 		},
-		data: updated,
-		mode: mode,
+		data:   updated,
+		mode:   mode,
+		target: targetPath,
 	}, nil
 }
 
@@ -104,16 +115,16 @@ func applyClaudeSettings(plan claudeSettingsPlan) error {
 	if plan.change.Action != SettingsActionUpdated {
 		return nil
 	}
-	dir := filepath.Dir(plan.change.Path)
+	targetPath := plan.target
+	if targetPath == "" {
+		targetPath = plan.change.Path
+	}
+	dir := filepath.Dir(targetPath)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("create Claude Code settings directory %s: %w", dir, err)
 	}
 
-	targetPath, err := claudeSettingsWriteTarget(plan.change.Path)
-	if err != nil {
-		return err
-	}
-	tempFile, err := os.CreateTemp(filepath.Dir(targetPath), "."+filepath.Base(targetPath)+".tmp-*")
+	tempFile, err := os.CreateTemp(dir, "."+filepath.Base(targetPath)+".tmp-*")
 	if err != nil {
 		return fmt.Errorf("create temporary Claude Code settings file: %w", err)
 	}

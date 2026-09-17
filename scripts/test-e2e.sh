@@ -412,7 +412,8 @@ else
 fi
 echo ""
 
-# Verify Claude settings.json budget without aborting the suite if jq is missing.
+# Verify Claude settings.json budget. Prefer jq; fall back to a number scrape if
+# jq is missing so the setup test still checks the value.
 check_claude_skill_listing_budget() {
   local settings_path="$1"
   local expected="$2"
@@ -425,8 +426,8 @@ check_claude_skill_listing_budget() {
   if command -v jq &>/dev/null; then
     got="$(jq -r '.skillListingBudgetFraction' "${settings_path}" 2>/dev/null || true)"
   else
-    echo -e "${RED}❌ jq not found; cannot verify Claude skill-listing budget${NC}"
-    return 1
+    got="$(grep -oE '"skillListingBudgetFraction"[[:space:]]*:[[:space:]]*[0-9]+(\.[0-9]+)?' "${settings_path}" \
+      | grep -oE '[0-9]+(\.[0-9]+)?$' | head -n 1)"
   fi
   if [[ "${got}" != "${expected}" ]]; then
     echo -e "${RED}❌ ${fail_message}${NC}"
