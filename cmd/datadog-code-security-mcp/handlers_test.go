@@ -6,6 +6,9 @@ import (
 	"testing"
 
 	"github.com/mark3labs/mcp-go/mcp"
+
+	"github.com/datadog-labs/datadog-code-security-mcp/internal/constants"
+	"github.com/datadog-labs/datadog-code-security-mcp/internal/telemetry"
 )
 
 // makeLibraryScanRequest builds a CallToolRequest with the given arguments map.
@@ -13,6 +16,164 @@ func makeLibraryScanRequest(args any) mcp.CallToolRequest {
 	var req mcp.CallToolRequest
 	req.Params.Arguments = args
 	return req
+}
+
+func TestMcpCaller(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		args map[string]any
+		want telemetry.Caller
+	}{
+		{name: "true", args: map[string]any{constants.ArgCalledBySkill: true}, want: telemetry.CallerSkill},
+		{name: "false", args: map[string]any{constants.ArgCalledBySkill: false}, want: ""},
+		{name: "omitted", args: map[string]any{"file_paths": []any{"src"}}, want: ""},
+		{name: "wrong type", args: map[string]any{constants.ArgCalledBySkill: "true"}, want: ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := mcpCaller(tc.args); got != tc.want {
+				t.Errorf("mcpCaller() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestHandleSASTScan_SkillCallerOnError(t *testing.T) {
+	srv, ch := captureCmdServer(t)
+	telemetryClient = newCmdTestTelemetryClient(t, srv)
+	t.Cleanup(func() { telemetryClient = nil })
+
+	var req mcp.CallToolRequest
+	req.Params.Arguments = map[string]any{
+		constants.ArgCalledBySkill: true,
+	}
+	result, err := handleSASTScan(context.Background(), req)
+	if err != nil {
+		t.Fatalf("unexpected Go error: %v", err)
+	}
+	if !result.IsError {
+		t.Fatal("expected error result for missing file_paths")
+	}
+	flushTelemetry()
+
+	item := waitCmdEvent(t, ch)
+	if item["interface"] != "mcp" {
+		t.Errorf("interface = %v, want mcp", item["interface"])
+	}
+	if item["caller"] != "skill" {
+		t.Errorf("caller = %v, want skill", item["caller"])
+	}
+	if item["success"] != false {
+		t.Errorf("success = %v, want false", item["success"])
+	}
+}
+
+func TestHandleSASTScan_OmitsCallerWhenArgAbsent(t *testing.T) {
+	srv, ch := captureCmdServer(t)
+	telemetryClient = newCmdTestTelemetryClient(t, srv)
+	t.Cleanup(func() { telemetryClient = nil })
+
+	var req mcp.CallToolRequest
+	req.Params.Arguments = map[string]any{}
+	result, err := handleSASTScan(context.Background(), req)
+	if err != nil {
+		t.Fatalf("unexpected Go error: %v", err)
+	}
+	if !result.IsError {
+		t.Fatal("expected error result for missing file_paths")
+	}
+	flushTelemetry()
+
+	item := waitCmdEvent(t, ch)
+	if _, ok := item["caller"]; ok {
+		t.Errorf("caller must be omitted for MCP usage, got %v", item["caller"])
+	}
+	if item["success"] != false {
+		t.Errorf("success = %v, want false", item["success"])
+	}
+}
+
+func TestHandleSASTScan_OmitsCallerWhenFalse(t *testing.T) {
+	srv, ch := captureCmdServer(t)
+	telemetryClient = newCmdTestTelemetryClient(t, srv)
+	t.Cleanup(func() { telemetryClient = nil })
+
+	var req mcp.CallToolRequest
+	req.Params.Arguments = map[string]any{
+		constants.ArgCalledBySkill: false,
+	}
+	result, err := handleSASTScan(context.Background(), req)
+	if err != nil {
+		t.Fatalf("unexpected Go error: %v", err)
+	}
+	if !result.IsError {
+		t.Fatal("expected error result for missing file_paths")
+	}
+	flushTelemetry()
+
+	item := waitCmdEvent(t, ch)
+	if _, ok := item["caller"]; ok {
+		t.Errorf("caller must be omitted when called_by_skill is false, got %v", item["caller"])
+	}
+}
+
+func TestHandleLibraryVulnerabilityScan_SkillCallerOnError(t *testing.T) {
+	srv, ch := captureCmdServer(t)
+	telemetryClient = newCmdTestTelemetryClient(t, srv)
+	t.Cleanup(func() { telemetryClient = nil })
+
+	req := makeLibraryScanRequest(map[string]any{
+		constants.ArgCalledBySkill: true,
+	})
+	result, err := handleLibraryVulnerabilityScan(context.Background(), req)
+	if err != nil {
+		t.Fatalf("unexpected Go error: %v", err)
+	}
+	if !result.IsError {
+		t.Fatal("expected error result when libraries is absent")
+	}
+	flushTelemetry()
+
+	item := waitCmdEvent(t, ch)
+	if item["operation"] != "library_scan" {
+		t.Errorf("operation = %v, want library_scan", item["operation"])
+	}
+	if item["caller"] != "skill" {
+		t.Errorf("caller = %v, want skill", item["caller"])
+	}
+	if item["success"] != false {
+		t.Errorf("success = %v, want false", item["success"])
+	}
+}
+
+func TestHandleGenerateSBOM_SkillCallerOnError(t *testing.T) {
+	srv, ch := captureCmdServer(t)
+	telemetryClient = newCmdTestTelemetryClient(t, srv)
+	t.Cleanup(func() { telemetryClient = nil })
+	t.Setenv("PATH", "")
+
+	var req mcp.CallToolRequest
+	req.Params.Arguments = map[string]any{
+		constants.ArgCalledBySkill: true,
+	}
+	_, err := handleGenerateSBOM(context.Background(), req)
+	if err != nil {
+		t.Fatalf("unexpected Go error: %v", err)
+	}
+	flushTelemetry()
+
+	item := waitCmdEvent(t, ch)
+	if item["operation"] != "generate_sbom" {
+		t.Errorf("operation = %v, want generate_sbom", item["operation"])
+	}
+	if item["caller"] != "skill" {
+		t.Errorf("caller = %v, want skill", item["caller"])
+	}
+	if item["success"] != false {
+		t.Errorf("success = %v, want false", item["success"])
+	}
 }
 
 func TestParseScanArgs_MinSASTSeverity(t *testing.T) {

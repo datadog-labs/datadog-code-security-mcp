@@ -10,9 +10,20 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/datadog-labs/datadog-code-security-mcp/internal/auth"
+	"github.com/datadog-labs/datadog-code-security-mcp/internal/constants"
 	"github.com/datadog-labs/datadog-code-security-mcp/internal/scan"
 	"github.com/datadog-labs/datadog-code-security-mcp/internal/telemetry"
 )
+
+// calledBySkillProperty is the optional MCP argument Datadog agent skills set
+// so telemetry can attribute the call as caller=skill. Omit it for direct use.
+func calledBySkillProperty() map[string]any {
+	return map[string]any{
+		"type": "boolean",
+		"description": "Set true only when a Datadog agent skill is making this call. " +
+			"Omit for direct client use.",
+	}
+}
 
 func newStartCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -136,6 +147,7 @@ func registerSecurityTools(s *server.MCPServer) {
 						"default":     "LOW",
 						"description": "Minimum SAST severity to return; applies only to the SAST portion of the scan",
 					},
+					constants.ArgCalledBySkill: calledBySkillProperty(),
 				},
 				Required: []string{"file_paths"},
 			},
@@ -166,6 +178,7 @@ func registerSecurityTools(s *server.MCPServer) {
 						"default":     "LOW",
 						"description": "Minimum SAST severity to return",
 					},
+					constants.ArgCalledBySkill: calledBySkillProperty(),
 				},
 				Required: []string{"file_paths"},
 			},
@@ -190,6 +203,7 @@ func registerSecurityTools(s *server.MCPServer) {
 						"type":        "string",
 						"description": "Base directory for resolving relative paths",
 					},
+					constants.ArgCalledBySkill: calledBySkillProperty(),
 				},
 				Required: []string{"file_paths"},
 			},
@@ -244,6 +258,7 @@ Installation process:
 						"type":        "string",
 						"description": "Base directory for the scan (defaults to current directory)",
 					},
+					constants.ArgCalledBySkill: calledBySkillProperty(),
 				},
 				Required: []string{},
 			},
@@ -282,6 +297,7 @@ The tool automatically:
 						"type":        "string",
 						"description": "Base directory for resolving relative paths",
 					},
+					constants.ArgCalledBySkill: calledBySkillProperty(),
 				},
 				Required: []string{"file_paths"},
 			},
@@ -314,6 +330,7 @@ Output: Returns security findings with severity, rule, file location, and remedi
 						"type":        "string",
 						"description": "Base directory for resolving relative paths",
 					},
+					constants.ArgCalledBySkill: calledBySkillProperty(),
 				},
 				Required: []string{"file_paths"},
 			},
@@ -373,6 +390,7 @@ Authentication: Requires DD_API_KEY and DD_APP_KEY.`,
 						"type":        "string",
 						"description": "Working directory for git context detection (defaults to current directory)",
 					},
+					constants.ArgCalledBySkill: calledBySkillProperty(),
 				},
 				Required: []string{"libraries"},
 			},
