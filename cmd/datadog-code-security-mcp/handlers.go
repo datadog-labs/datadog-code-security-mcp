@@ -56,6 +56,7 @@ func handleAuthenticatedScan(ctx context.Context, request mcp.CallToolRequest, s
 	if !ok {
 		return fail(fmt.Errorf(constants.ErrInvalidArguments))
 	}
+	tracking.Caller = mcpCaller(argsMap)
 
 	args, err := parseScanArgs(argsMap)
 	if err != nil {
@@ -113,6 +114,7 @@ func handleGenerateSBOM(ctx context.Context, request mcp.CallToolRequest) (*mcp.
 	if !ok {
 		return fail(fmt.Errorf(constants.ErrInvalidArguments))
 	}
+	event.Caller = mcpCaller(argsMap)
 
 	args, err := parseSBOMArgs(argsMap)
 	if err != nil {
@@ -150,6 +152,17 @@ func handleSCAScan(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallT
 // handleIaCScan handles Infrastructure-as-Code scan requests
 func handleIaCScan(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	return handleAuthenticatedScan(ctx, request, []string{string(types.DetectionTypeIaC)})
+}
+
+// mcpCaller maps the optional called_by_skill MCP argument onto the existing
+// telemetry caller field. Only an explicit JSON/Go true is attributed as a
+// skill; omitted, false, or a wrong type all leave caller unset.
+func mcpCaller(args map[string]any) telemetry.Caller {
+	called, ok := args[constants.ArgCalledBySkill].(bool)
+	if ok && called {
+		return telemetry.CallerSkill
+	}
+	return ""
 }
 
 // parseScanArgs extracts scan arguments from MCP request
@@ -262,6 +275,7 @@ func handleLibraryVulnerabilityScan(ctx context.Context, request mcp.CallToolReq
 	if !ok {
 		return fail(fmt.Errorf(constants.ErrInvalidArguments))
 	}
+	event.Caller = mcpCaller(argsMap)
 
 	libs, err := parseLibraryArgs(argsMap)
 	if err != nil {

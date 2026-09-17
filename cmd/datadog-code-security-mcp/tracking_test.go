@@ -378,6 +378,70 @@ func TestTrackMCPScan_SingleTypeIsPerScanEvent(t *testing.T) {
 	}
 }
 
+func TestTrackMCPScan_SkillCaller(t *testing.T) {
+	srv, ch := captureCmdServer(t)
+	telemetryClient = newCmdTestTelemetryClient(t, srv)
+	t.Cleanup(func() { telemetryClient = nil })
+
+	result := &scan.ScanResult{
+		Summary: types.ScanSummary{
+			Total:           1,
+			BySeverity:      map[string]int{"HIGH": 1},
+			ByDetectionType: map[string]int{"sast": 1},
+		},
+		Results: map[types.DetectionType][]types.Violation{
+			types.DetectionTypeSAST: {{Severity: "HIGH", DetectionType: types.DetectionTypeSAST}},
+		},
+	}
+	outcome := testScanOutcome(result, nil, "sast")
+	trackScan(context.Background(), telemetry.ScanEvent{
+		Interface:  telemetry.InterfaceMCP,
+		Caller:     telemetry.CallerSkill,
+		Outcome:    outcome,
+		StartedAt:  time.Now(),
+		PathsCount: 1,
+		AuthMethod: "none",
+	})
+	flushTelemetry()
+
+	item := waitCmdEvent(t, ch)
+	if item["interface"] != "mcp" {
+		t.Errorf("interface = %v, want mcp", item["interface"])
+	}
+	if item["caller"] != "skill" {
+		t.Errorf("caller = %v, want skill", item["caller"])
+	}
+	if item["success"] != true {
+		t.Errorf("success = %v, want true", item["success"])
+	}
+}
+
+func TestTrackMCPScan_SkillCallerOnError(t *testing.T) {
+	srv, ch := captureCmdServer(t)
+	telemetryClient = newCmdTestTelemetryClient(t, srv)
+	t.Cleanup(func() { telemetryClient = nil })
+
+	trackScan(context.Background(), telemetry.ScanEvent{
+		Interface:  telemetry.InterfaceMCP,
+		Caller:     telemetry.CallerSkill,
+		Outcome:    scan.NewFailedOutcome([]string{"sast"}, errors.New("file_paths is required and must be a non-empty array")),
+		StartedAt:  time.Now(),
+		AuthMethod: "none",
+	})
+	flushTelemetry()
+
+	item := waitCmdEvent(t, ch)
+	if item["interface"] != "mcp" {
+		t.Errorf("interface = %v, want mcp", item["interface"])
+	}
+	if item["caller"] != "skill" {
+		t.Errorf("caller = %v, want skill", item["caller"])
+	}
+	if item["success"] != false {
+		t.Errorf("success = %v, want false", item["success"])
+	}
+}
+
 // TestTrackMCPScan_SingleTypeCarriesDuration is a regression guard: a single-type
 // MCP scan must report the per-type wall-clock duration recorded by the executor,
 // not a hardcoded 0. Previously the MCP single-type path passed 0 while the CLI

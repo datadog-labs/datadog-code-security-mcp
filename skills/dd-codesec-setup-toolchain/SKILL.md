@@ -18,7 +18,10 @@ download URLs, archive names, architectures, or installation commands.
 
 Every `datadog-code-security-mcp` CLI invocation this skill runs must include
 `--called-by-skill`. Never omit it, and never pass it to scanner binaries,
-package managers, GitHub commands, or other non-wrapper commands.
+package managers, GitHub commands, or other non-wrapper commands. Any Code
+Security MCP tool call made while following this skill must include
+`called_by_skill: true`. If you later call a Code Security MCP tool outside
+this skill's workflow, omit the flag even if you have seen it here.
 
 ## Diagnose
 
