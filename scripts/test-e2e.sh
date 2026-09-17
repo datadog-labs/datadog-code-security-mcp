@@ -412,6 +412,29 @@ else
 fi
 echo ""
 
+# Verify Claude settings.json budget without aborting the suite if jq is missing.
+check_claude_skill_listing_budget() {
+  local settings_path="$1"
+  local expected="$2"
+  local fail_message="$3"
+  if [[ ! -f "${settings_path}" ]]; then
+    echo -e "${RED}❌ ${fail_message}${NC}"
+    return 1
+  fi
+  local got=""
+  if command -v jq &>/dev/null; then
+    got="$(jq -r '.skillListingBudgetFraction' "${settings_path}" 2>/dev/null || true)"
+  else
+    echo -e "${RED}❌ jq not found; cannot verify Claude skill-listing budget${NC}"
+    return 1
+  fi
+  if [[ "${got}" != "${expected}" ]]; then
+    echo -e "${RED}❌ ${fail_message}${NC}"
+    return 1
+  fi
+  return 0
+}
+
 # =============================================================================
 # Test 8: TEST SETUP COMMAND
 # =============================================================================
@@ -421,12 +444,16 @@ SETUP_HOME=$(mktemp -d)
 mkdir -p "${SETUP_HOME}/.claude" "${SETUP_HOME}/.codex/skills/.system"
 
 SETUP_OK=true
-if HOME="${SETUP_HOME}" USERPROFILE="${SETUP_HOME}" \
+if HOME="${SETUP_HOME}" USERPROFILE="${SETUP_HOME}" CLAUDE_CONFIG_DIR="" \
   ./bin/datadog-code-security-mcp --no-telemetry setup --dry-run \
   > "${TEST_OUTPUT_DIR}/setup-dry-run.txt" 2>&1; then
   DRY_RUN_FILES=$(find "${SETUP_HOME}" -name "SKILL.md" | wc -l | tr -d ' ')
   if [[ "${DRY_RUN_FILES}" != "0" ]]; then
     echo -e "${RED}❌ Setup dry run wrote skill files${NC}"
+    SETUP_OK=false
+  fi
+  if [[ -f "${SETUP_HOME}/.claude/settings.json" ]]; then
+    echo -e "${RED}❌ Setup dry run wrote Claude settings${NC}"
     SETUP_OK=false
   fi
 else
@@ -436,7 +463,7 @@ else
 fi
 
 if [[ "${SETUP_OK}" == "true" ]] && \
-  HOME="${SETUP_HOME}" USERPROFILE="${SETUP_HOME}" \
+  HOME="${SETUP_HOME}" USERPROFILE="${SETUP_HOME}" CLAUDE_CONFIG_DIR="" \
   ./bin/datadog-code-security-mcp --no-telemetry setup --json \
   > "${TEST_OUTPUT_DIR}/setup-output.json" \
   2> "${TEST_OUTPUT_DIR}/setup-error.txt"; then
@@ -459,6 +486,12 @@ if [[ "${SETUP_OK}" == "true" ]] && \
     echo -e "${RED}❌ Setup removed Codex .system directory${NC}"
     SETUP_OK=false
   fi
+  if ! check_claude_skill_listing_budget \
+    "${SETUP_HOME}/.claude/settings.json" \
+    "0.02" \
+    "Setup did not configure the Claude skill-listing budget"; then
+    SETUP_OK=false
+  fi
 else
   echo -e "${RED}❌ Setup installation failed${NC}"
   [[ -f "${TEST_OUTPUT_DIR}/setup-output.json" ]] && cat "${TEST_OUTPUT_DIR}/setup-output.json"
@@ -468,7 +501,7 @@ fi
 
 if [[ "${SETUP_OK}" == "true" ]]; then
   mkdir -p "${SETUP_HOME}/.agents/skills/user-skill"
-  if HOME="${SETUP_HOME}" USERPROFILE="${SETUP_HOME}" \
+  if HOME="${SETUP_HOME}" USERPROFILE="${SETUP_HOME}" CLAUDE_CONFIG_DIR="" \
     ./bin/datadog-code-security-mcp --no-telemetry setup --remove-skills --dry-run \
     > "${TEST_OUTPUT_DIR}/setup-remove-dry-run.txt" 2>&1; then
     REMOVE_DRY_RUN_FILES=$(find "${SETUP_HOME}" -path '*/dd-codesec-*/SKILL.md' | wc -l | tr -d ' ')
@@ -484,7 +517,7 @@ if [[ "${SETUP_OK}" == "true" ]]; then
 fi
 
 if [[ "${SETUP_OK}" == "true" ]] && \
-  HOME="${SETUP_HOME}" USERPROFILE="${SETUP_HOME}" \
+  HOME="${SETUP_HOME}" USERPROFILE="${SETUP_HOME}" CLAUDE_CONFIG_DIR="" \
   ./bin/datadog-code-security-mcp --no-telemetry setup --remove-skills --json \
   > "${TEST_OUTPUT_DIR}/setup-remove-output.json" \
   2> "${TEST_OUTPUT_DIR}/setup-remove-error.txt"; then
@@ -502,6 +535,12 @@ if [[ "${SETUP_OK}" == "true" ]] && \
   fi
   if [[ ! -d "${SETUP_HOME}/.codex/skills/.system" ]]; then
     echo -e "${RED}❌ Setup --remove-skills deleted Codex .system directory${NC}"
+    SETUP_OK=false
+  fi
+  if ! check_claude_skill_listing_budget \
+    "${SETUP_HOME}/.claude/settings.json" \
+    "0.02" \
+    "Setup --remove-skills changed the Claude skill-listing budget"; then
     SETUP_OK=false
   fi
 else

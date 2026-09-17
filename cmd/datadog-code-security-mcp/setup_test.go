@@ -17,6 +17,7 @@ func setSetupTestHome(t *testing.T) string {
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
 	t.Setenv("PATH", "")
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
 	return home
 }
 
@@ -78,6 +79,113 @@ func TestSetupCommandRejectsUnknownClient(t *testing.T) {
 	cmd.SetArgs([]string{"--client", "unknown"})
 	if err := cmd.Execute(); err == nil {
 		t.Fatal("setup accepted unknown client")
+	}
+}
+
+func TestSetupCommandConfiguresClaudeBudget(t *testing.T) {
+	home := setSetupTestHome(t)
+	if err := os.Mkdir(filepath.Join(home, ".claude"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	var output bytes.Buffer
+	cmd := newSetupCmd()
+	cmd.SetOut(&output)
+	cmd.SetArgs([]string{"--client", "claude-code"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), "skillListingBudgetFraction floor to 0.02") {
+		t.Fatalf("setup output = %q", output.String())
+	}
+	data, err := os.ReadFile(filepath.Join(home, ".claude", "settings.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"skillListingBudgetFraction": 0.02`) {
+		t.Fatalf("settings = %s", data)
+	}
+}
+
+func TestSetupCommandCanSkipClaudeBudget(t *testing.T) {
+	home := setSetupTestHome(t)
+	if err := os.Mkdir(filepath.Join(home, ".claude"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	var output bytes.Buffer
+	cmd := newSetupCmd()
+	cmd.SetOut(&output)
+	cmd.SetArgs([]string{"--client", "claude-code", "--skip-skill-listing-budget"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), "disabled by --skip-skill-listing-budget") {
+		t.Fatalf("setup output = %q", output.String())
+	}
+	if _, err := os.Stat(filepath.Join(home, ".claude", "settings.json")); !os.IsNotExist(err) {
+		t.Fatalf("settings file exists after opt-out: %v", err)
+	}
+}
+
+func TestSetupCommandInstallsSkillsWhenClaudeSettingsAreMalformed(t *testing.T) {
+	home := setSetupTestHome(t)
+	if err := os.Mkdir(filepath.Join(home, ".claude"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	const malformed = `{"skillListingBudgetFraction":`
+	if err := os.WriteFile(filepath.Join(home, ".claude", "settings.json"), []byte(malformed), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var output bytes.Buffer
+	cmd := newSetupCmd()
+	cmd.SetOut(&output)
+	cmd.SetArgs([]string{"--client", "claude-code"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), "could not update Claude Code skill-listing budget") {
+		t.Fatalf("setup output = %q", output.String())
+	}
+	if !strings.Contains(output.String(), "--skip-skill-listing-budget") {
+		t.Fatalf("setup output missing skip flag: %q", output.String())
+	}
+	if _, err := os.Stat(filepath.Join(home, ".claude", "skills", "dd-codesec-scan-and-fix", "SKILL.md")); err != nil {
+		t.Fatalf("skills were not installed: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(home, ".claude", "settings.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != malformed {
+		t.Fatalf("malformed settings were overwritten: %q", data)
+	}
+}
+
+func TestSetupCommandUsesClaudeConfigDir(t *testing.T) {
+	home := setSetupTestHome(t)
+	configDir := filepath.Join(home, "custom-claude")
+	if err := os.Mkdir(configDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CLAUDE_CONFIG_DIR", configDir)
+
+	cmd := newSetupCmd()
+	cmd.SetArgs([]string{"--client", "claude-code"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{
+		filepath.Join(configDir, "settings.json"),
+		filepath.Join(configDir, "skills", "dd-codesec-scan-and-fix", "SKILL.md"),
+	} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("custom Claude config path %s was not written: %v", path, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(home, ".claude")); !os.IsNotExist(err) {
+		t.Fatalf("default Claude directory exists with CLAUDE_CONFIG_DIR set: %v", err)
 	}
 }
 
@@ -253,6 +361,36 @@ func TestRenderSetupResultReportsPartialChangesAfterFailure(t *testing.T) {
 		"Agent Skills: failed",
 		"Partial changes applied before failure:",
 		"dd-codesec-scan-and-fix: installed",
+		"Restart updated clients",
+	} {
+		if !strings.Contains(output.String(), want) {
+			t.Fatalf("partial failure output %q does not contain %q", output.String(), want)
+		}
+	}
+}
+
+func TestRenderSetupResultReportsSettingsAppliedBeforeFailure(t *testing.T) {
+	var output bytes.Buffer
+	err := renderSetupResult(&output, setupcmd.Result{
+		Clients: []setupcmd.ClientResult{{
+			ClientID:    "claude-code",
+			DisplayName: "Claude Code",
+			Status:      setupcmd.ClientStatusFailed,
+			Reason:      "install skill: disk full",
+			Settings: &setupcmd.SettingsChange{
+				Path:   "/home/test/.claude/settings.json",
+				Action: setupcmd.SettingsActionUpdated,
+				Reason: "set skillListingBudgetFraction floor to 0.02",
+			},
+		}},
+	}, false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"Claude Code: failed",
+		"Partial changes applied before failure:",
+		"Claude settings /home/test/.claude/settings.json: updated",
 		"Restart updated clients",
 	} {
 		if !strings.Contains(output.String(), want) {

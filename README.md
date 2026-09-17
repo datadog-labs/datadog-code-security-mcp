@@ -88,6 +88,9 @@ datadog-code-security-mcp setup --dry-run
 # Restrict setup to one or more clients
 datadog-code-security-mcp setup --client agents --client codex
 
+# Install Claude Code skills without changing its skill-listing budget
+datadog-code-security-mcp setup --client claude-code --skip-skill-listing-budget
+
 # Remove only skills managed by this binary
 datadog-code-security-mcp setup --remove-skills
 
@@ -101,9 +104,18 @@ datadog-code-security-mcp setup --json
 Setup always installs into `~/.agents/skills`, the shared directory used by
 Cursor, OpenCode, Pi, Gemini CLI, and other clients that follow the Agent
 Skills convention. It also detects Claude Code and Codex from their CLIs or
-user configuration directories and installs into `~/.claude/skills` and
-`~/.codex/skills` when present. It then asks you to restart updated clients.
+user configuration directories and installs into `~/.claude/skills` (or
+`$CLAUDE_CONFIG_DIR/skills`) and `~/.codex/skills` when present. It then asks
+you to restart updated clients.
 The accepted `--client` IDs are `agents`, `claude-code`, and `codex`.
+For Claude Code, setup also ensures that `skillListingBudgetFraction` is at
+least `0.02` in `~/.claude/settings.json` (or
+`$CLAUDE_CONFIG_DIR/settings.json`), so skill descriptions stay in context.
+See [Claude Code: skills missing or not auto-triggering](#claude-code-skills-missing-or-not-auto-triggering)
+for why. Existing higher values are preserved.
+Use `--skip-skill-listing-budget` to install the skills without changing this
+setting. If the settings file cannot be updated, setup still installs the
+skills and prints a warning. Removing skills does not revert the setting.
 
 The skills prefer the local Code Security MCP scan tools when that MCP
 server is registered in the client. They fall back to
@@ -115,6 +127,13 @@ shell environment. The remote Datadog MCP, when available, provides
 platform context rather than performing the authoritative local scan. Setup
 does not modify MCP configuration.
 
+For the best experience, also connect the official
+[Datadog MCP Server](https://docs.datadoghq.com/mcp_server/setup/). It gives
+the skills access to Datadog platform context such as finding status and
+exposure information. It complements this local Code Security MCP server:
+the remote server retrieves platform data, while this server scans the code
+currently on disk.
+
 The remediation skill never scans after every edit. It runs when explicitly
 asked or when verifying a backend finding; after a task changes security-
 relevant files it offers one changed-file scan and waits for confirmation.
@@ -124,8 +143,9 @@ relevant files it offers one changed-file scan and waits for confirmation.
 After `setup`, Claude Code should list `dd-codesec-scan-and-fix`,
 `dd-codesec-verify-findings`, and `dd-codesec-setup-toolchain`. Restart
 Claude Code if they are missing from `/skills`. Confirm the trees exist under
-`~/.claude/skills` (native) or `~/.agents/skills` (shared). You can still
-invoke a skill by name, for example `/dd-codesec-scan-and-fix`.
+`~/.claude/skills` or `$CLAUDE_CONFIG_DIR/skills` (native), or
+`~/.agents/skills` (shared). You can still invoke a skill by name, for example
+`/dd-codesec-scan-and-fix`.
 
 If a skill is listed but never auto-triggers, Claude Code may have dropped
 its **description** from context. It caps how much of the skill listing
@@ -144,23 +164,24 @@ This is a known upstream pattern. See anthropics/claude-code
 [#85027](https://github.com/anthropics/claude-code/issues/85027).
 
 Check `/context` and run `/doctor` to see whether the skill listing is over
-budget. Two project settings can help. Add either to this project's
-`.claude/settings.json` (not your global user settings), so it only affects
-sessions in that project:
+budget. Setup raises the user-level budget from Claude Code's `0.01` default
+to at least `0.02`, but that may still be insufficient for a large skill
+library. Two settings can help:
 
-**Option A — raise the skill-listing budget:**
+**Option A — raise the skill-listing budget further:**
 
 ```json
 {
-  "skillListingBudgetFraction": 0.02
+  "skillListingBudgetFraction": 0.03
 }
 ```
 
-The default is `0.01` (1% of the context window). This is a blunt
-instrument: it gives more room to every skill's description, not just
-Datadog's, and may need raising again as more skills get installed.
+Add it to `~/.claude/settings.json` for all local projects, or to a project's
+`.claude/settings.json` for that project only. This is a blunt instrument: it
+gives more room to every skill's description, not just Datadog's, and may
+need raising again as more skills get installed.
 
-**Option B — turn off a competing skill (recommended first):**
+**Option B — turn off a competing skill:**
 
 ```json
 {
@@ -176,8 +197,9 @@ invoked" slot and push Datadog descriptions out first. `"off"` (or
 budget. You can also set this from the `/skills` menu: highlight the skill,
 press `Space` to cycle its state, then `Esc` to save.
 
-Prefer Option B: it targets the usual cause instead of raising the budget
-for every skill. Full reference: [Claude Code settings](https://code.claude.com/docs/en/settings-reference)
+Option B is more targeted than repeatedly raising the budget, but only disable
+skills you do not need. Full reference:
+[Claude Code settings](https://code.claude.com/docs/en/settings-reference)
 (`skillListingBudgetFraction`, `skillListingMaxDescChars`, `skillOverrides`).
 
 **⚠️ Requirements:**
