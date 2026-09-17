@@ -59,6 +59,72 @@ func TestRunCreatesClaudeSettingsWithBudgetFloor(t *testing.T) {
 	}
 }
 
+func TestApplyClaudeSettingsMergesConcurrentEdits(t *testing.T) {
+	dir := t.TempDir()
+	settingsPath := filepath.Join(dir, "settings.json")
+	if err := os.WriteFile(settingsPath, []byte(`{"theme":"dark"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	plan, err := planClaudeSettings(settingsPath, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.change.Action != SettingsActionUpdated {
+		t.Fatalf("plan action = %s, want updated", plan.change.Action)
+	}
+
+	if err := os.WriteFile(settingsPath, []byte(`{"theme":"dark","model":"opus"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := applyClaudeSettings(plan); err != nil {
+		t.Fatal(err)
+	}
+
+	budget, settings := readSkillListingBudget(t, settingsPath)
+	if budget != skillListingBudgetFloor {
+		t.Fatalf("skillListingBudgetFraction = %v, want %v", budget, skillListingBudgetFloor)
+	}
+	if settings["theme"] != "dark" {
+		t.Fatalf("theme = %#v, want preserved", settings["theme"])
+	}
+	if settings["model"] != "opus" {
+		t.Fatalf("concurrent model setting was overwritten: %#v", settings["model"])
+	}
+}
+
+func TestApplyClaudeSettingsSkipsWriteWhenConcurrentEditMeetsFloor(t *testing.T) {
+	dir := t.TempDir()
+	settingsPath := filepath.Join(dir, "settings.json")
+	if err := os.WriteFile(settingsPath, []byte(`{"theme":"dark"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	plan, err := planClaudeSettings(settingsPath, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.change.Action != SettingsActionUpdated {
+		t.Fatalf("plan action = %s, want updated", plan.change.Action)
+	}
+
+	const concurrent = "{\n  \"model\": \"opus\",\n  \"skillListingBudgetFraction\": 0.05,\n  \"theme\": \"dark\"\n}\n"
+	if err := os.WriteFile(settingsPath, []byte(concurrent), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := applyClaudeSettings(plan); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := os.ReadFile(settingsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != concurrent {
+		t.Fatalf("settings rewritten after concurrent floor was already met:\n%s", data)
+	}
+}
+
 func TestRunRaisesClaudeBudgetAndPreservesOtherSettings(t *testing.T) {
 	options, settingsPath := claudeTestOptions(t)
 	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o700); err != nil {
