@@ -18,7 +18,7 @@ func makeLibraryScanRequest(args any) mcp.CallToolRequest {
 	return req
 }
 
-func TestMcpCaller(t *testing.T) {
+func TestMCPCaller(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
 		name string
