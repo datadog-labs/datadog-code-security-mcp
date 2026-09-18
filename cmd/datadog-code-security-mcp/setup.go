@@ -60,17 +60,12 @@ Code, setup also raises the user skill-listing budget to 0.02 unless
 				}
 			}
 
-			claudeConfigDir, err := setupcmd.ResolveClaudeConfigDir(os.Getenv("CLAUDE_CONFIG_DIR"))
-			if err != nil {
-				return err
-			}
-
 			options := setupcmd.Options{
 				Source:                 skills.FS,
 				Version:                version,
 				ClientIDs:              clientIDs,
 				HomeDir:                homeDir,
-				ClaudeConfigDir:        claudeConfigDir,
+				ClaudeConfigDir:        os.Getenv("CLAUDE_CONFIG_DIR"),
 				SkipSkillListingBudget: skipSkillListingBudget,
 				Now:                    time.Now(),
 				Desired:                desired,
@@ -168,6 +163,9 @@ func renderClient(writer io.Writer, client setupcmd.ClientResult, dryRun bool) e
 		}
 		if err := renderSkillChanges(writer, client.Changes, false); err != nil {
 			return err
+		}
+		if !settingsUpdated(client.Settings) {
+			return nil
 		}
 		return renderSettingsChange(writer, client.Settings, false)
 	case setupcmd.ClientStatusApplied:

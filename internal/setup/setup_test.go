@@ -76,7 +76,7 @@ func TestRunRejectsUnknownClient(t *testing.T) {
 
 func TestResolveClaudeConfigDir(t *testing.T) {
 	t.Run("empty", func(t *testing.T) {
-		got, err := ResolveClaudeConfigDir("")
+		got, err := resolveClaudeConfigDir("")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -87,7 +87,7 @@ func TestResolveClaudeConfigDir(t *testing.T) {
 
 	t.Run("existing directory", func(t *testing.T) {
 		dir := t.TempDir()
-		got, err := ResolveClaudeConfigDir(dir)
+		got, err := resolveClaudeConfigDir(dir)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -102,7 +102,7 @@ func TestResolveClaudeConfigDir(t *testing.T) {
 
 	t.Run("missing directory", func(t *testing.T) {
 		dir := filepath.Join(t.TempDir(), "missing")
-		got, err := ResolveClaudeConfigDir(dir)
+		got, err := resolveClaudeConfigDir(dir)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -120,7 +120,7 @@ func TestResolveClaudeConfigDir(t *testing.T) {
 		if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		_, err := ResolveClaudeConfigDir(file)
+		_, err := resolveClaudeConfigDir(file)
 		if err == nil {
 			t.Fatal("accepted a file path")
 		}
@@ -139,7 +139,7 @@ func TestResolveClaudeConfigDir(t *testing.T) {
 		if err != nil {
 			t.Skip(err)
 		}
-		got, err := ResolveClaudeConfigDir(filepath.Join(rel, "nested", ".."))
+		got, err := resolveClaudeConfigDir(filepath.Join(rel, "nested", ".."))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -153,17 +153,111 @@ func TestResolveClaudeConfigDir(t *testing.T) {
 	})
 }
 
-func TestRunRejectsClaudeConfigDirFile(t *testing.T) {
+func TestRunFailsClaudeWhenConfigDirIsFileAndClaudeIsDetected(t *testing.T) {
+	isolatePATH(t)
+	home := t.TempDir()
+	if err := os.Mkdir(filepath.Join(home, ".claude"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(home, ".codex"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(home, "not-a-dir")
+	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	options := testOptions(home, testSkillIDs())
+	options.ClaudeConfigDir = file
+	result, err := Run(options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claude := resultClient(t, result, "claude-code")
+	if claude.Status != ClientStatusFailed {
+		t.Fatalf("Claude status = %s, want failed", claude.Status)
+	}
+	if !strings.Contains(claude.Reason, "not a directory") {
+		t.Fatalf("Claude reason = %q, want not a directory", claude.Reason)
+	}
+	agents := resultClient(t, result, "agents")
+	if agents.Status != ClientStatusApplied {
+		t.Fatalf("Agent Skills status = %s, want applied", agents.Status)
+	}
+	codex := resultClient(t, result, "codex")
+	if codex.Status != ClientStatusApplied {
+		t.Fatalf("Codex status = %s, want applied", codex.Status)
+	}
+	if !result.HasFailures() {
+		t.Fatal("detected Claude failure was not reported")
+	}
+	if _, err := os.Stat(filepath.Join(home, ".agents", "skills", "datadog-remediation", "SKILL.md")); err != nil {
+		t.Fatalf("Agent Skills were not installed: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".codex", "skills", "datadog-remediation", "SKILL.md")); err != nil {
+		t.Fatalf("Codex skills were not installed: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".claude", "skills", "datadog-remediation")); !os.IsNotExist(err) {
+		t.Fatal("Claude skills were installed after a config-dir failure")
+	}
+}
+
+func TestRunSkipsInvalidClaudeConfigDirWhenClaudeIsNotDetected(t *testing.T) {
+	isolatePATH(t)
+	home := t.TempDir()
+	file := filepath.Join(home, "not-a-dir")
+	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	options := testOptions(home, testSkillIDs())
+	options.ClaudeConfigDir = file
+	result, err := Run(options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claude := resultClient(t, result, "claude-code")
+	if claude.Status != ClientStatusSkipped {
+		t.Fatalf("Claude status = %s, want skipped", claude.Status)
+	}
+	agents := resultClient(t, result, "agents")
+	if agents.Status != ClientStatusApplied {
+		t.Fatalf("Agent Skills status = %s, want applied", agents.Status)
+	}
+	if result.HasFailures() {
+		t.Fatalf("setup failed without a detected Claude client: %+v", result.Clients)
+	}
+}
+
+func TestRunIgnoresClaudeConfigDirFileWhenClaudeNotSelected(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "not-a-dir")
 	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	options := testOptions(t.TempDir(), testSkillIDs())
-	options.ClientIDs = []string{"claude-code"}
+	options.ClientIDs = []string{"agents"}
 	options.ClaudeConfigDir = file
-	if _, err := Run(options); err == nil {
-		t.Fatal("Run() accepted a file as CLAUDE_CONFIG_DIR")
+	result, err := Run(options)
+	if err != nil {
+		t.Fatal(err)
 	}
+	if len(result.Clients) != 1 || result.Clients[0].ClientID != "agents" {
+		t.Fatalf("clients = %+v, want agents only", result.Clients)
+	}
+	if result.Clients[0].Status != ClientStatusApplied {
+		t.Fatalf("status = %s, want applied", result.Clients[0].Status)
+	}
+}
+
+func resultClient(t *testing.T, result Result, id string) ClientResult {
+	t.Helper()
+	for _, client := range result.Clients {
+		if client.ClientID == id {
+			return client
+		}
+	}
+	t.Fatalf("client %s not found in %+v", id, result.Clients)
+	return ClientResult{}
 }
 
 func TestRunDoesNotWriteWhenAnyDesiredSkillIsBlocked(t *testing.T) {

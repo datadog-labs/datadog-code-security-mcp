@@ -189,7 +189,34 @@ func TestSetupCommandUsesClaudeConfigDir(t *testing.T) {
 	}
 }
 
-func TestSetupCommandRejectsClaudeConfigDirFile(t *testing.T) {
+func TestSetupCommandRejectsClaudeConfigDirFileWhenClaudeDetected(t *testing.T) {
+	home := setSetupTestHome(t)
+	if err := os.Mkdir(filepath.Join(home, ".claude"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(home, "not-a-dir")
+	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CLAUDE_CONFIG_DIR", file)
+
+	var output bytes.Buffer
+	cmd := newSetupCmd()
+	cmd.SetOut(&output)
+	cmd.SetArgs([]string{"--client", "claude-code"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("setup succeeded with a file CLAUDE_CONFIG_DIR while Claude was detected")
+	}
+	if !strings.Contains(err.Error(), "Claude Code") {
+		t.Fatalf("error = %v, want Claude Code failure", err)
+	}
+	if !strings.Contains(output.String(), "not a directory") {
+		t.Fatalf("output = %q, want not a directory", output.String())
+	}
+}
+
+func TestSetupCommandSkipsInvalidClaudeConfigDirWhenClaudeMissing(t *testing.T) {
 	home := setSetupTestHome(t)
 	file := filepath.Join(home, "not-a-dir")
 	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
@@ -199,12 +226,80 @@ func TestSetupCommandRejectsClaudeConfigDirFile(t *testing.T) {
 
 	cmd := newSetupCmd()
 	cmd.SetArgs([]string{"--client", "claude-code"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSetupCommandInstallsAgentsWhenClaudeConfigDirIsFile(t *testing.T) {
+	home := setSetupTestHome(t)
+	file := filepath.Join(home, "not-a-dir")
+	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CLAUDE_CONFIG_DIR", file)
+
+	cmd := newSetupCmd()
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".agents", "skills", "dd-codesec-scan-and-fix", "SKILL.md")); err != nil {
+		t.Fatalf("Agent Skills were not installed: %v", err)
+	}
+}
+
+func TestSetupCommandFailsClaudeButInstallsAgentsWhenDetected(t *testing.T) {
+	home := setSetupTestHome(t)
+	if err := os.Mkdir(filepath.Join(home, ".claude"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(home, ".codex"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(home, "not-a-dir")
+	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CLAUDE_CONFIG_DIR", file)
+
+	var output bytes.Buffer
+	cmd := newSetupCmd()
+	cmd.SetOut(&output)
 	err := cmd.Execute()
 	if err == nil {
-		t.Fatal("setup accepted a file as CLAUDE_CONFIG_DIR")
+		t.Fatal("setup succeeded with a file CLAUDE_CONFIG_DIR while Claude was detected")
 	}
-	if !strings.Contains(err.Error(), "not a directory") {
-		t.Fatalf("error = %v", err)
+	if !strings.Contains(err.Error(), "Claude Code") {
+		t.Fatalf("error = %v, want Claude Code failure", err)
+	}
+	if strings.Contains(err.Error(), "Agent Skills") || strings.Contains(err.Error(), "Codex") {
+		t.Fatalf("non-Claude clients were reported as failed: %v", err)
+	}
+	for _, path := range []string{
+		filepath.Join(home, ".agents", "skills", "dd-codesec-scan-and-fix", "SKILL.md"),
+		filepath.Join(home, ".codex", "skills", "dd-codesec-scan-and-fix", "SKILL.md"),
+	} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("other client was not installed: %v", err)
+		}
+	}
+}
+
+func TestSetupCommandIgnoresClaudeConfigDirFileWhenClaudeNotSelected(t *testing.T) {
+	home := setSetupTestHome(t)
+	file := filepath.Join(home, "not-a-dir")
+	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CLAUDE_CONFIG_DIR", file)
+
+	cmd := newSetupCmd()
+	cmd.SetArgs([]string{"--client", "agents"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".agents", "skills", "dd-codesec-scan-and-fix", "SKILL.md")); err != nil {
+		t.Fatalf("agents setup failed: %v", err)
 	}
 }
 
@@ -502,6 +597,43 @@ func TestRenderSetupResultDoesNotTreatUnchangedSettingsAsPartialFailure(t *testi
 	}
 	if strings.Contains(output.String(), "Restart") {
 		t.Fatalf("unchanged settings requested restart: %q", output.String())
+	}
+}
+
+func TestRenderSetupResultOmitsFailedSettingsFromPartialChanges(t *testing.T) {
+	var output bytes.Buffer
+	err := renderSetupResult(&output, setupcmd.Result{
+		Clients: []setupcmd.ClientResult{{
+			ClientID:    "claude-code",
+			DisplayName: "Claude Code",
+			Status:      setupcmd.ClientStatusFailed,
+			Reason:      "install second skill: disk full",
+			Changes: []setupcmd.SkillChange{{
+				SkillID: "dd-codesec-scan-and-fix",
+				Action:  setupcmd.SkillActionInstalled,
+			}},
+			Settings: &setupcmd.SettingsChange{
+				Path:   "/home/test/.claude/settings.json",
+				Action: setupcmd.SettingsActionFailed,
+				Reason: "replace Claude Code settings: permission denied",
+			},
+		}},
+	}, false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"Claude Code: failed",
+		"Partial changes applied before failure:",
+		"dd-codesec-scan-and-fix: installed",
+		"Restart updated clients",
+	} {
+		if !strings.Contains(output.String(), want) {
+			t.Fatalf("partial failure output %q does not contain %q", output.String(), want)
+		}
+	}
+	if strings.Contains(output.String(), "Claude settings") {
+		t.Fatalf("failed settings listed as a partial change: %q", output.String())
 	}
 }
 

@@ -25,10 +25,10 @@ type Options struct {
 	Desired []string
 }
 
-// ResolveClaudeConfigDir sanitizes CLAUDE_CONFIG_DIR. An empty value means
+// resolveClaudeConfigDir sanitizes CLAUDE_CONFIG_DIR. An empty value means
 // use the default ~/.claude directory. A missing path is allowed so setup can
 // create it later; an existing path must be a directory.
-func ResolveClaudeConfigDir(raw string) (string, error) {
+func resolveClaudeConfigDir(raw string) (string, error) {
 	if raw == "" {
 		return "", nil
 	}
@@ -95,12 +95,6 @@ func reconcile(options Options, execute bool) (Result, error) {
 	if options.Now.IsZero() {
 		options.Now = time.Now()
 	}
-	configDir, err := ResolveClaudeConfigDir(options.ClaudeConfigDir)
-	if err != nil {
-		return Result{}, err
-	}
-	options.ClaudeConfigDir = configDir
-
 	clients, err := selectedClients(options.ClientIDs)
 	if err != nil {
 		return Result{}, err
@@ -114,14 +108,10 @@ func reconcile(options Options, execute bool) (Result, error) {
 }
 
 func reconcileClient(client Client, options Options, execute bool) ClientResult {
-	skillsDir := client.SkillsDir(options.HomeDir)
-	if client.ID == "claude-code" && options.ClaudeConfigDir != "" {
-		skillsDir = filepath.Join(options.ClaudeConfigDir, "skills")
-	}
 	clientResult := ClientResult{
 		ClientID:    client.ID,
 		DisplayName: client.DisplayName,
-		SkillsDir:   skillsDir,
+		SkillsDir:   client.SkillsDir(options.HomeDir),
 	}
 
 	detection, err := IsInstalled(client, options.HomeDir)
@@ -130,18 +120,37 @@ func reconcileClient(client Client, options Options, execute bool) ClientResult 
 		clientResult.Reason = err.Error()
 		return clientResult
 	}
-	if !detection.Installed && client.ID == "claude-code" && options.ClaudeConfigDir != "" {
-		if _, err := os.Stat(options.ClaudeConfigDir); err == nil {
-			detection = Detection{
-				Installed: true,
-				Reason:    fmt.Sprintf("%s exists", options.ClaudeConfigDir),
+
+	if client.ID == "claude-code" {
+		configDir, resolveErr := resolveClaudeConfigDir(options.ClaudeConfigDir)
+		if resolveErr != nil {
+			if detection.Installed {
+				clientResult.Status = ClientStatusFailed
+				clientResult.Reason = resolveErr.Error()
+				return clientResult
 			}
-		} else if !os.IsNotExist(err) {
-			clientResult.Status = ClientStatusFailed
-			clientResult.Reason = fmt.Sprintf("inspect Claude Code config directory %s: %v", options.ClaudeConfigDir, err)
+			clientResult.Status = ClientStatusSkipped
+			clientResult.Reason = detection.Reason
 			return clientResult
 		}
+		options.ClaudeConfigDir = configDir
+		if configDir != "" {
+			clientResult.SkillsDir = filepath.Join(configDir, "skills")
+			if !detection.Installed {
+				if _, err := os.Stat(configDir); err == nil {
+					detection = Detection{
+						Installed: true,
+						Reason:    fmt.Sprintf("%s exists", configDir),
+					}
+				} else if !os.IsNotExist(err) {
+					clientResult.Status = ClientStatusFailed
+					clientResult.Reason = fmt.Sprintf("inspect Claude Code config directory %s: %v", configDir, err)
+					return clientResult
+				}
+			}
+		}
 	}
+
 	if !detection.Installed {
 		clientResult.Status = ClientStatusSkipped
 		clientResult.Reason = detection.Reason
