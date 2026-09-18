@@ -399,6 +399,67 @@ func TestRenderSetupResultReportsSettingsAppliedBeforeFailure(t *testing.T) {
 	}
 }
 
+func TestRenderSetupResultReportsFailedSettingsInsteadOfNoChanges(t *testing.T) {
+	var output bytes.Buffer
+	err := renderSetupResult(&output, setupcmd.Result{
+		Clients: []setupcmd.ClientResult{{
+			ClientID:    "claude-code",
+			DisplayName: "Claude Code",
+			Status:      setupcmd.ClientStatusApplied,
+			SkillsDir:   "/home/test/.claude/skills",
+			Settings: &setupcmd.SettingsChange{
+				Path:   "/home/test/.claude/settings.json",
+				Action: setupcmd.SettingsActionFailed,
+				Reason: "replace Claude Code settings: permission denied",
+			},
+			Warnings: []string{"could not update Claude Code skill-listing budget: permission denied (use --skip-skill-listing-budget to skip this setting)"},
+		}},
+	}, false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(output.String(), "no changes") {
+		t.Fatalf("failed settings reported as no changes: %q", output.String())
+	}
+	if strings.Contains(output.String(), "Restart") {
+		t.Fatalf("failed settings requested restart: %q", output.String())
+	}
+	for _, want := range []string{
+		"Claude settings /home/test/.claude/settings.json: failed",
+		"could not update Claude Code skill-listing budget",
+	} {
+		if !strings.Contains(output.String(), want) {
+			t.Fatalf("failed settings output %q does not contain %q", output.String(), want)
+		}
+	}
+}
+
+func TestRenderSetupResultDoesNotTreatUnchangedSettingsAsPartialFailure(t *testing.T) {
+	var output bytes.Buffer
+	err := renderSetupResult(&output, setupcmd.Result{
+		Clients: []setupcmd.ClientResult{{
+			ClientID:    "claude-code",
+			DisplayName: "Claude Code",
+			Status:      setupcmd.ClientStatusFailed,
+			Reason:      "unowned skill directory",
+			Settings: &setupcmd.SettingsChange{
+				Path:   "/home/test/.claude/settings.json",
+				Action: setupcmd.SettingsActionUnchanged,
+				Reason: "skillListingBudgetFraction is already 0.05",
+			},
+		}},
+	}, false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(output.String(), "Partial changes applied before failure") {
+		t.Fatalf("unchanged settings reported as partial changes: %q", output.String())
+	}
+	if strings.Contains(output.String(), "Restart") {
+		t.Fatalf("unchanged settings requested restart: %q", output.String())
+	}
+}
+
 func TestRenderSetupResultReportsCleanupWarningAfterUpdate(t *testing.T) {
 	var output bytes.Buffer
 	err := renderSetupResult(&output, setupcmd.Result{

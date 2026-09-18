@@ -160,8 +160,9 @@ func reconcileClient(client Client, options Options, execute bool) ClientResult 
 	}
 
 	if clientResult.Settings != nil {
-		if applyErr := applyClaudeSettings(settingsPlan); applyErr != nil {
-			clientResult.Settings = nil
+		change, applyErr := applyClaudeSettings(settingsPlan)
+		clientResult.Settings = &change
+		if applyErr != nil {
 			clientResult.Warnings = append(clientResult.Warnings, claudeSettingsWarning(applyErr))
 		}
 	}

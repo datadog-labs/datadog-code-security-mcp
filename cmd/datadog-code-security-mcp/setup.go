@@ -128,8 +128,7 @@ func renderSetupResult(writer io.Writer, result setupcmd.Result, dryRun, outputJ
 			return err
 		}
 		wroteSkills = wroteSkills || hasSkillWrites(client.Changes)
-		updatedSettings = updatedSettings ||
-			(client.Settings != nil && client.Settings.Action == setupcmd.SettingsActionUpdated)
+		updatedSettings = updatedSettings || settingsUpdated(client.Settings)
 	}
 
 	if !detected {
@@ -156,7 +155,7 @@ func renderClient(writer io.Writer, client setupcmd.ClientResult, dryRun bool) e
 		if _, err := fmt.Fprintf(writer, "✗ %s: failed (%s)\n", client.DisplayName, client.Reason); err != nil {
 			return err
 		}
-		if len(client.Changes) == 0 && client.Settings == nil {
+		if len(client.Changes) == 0 && !settingsUpdated(client.Settings) {
 			return nil
 		}
 		if _, err := fmt.Fprintln(writer, "  Partial changes applied before failure:"); err != nil {
@@ -215,6 +214,10 @@ func renderWarnings(writer io.Writer, warnings []string) error {
 		}
 	}
 	return nil
+}
+
+func settingsUpdated(change *setupcmd.SettingsChange) bool {
+	return change != nil && change.Action == setupcmd.SettingsActionUpdated
 }
 
 func hasSkillWrites(changes []setupcmd.SkillChange) bool {

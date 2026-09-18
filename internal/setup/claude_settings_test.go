@@ -77,8 +77,12 @@ func TestApplyClaudeSettingsMergesConcurrentEdits(t *testing.T) {
 	if err := os.WriteFile(settingsPath, []byte(`{"theme":"dark","model":"opus"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := applyClaudeSettings(plan); err != nil {
+	change, err := applyClaudeSettings(plan)
+	if err != nil {
 		t.Fatal(err)
+	}
+	if change.Action != SettingsActionUpdated {
+		t.Fatalf("change = %+v, want updated", change)
 	}
 
 	budget, settings := readSkillListingBudget(t, settingsPath)
@@ -112,8 +116,12 @@ func TestApplyClaudeSettingsSkipsWriteWhenConcurrentEditMeetsFloor(t *testing.T)
 	if err := os.WriteFile(settingsPath, []byte(concurrent), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := applyClaudeSettings(plan); err != nil {
+	change, err := applyClaudeSettings(plan)
+	if err != nil {
 		t.Fatal(err)
+	}
+	if change.Action != SettingsActionUnchanged {
+		t.Fatalf("change = %+v, want unchanged", change)
 	}
 
 	data, err := os.ReadFile(settingsPath)
@@ -212,6 +220,42 @@ func TestRunInstallsSkillsWhenClaudeSettingsWriteFails(t *testing.T) {
 	}
 	assertClaudeSettingsWarning(t, result.Clients[0].Warnings)
 	assertTestSkillsInstalled(t, filepath.Join(options.ClaudeConfigDir, "skills"))
+}
+
+func TestRunReportsFailedSettingsChangeWhenDirectoryIsNotWritable(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod does not reliably make directories unwritable on Windows")
+	}
+	options, settingsPath := claudeTestOptions(t)
+	configDir := options.ClaudeConfigDir
+	if err := os.WriteFile(settingsPath, []byte(`{"skillListingBudgetFraction":0.01}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(configDir, "skills"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(configDir, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(configDir, 0o700) })
+
+	result, err := Run(options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.HasFailures() {
+		t.Fatalf("settings write failure blocked skill install: %+v", result.Clients)
+	}
+	got := result.Clients[0].Settings
+	if got == nil || got.Action != SettingsActionFailed {
+		t.Fatalf("settings change = %+v, want failed", got)
+	}
+	assertClaudeSettingsWarning(t, result.Clients[0].Warnings)
+	assertTestSkillsInstalled(t, filepath.Join(configDir, "skills"))
+	budget, _ := readSkillListingBudget(t, settingsPath)
+	if budget != 0.01 {
+		t.Fatalf("budget was rewritten after a failed write: %v", budget)
+	}
 }
 
 func TestPreviewWarnsOnBrokenClaudeSettingsSymlink(t *testing.T) {

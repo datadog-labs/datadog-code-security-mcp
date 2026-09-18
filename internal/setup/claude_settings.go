@@ -16,6 +16,7 @@ const (
 	SettingsActionUpdated   SettingsAction = "updated"
 	SettingsActionUnchanged SettingsAction = "unchanged"
 	SettingsActionSkipped   SettingsAction = "skipped"
+	SettingsActionFailed    SettingsAction = "failed"
 )
 
 // SettingsChange describes a Claude Code settings reconciliation.
@@ -111,21 +112,32 @@ func planClaudeSettings(path string, skip bool) (claudeSettingsPlan, error) {
 	}, nil
 }
 
-func applyClaudeSettings(plan claudeSettingsPlan) error {
+func applyClaudeSettings(plan claudeSettingsPlan) (SettingsChange, error) {
 	if plan.change.Action != SettingsActionUpdated {
-		return nil
+		return plan.change, nil
 	}
 	// Re-read at apply time so skill install cannot write a stale snapshot
 	// over concurrent Claude Code or user edits. No lock: the other writer
 	// would not take it, so it would not close the remaining rename window.
 	fresh, err := planClaudeSettings(plan.change.Path, false)
 	if err != nil {
-		return err
+		return failedSettingsChange(plan.change.Path, err), err
 	}
 	if fresh.change.Action != SettingsActionUpdated {
-		return nil
+		return fresh.change, nil
 	}
-	return writeClaudeSettings(fresh)
+	if err := writeClaudeSettings(fresh); err != nil {
+		return failedSettingsChange(plan.change.Path, err), err
+	}
+	return fresh.change, nil
+}
+
+func failedSettingsChange(path string, err error) SettingsChange {
+	return SettingsChange{
+		Path:   path,
+		Action: SettingsActionFailed,
+		Reason: err.Error(),
+	}
 }
 
 func writeClaudeSettings(plan claudeSettingsPlan) error {
