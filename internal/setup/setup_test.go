@@ -3,6 +3,7 @@ package setup
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -70,6 +71,98 @@ func TestRunRejectsUnknownClient(t *testing.T) {
 	options.ClientIDs = []string{"unknown"}
 	if _, err := Run(options); err == nil {
 		t.Fatal("Run() accepted an unknown client")
+	}
+}
+
+func TestResolveClaudeConfigDir(t *testing.T) {
+	t.Run("empty", func(t *testing.T) {
+		got, err := ResolveClaudeConfigDir("")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != "" {
+			t.Fatalf("got %q, want empty", got)
+		}
+	})
+
+	t.Run("existing directory", func(t *testing.T) {
+		dir := t.TempDir()
+		got, err := ResolveClaudeConfigDir(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want, err := filepath.Abs(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != want {
+			t.Fatalf("got %q, want %q", got, want)
+		}
+	})
+
+	t.Run("missing directory", func(t *testing.T) {
+		dir := filepath.Join(t.TempDir(), "missing")
+		got, err := ResolveClaudeConfigDir(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want, err := filepath.Abs(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != want {
+			t.Fatalf("got %q, want %q", got, want)
+		}
+	})
+
+	t.Run("file", func(t *testing.T) {
+		file := filepath.Join(t.TempDir(), "not-a-dir")
+		if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		_, err := ResolveClaudeConfigDir(file)
+		if err == nil {
+			t.Fatal("accepted a file path")
+		}
+		if !strings.Contains(err.Error(), "not a directory") {
+			t.Fatalf("error = %v", err)
+		}
+	})
+
+	t.Run("relative", func(t *testing.T) {
+		dir := t.TempDir()
+		cwd, err := os.Getwd()
+		if err != nil {
+			t.Fatal(err)
+		}
+		rel, err := filepath.Rel(cwd, dir)
+		if err != nil {
+			t.Skip(err)
+		}
+		got, err := ResolveClaudeConfigDir(filepath.Join(rel, "nested", ".."))
+		if err != nil {
+			t.Fatal(err)
+		}
+		want, err := filepath.Abs(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != want {
+			t.Fatalf("got %q, want %q", got, want)
+		}
+	})
+}
+
+func TestRunRejectsClaudeConfigDirFile(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "not-a-dir")
+	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	options := testOptions(t.TempDir(), testSkillIDs())
+	options.ClientIDs = []string{"claude-code"}
+	options.ClaudeConfigDir = file
+	if _, err := Run(options); err == nil {
+		t.Fatal("Run() accepted a file as CLAUDE_CONFIG_DIR")
 	}
 }
 

@@ -60,12 +60,17 @@ Code, setup also raises the user skill-listing budget to 0.02 unless
 				}
 			}
 
+			claudeConfigDir, err := setupcmd.ResolveClaudeConfigDir(os.Getenv("CLAUDE_CONFIG_DIR"))
+			if err != nil {
+				return err
+			}
+
 			options := setupcmd.Options{
 				Source:                 skills.FS,
 				Version:                version,
 				ClientIDs:              clientIDs,
 				HomeDir:                homeDir,
-				ClaudeConfigDir:        os.Getenv("CLAUDE_CONFIG_DIR"),
+				ClaudeConfigDir:        claudeConfigDir,
 				SkipSkillListingBudget: skipSkillListingBudget,
 				Now:                    time.Now(),
 				Desired:                desired,

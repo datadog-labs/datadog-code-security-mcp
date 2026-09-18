@@ -25,6 +25,30 @@ type Options struct {
 	Desired []string
 }
 
+// ResolveClaudeConfigDir sanitizes CLAUDE_CONFIG_DIR. An empty value means
+// use the default ~/.claude directory. A missing path is allowed so setup can
+// create it later; an existing path must be a directory.
+func ResolveClaudeConfigDir(raw string) (string, error) {
+	if raw == "" {
+		return "", nil
+	}
+	dir, err := filepath.Abs(filepath.Clean(raw))
+	if err != nil {
+		return "", fmt.Errorf("resolve CLAUDE_CONFIG_DIR %q: %w", raw, err)
+	}
+	info, err := os.Stat(dir)
+	if os.IsNotExist(err) {
+		return dir, nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("inspect CLAUDE_CONFIG_DIR %s: %w", dir, err)
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("CLAUDE_CONFIG_DIR %s is not a directory", dir)
+	}
+	return dir, nil
+}
+
 // Result is the stable report rendered by both human and JSON output modes.
 type Result struct {
 	Clients []ClientResult `json:"clients"`
@@ -71,6 +95,11 @@ func reconcile(options Options, execute bool) (Result, error) {
 	if options.Now.IsZero() {
 		options.Now = time.Now()
 	}
+	configDir, err := ResolveClaudeConfigDir(options.ClaudeConfigDir)
+	if err != nil {
+		return Result{}, err
+	}
+	options.ClaudeConfigDir = configDir
 
 	clients, err := selectedClients(options.ClientIDs)
 	if err != nil {

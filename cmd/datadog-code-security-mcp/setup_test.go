@@ -189,6 +189,51 @@ func TestSetupCommandUsesClaudeConfigDir(t *testing.T) {
 	}
 }
 
+func TestSetupCommandRejectsClaudeConfigDirFile(t *testing.T) {
+	home := setSetupTestHome(t)
+	file := filepath.Join(home, "not-a-dir")
+	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CLAUDE_CONFIG_DIR", file)
+
+	cmd := newSetupCmd()
+	cmd.SetArgs([]string{"--client", "claude-code"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("setup accepted a file as CLAUDE_CONFIG_DIR")
+	}
+	if !strings.Contains(err.Error(), "not a directory") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestSetupCommandResolvesRelativeClaudeConfigDir(t *testing.T) {
+	home := setSetupTestHome(t)
+	configDir := filepath.Join(home, "custom-claude")
+	if err := os.Mkdir(configDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rel, err := filepath.Rel(cwd, configDir)
+	if err != nil {
+		t.Skip(err)
+	}
+	t.Setenv("CLAUDE_CONFIG_DIR", rel)
+
+	cmd := newSetupCmd()
+	cmd.SetArgs([]string{"--client", "claude-code"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(configDir, "settings.json")); err != nil {
+		t.Fatalf("relative CLAUDE_CONFIG_DIR was not resolved: %v", err)
+	}
+}
+
 func TestSetupCommandRemoveSkillsLeavesUnmarkedDirectories(t *testing.T) {
 	home := setSetupTestHome(t)
 
