@@ -11,9 +11,10 @@ Datadog Code Security MCP collects usage telemetry to improve the tool.
 Telemetry events sent to Datadog are retained for 30 days.
 
 What is collected: tool and scanner versions, OS/arch, run duration,
-  success/failure, aggregate counts, coarse auth/workspace metadata, categorized
-  error kinds with a short curated (path-free) description, a fixed team
-  ownership tag, and a random install ID stored on this machine.
+  success/failure, aggregate counts, coarse auth/workspace metadata, whether a
+  Datadog agent skill initiated the run, categorized error kinds with a short
+  curated (path-free) description, a fixed team ownership tag, and a random
+  install ID stored on this machine.
 What is NOT collected: source code, absolute paths or directory structure,
   scan finding contents, secrets, usernames, repo names, or raw error messages.
 
