@@ -36,6 +36,7 @@ const (
 	ArgWorkingDir      = "working_dir"
 	ArgMinSASTSeverity = "min_sast_severity"
 	ArgPath            = "path"
+	ArgCalledBySkill   = "called_by_skill"
 )
 
 // Default values

@@ -97,6 +97,29 @@ func TestShippedSkillsAttributeWrapperCLIInvocations(t *testing.T) {
 	}
 }
 
+func TestShippedSkillsAttributeMCPToolCalls(t *testing.T) {
+	for _, skillID := range []string{
+		"dd-codesec-scan-and-fix",
+		"dd-codesec-verify-findings",
+		"dd-codesec-setup-toolchain",
+	} {
+		data, err := fs.ReadFile(FS, skillID+"/SKILL.md")
+		if err != nil {
+			t.Fatalf("read %s/SKILL.md: %v", skillID, err)
+		}
+		text := strings.Join(strings.Fields(string(data)), " ")
+		if !strings.Contains(text, "called_by_skill: true") {
+			t.Errorf("%s does not instruct MCP calls to pass called_by_skill: true", skillID)
+		}
+		if strings.Contains(strings.ToLower(text), "do not take this flag") {
+			t.Errorf("%s still says MCP calls skip skill attribution", skillID)
+		}
+		if !strings.Contains(text, "outside this skill's workflow") {
+			t.Errorf("%s does not tell the agent to omit called_by_skill outside this workflow", skillID)
+		}
+	}
+}
+
 func TestScanSkillsPreferLocalMCP(t *testing.T) {
 	for _, skillID := range []string{
 		"dd-codesec-scan-and-fix",
