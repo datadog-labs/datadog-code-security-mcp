@@ -3,6 +3,8 @@ package setup
 import (
 	"fmt"
 	"io/fs"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -13,11 +15,38 @@ type Options struct {
 	Version   string
 	ClientIDs []string
 	HomeDir   string
-	Now       time.Time
+	// ClaudeConfigDir overrides Claude Code's default ~/.claude directory.
+	ClaudeConfigDir        string
+	SkipSkillListingBudget bool
+	Now                    time.Time
 	// Desired is the set of embedded skill IDs to keep. An empty set removes
 	// every managed skill. Callers must pass this explicitly; it is never
 	// inferred from Source.
 	Desired []string
+}
+
+// resolveClaudeConfigDir sanitizes CLAUDE_CONFIG_DIR. An empty value means
+// use the default ~/.claude directory. A missing path is allowed so setup can
+// create it later; an existing path must be a directory.
+func resolveClaudeConfigDir(raw string) (string, error) {
+	if raw == "" {
+		return "", nil
+	}
+	dir, err := filepath.Abs(filepath.Clean(raw))
+	if err != nil {
+		return "", fmt.Errorf("resolve CLAUDE_CONFIG_DIR %q: %w", raw, err)
+	}
+	info, err := os.Stat(dir)
+	if os.IsNotExist(err) {
+		return dir, nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("inspect CLAUDE_CONFIG_DIR %s: %w", dir, err)
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("CLAUDE_CONFIG_DIR %s is not a directory", dir)
+	}
+	return dir, nil
 }
 
 // Result is the stable report rendered by both human and JSON output modes.
@@ -27,13 +56,14 @@ type Result struct {
 
 // ClientResult records the outcome for one supported client.
 type ClientResult struct {
-	ClientID    string        `json:"client_id"`
-	DisplayName string        `json:"display_name"`
-	Status      ClientStatus  `json:"status"`
-	Reason      string        `json:"reason,omitempty"`
-	SkillsDir   string        `json:"skills_dir"`
-	Changes     []SkillChange `json:"changes,omitempty"`
-	Warnings    []string      `json:"warnings,omitempty"`
+	ClientID    string          `json:"client_id"`
+	DisplayName string          `json:"display_name"`
+	Status      ClientStatus    `json:"status"`
+	Reason      string          `json:"reason,omitempty"`
+	SkillsDir   string          `json:"skills_dir"`
+	Changes     []SkillChange   `json:"changes,omitempty"`
+	Settings    *SettingsChange `json:"settings,omitempty"`
+	Warnings    []string        `json:"warnings,omitempty"`
 }
 
 // ClientStatus describes the outcome of applying setup to one client.
@@ -65,7 +95,6 @@ func reconcile(options Options, execute bool) (Result, error) {
 	if options.Now.IsZero() {
 		options.Now = time.Now()
 	}
-
 	clients, err := selectedClients(options.ClientIDs)
 	if err != nil {
 		return Result{}, err
@@ -91,6 +120,37 @@ func reconcileClient(client Client, options Options, execute bool) ClientResult 
 		clientResult.Reason = err.Error()
 		return clientResult
 	}
+
+	if client.ID == "claude-code" {
+		configDir, resolveErr := resolveClaudeConfigDir(options.ClaudeConfigDir)
+		if resolveErr != nil {
+			if detection.Installed {
+				clientResult.Status = ClientStatusFailed
+				clientResult.Reason = resolveErr.Error()
+				return clientResult
+			}
+			clientResult.Status = ClientStatusSkipped
+			clientResult.Reason = detection.Reason
+			return clientResult
+		}
+		options.ClaudeConfigDir = configDir
+		if configDir != "" {
+			clientResult.SkillsDir = filepath.Join(configDir, "skills")
+			if !detection.Installed {
+				if _, err := os.Stat(configDir); err == nil {
+					detection = Detection{
+						Installed: true,
+						Reason:    fmt.Sprintf("%s exists", configDir),
+					}
+				} else if !os.IsNotExist(err) {
+					clientResult.Status = ClientStatusFailed
+					clientResult.Reason = fmt.Sprintf("inspect Claude Code config directory %s: %v", configDir, err)
+					return clientResult
+				}
+			}
+		}
+	}
+
 	if !detection.Installed {
 		clientResult.Status = ClientStatusSkipped
 		clientResult.Reason = detection.Reason
@@ -104,6 +164,24 @@ func reconcileClient(client Client, options Options, execute bool) ClientResult 
 		return clientResult
 	}
 
+	var settingsPlan claudeSettingsPlan
+	if client.ID == "claude-code" && len(options.Desired) > 0 {
+		configDir := options.ClaudeConfigDir
+		if configDir == "" {
+			configDir = filepath.Join(options.HomeDir, ".claude")
+		}
+		var settingsErr error
+		settingsPlan, settingsErr = planClaudeSettings(
+			filepath.Join(configDir, "settings.json"),
+			options.SkipSkillListingBudget,
+		)
+		if settingsErr != nil {
+			clientResult.Warnings = append(clientResult.Warnings, claudeSettingsWarning(settingsErr))
+		} else {
+			clientResult.Settings = &settingsPlan.change
+		}
+	}
+
 	clientResult.Status = ClientStatusApplied
 	clientResult.Reason = detection.Reason
 	if !execute {
@@ -113,10 +191,18 @@ func reconcileClient(client Client, options Options, execute bool) ClientResult 
 
 	applied, warnings, err := applySkills(clientResult.SkillsDir, ops)
 	clientResult.Changes = applied
-	clientResult.Warnings = warnings
+	clientResult.Warnings = append(clientResult.Warnings, warnings...)
 	if err != nil {
 		clientResult.Status = ClientStatusFailed
 		clientResult.Reason = err.Error()
+	}
+
+	if clientResult.Settings != nil {
+		change, applyErr := applyClaudeSettings(settingsPlan)
+		clientResult.Settings = &change
+		if applyErr != nil {
+			clientResult.Warnings = append(clientResult.Warnings, claudeSettingsWarning(applyErr))
+		}
 	}
 	return clientResult
 }
