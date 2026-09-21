@@ -16,10 +16,11 @@ import (
 
 func newSetupCmd() *cobra.Command {
 	var (
-		clientIDs    []string
-		dryRun       bool
-		removeSkills bool
-		outputJSON   bool
+		clientIDs              []string
+		dryRun                 bool
+		removeSkills           bool
+		outputJSON             bool
+		skipSkillListingBudget bool
 	)
 
 	cmd := &cobra.Command{
@@ -30,7 +31,9 @@ directory and the native directories of detected AI coding clients.
 
 Destinations: Agent Skills (~/.agents/skills), Claude Code, and Codex. Setup
 manages only skill directories carrying its .datadog-managed.json marker; it
-never changes MCP configuration or removes user-managed skills.`,
+never changes MCP configuration or removes user-managed skills. For Claude
+Code, setup also raises the user skill-listing budget to 0.02 unless
+--skip-skill-listing-budget is set.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) (runErr error) {
 			event := telemetry.OperationEvent{
@@ -58,12 +61,14 @@ never changes MCP configuration or removes user-managed skills.`,
 			}
 
 			options := setupcmd.Options{
-				Source:    skills.FS,
-				Version:   version,
-				ClientIDs: clientIDs,
-				HomeDir:   homeDir,
-				Now:       time.Now(),
-				Desired:   desired,
+				Source:                 skills.FS,
+				Version:                version,
+				ClientIDs:              clientIDs,
+				HomeDir:                homeDir,
+				ClaudeConfigDir:        os.Getenv("CLAUDE_CONFIG_DIR"),
+				SkipSkillListingBudget: skipSkillListingBudget,
+				Now:                    time.Now(),
+				Desired:                desired,
 			}
 
 			var result setupcmd.Result
@@ -91,6 +96,8 @@ never changes MCP configuration or removes user-managed skills.`,
 	cmd.Flags().BoolVar(&removeSkills, "remove-skills", false,
 		"Remove all Datadog-managed skills instead of installing them")
 	cmd.Flags().BoolVarP(&outputJSON, "json", "j", false, "Output a machine-readable JSON report")
+	cmd.Flags().BoolVar(&skipSkillListingBudget, "skip-skill-listing-budget", false,
+		"Do not raise Claude Code's user skill-listing budget to 0.02")
 
 	return cmd
 }
@@ -109,6 +116,7 @@ func renderSetupResult(writer io.Writer, result setupcmd.Result, dryRun, outputJ
 
 	detected := false
 	wroteSkills := false
+	updatedSettings := false
 	for _, client := range result.Clients {
 		if client.Status != setupcmd.ClientStatusSkipped {
 			detected = true
@@ -120,6 +128,7 @@ func renderSetupResult(writer io.Writer, result setupcmd.Result, dryRun, outputJ
 			return err
 		}
 		wroteSkills = wroteSkills || hasSkillWrites(client.Changes)
+		updatedSettings = updatedSettings || settingsUpdated(client.Settings)
 	}
 
 	if !detected {
@@ -130,7 +139,7 @@ func renderSetupResult(writer io.Writer, result setupcmd.Result, dryRun, outputJ
 		_, err := fmt.Fprintln(writer, "Dry run complete.")
 		return err
 	}
-	if wroteSkills {
+	if wroteSkills || updatedSettings {
 		_, err := fmt.Fprintln(writer, "Restart updated clients so they discover the installed skills.")
 		return err
 	}
@@ -146,24 +155,46 @@ func renderClient(writer io.Writer, client setupcmd.ClientResult, dryRun bool) e
 		if _, err := fmt.Fprintf(writer, "✗ %s: failed (%s)\n", client.DisplayName, client.Reason); err != nil {
 			return err
 		}
-		if len(client.Changes) == 0 {
+		if len(client.Changes) == 0 && !settingsUpdated(client.Settings) {
 			return nil
 		}
 		if _, err := fmt.Fprintln(writer, "  Partial changes applied before failure:"); err != nil {
 			return err
 		}
-		return renderSkillChanges(writer, client.Changes, false)
+		if err := renderSkillChanges(writer, client.Changes, false); err != nil {
+			return err
+		}
+		if !settingsUpdated(client.Settings) {
+			return nil
+		}
+		return renderSettingsChange(writer, client.Settings, false)
 	case setupcmd.ClientStatusApplied:
-		if len(client.Changes) == 0 {
+		if len(client.Changes) == 0 && client.Settings == nil {
 			_, err := fmt.Fprintf(writer, "✓ %s: no changes\n", client.DisplayName)
 			return err
 		}
 		if _, err := fmt.Fprintf(writer, "✓ %s (%s)\n", client.DisplayName, client.SkillsDir); err != nil {
 			return err
 		}
-		return renderSkillChanges(writer, client.Changes, dryRun)
+		if err := renderSkillChanges(writer, client.Changes, dryRun); err != nil {
+			return err
+		}
+		return renderSettingsChange(writer, client.Settings, dryRun)
 	}
 	return nil
+}
+
+func renderSettingsChange(writer io.Writer, change *setupcmd.SettingsChange, dryRun bool) error {
+	if change == nil {
+		return nil
+	}
+	action := string(change.Action)
+	if dryRun && change.Action == setupcmd.SettingsActionUpdated {
+		action = "would be updated"
+	}
+	_, err := fmt.Fprintf(writer, "  - Claude settings %s: %s (%s)\n",
+		change.Path, action, change.Reason)
+	return err
 }
 
 func renderSkillChanges(writer io.Writer, changes []setupcmd.SkillChange, dryRun bool) error {
@@ -186,6 +217,10 @@ func renderWarnings(writer io.Writer, warnings []string) error {
 		}
 	}
 	return nil
+}
+
+func settingsUpdated(change *setupcmd.SettingsChange) bool {
+	return change != nil && change.Action == setupcmd.SettingsActionUpdated
 }
 
 func hasSkillWrites(changes []setupcmd.SkillChange) bool {
