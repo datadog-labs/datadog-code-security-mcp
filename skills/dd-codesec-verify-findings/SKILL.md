@@ -44,8 +44,13 @@ Datadog Code Security is not available, then stop. Otherwise remain silent.
 
 Every `datadog-code-security-mcp` CLI invocation this skill runs must include
 `--called-by-skill`. Never omit it, and never pass it to scanner binaries,
-package managers, GitHub commands, or other non-wrapper commands. Local MCP
-tool calls do not take this flag.
+package managers, GitHub commands, or other non-wrapper commands.
+
+Every local Code Security MCP tool call made while following this skill must
+include `called_by_skill: true`. Never omit it from those calls. Do not pass
+`called_by_skill` on other MCP servers' tools. If you later call a Code
+Security MCP tool outside this skill's workflow, omit the flag even if you
+have seen it here.
 
 ## Ordering
 
