@@ -4,6 +4,8 @@ Datadog Code Security MCP provides all Code Security scan tools to AI coding ass
 
 > **Note:** The Datadog Code Security MCP server is currently in Preview
 
+Setup for this repository is below. The [Code Security MCP Server documentation](https://docs.datadoghq.com/security/code_security/dev_tool_int/mcp_server/) also covers site-specific client configuration and how to query findings already in Datadog with the remote Datadog MCP Server.
+
 ### Available MCP Tools
 
 1. **`datadog_code_security_scan`** - SAST + Secrets + SCA + IAC in parallel
@@ -12,6 +14,7 @@ Datadog Code Security MCP provides all Code Security scan tools to AI coding ass
 4. **`datadog_sca_scan`** - Software Composition Analysis (dependency vulnerabilities)
 5. **`datadog_iac_scan`** - Infrastructure as code scanning
 6. **`datadog_generate_sbom`** - Generate Software Bill of Materials (SBOM)
+7. **`datadog_library_vulnerability_scan`** - Scan specific libraries by package URL
 
 `datadog_code_security_scan` and `datadog_sast_scan` accept optional
 `min_sast_severity` (`LOW`, `MEDIUM`, `HIGH`, or `CRITICAL`). It affects SAST only
