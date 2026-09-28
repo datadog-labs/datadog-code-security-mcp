@@ -6,7 +6,9 @@ description: >-
   Code Security MCP, and report other places that break the same invariant.
   Use when the user just fixed a security bug, asks whether the same mistake
   exists elsewhere, asks whether the same check is missing in other files, or
-  refers to an uncommitted security fix. Also use when the user runs
+  refers to an uncommitted security fix, or asks to save, promote, or upload
+  the temporary rule as a custom SAST rule, including after changing which
+  findings to include. Also use when the user runs
   /dd-codesec-find-security-variants.
 ---
 
@@ -126,3 +128,34 @@ MEDIUM
 ```
 
 `N` counts only likely variants. HIGH is likely variant: the same class of operation the fix protects. MEDIUM is needs review: the same shape, not that class. Do not rank by impact. One short paragraph each. If a section has no hits, omit it.
+
+## 9. Ask before saving
+
+After the report, ask once whether to save a permanent custom rule. Do not call `datadog_promote_sast_rule` in this step.
+
+Propose the HIGH list only. Name each MEDIUM file that would stay out. Say that every saved hit appears in the IDE as an error, because the rule severity is ERROR.
+
+The user can save that HIGH list, add a MEDIUM, drop a HIGH, or save nothing. If they do not agree, stop.
+
+If they change the set, edit `$scratch/rule.js` so it reports only the operations they accepted. Keep the query. Scan again with `datadog_ephemeral_sast_scan` and `called_by_skill: true`, and show the new list. Ask once more whether to save that list.
+
+Only after they agree to the list just shown, call `datadog_promote_sast_rule` with `user_confirmed: true`, the exact `rule_code` and `tree_sitter_query` from `$scratch`, `language`, a slug `rule_name`, and `ruleset_name` `variant-hunter` unless they choose another. Pass `called_by_skill: true`. The tool uploads that source. It does not choose which hits belong. It refuses when `user_confirmed` is not true.
+
+If the tool is not registered, run:
+
+```bash
+datadog-code-security-mcp promote-sast-rule --called-by-skill --user-confirmed \
+  --language <LANGUAGE> \
+  --code-file "$scratch/rule.js" \
+  --query-file "$scratch/query.scm" \
+  --rule-name <slug> \
+  --ruleset-name variant-hunter
+```
+
+That command needs `DD_API_KEY` and `DD_APP_KEY`.
+
+After the rule is saved, if this session is Cursor or VS Code, tell the user to run **Datadog: Refresh Static Analysis Rules** from the command palette. The Datadog extension keeps rules in memory and fetches them again after that command, after two hours, or when the static analysis engine restarts. The refresh only requests a ruleset the project already names in its static analysis config. Do not mention this command in any other client.
+
+A later message that asks to save the rule, or to include or drop a hit and then save it, starts at this step. Read the files in `$scratch`. Do not repeat the diff analysis unless those files are missing.
+
+Do not upload a rule that still matches a MEDIUM the user did not accept.

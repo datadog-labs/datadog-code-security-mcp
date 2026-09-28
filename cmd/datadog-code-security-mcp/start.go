@@ -448,4 +448,62 @@ Output: the scanner's JSON findings.`,
 		},
 		handleEphemeralScan,
 	)
+
+	// Tool 9: save a rule the caller already approved. This tool only uploads
+	// the source it is given. It does not choose which findings belong.
+	s.AddTool(
+		mcp.Tool{
+			Name: "datadog_promote_sast_rule",
+			Description: `Save one SAST rule the user has already approved as a Datadog custom rule. Upload the exact JavaScript and tree-sitter query you are given. Do not infer an invariant, drop a match, or add a match. Refuse to call this until the user has agreed to that exact source.
+
+Requires DD_API_KEY and DD_APP_KEY on the MCP server. The rule is published at severity ERROR.
+
+Parameters:
+• user_confirmed (boolean, required) - true only after the user agrees to save this exact source.
+• rule_code (string, required) - DDSA JavaScript source, not base64.
+• tree_sitter_query (string, required) - tree-sitter query source, not base64.
+• language (string, required) - scanner language enum, for example TYPESCRIPT.
+• rule_name (string, required) - lowercase slug, 5 to 32 characters.
+• ruleset_name (string, optional) - lowercase slug. Defaults to variant-hunter.
+• description (string, optional) - plain-text description stored on the rule.
+
+Output: the ruleset name, rule name, and revision id.`,
+			InputSchema: mcp.ToolInputSchema{
+				Type: "object",
+				Properties: map[string]any{
+					"user_confirmed": map[string]any{
+						"type":        "boolean",
+						"description": "True only after the user agrees to save this exact rule source",
+					},
+					"rule_code": map[string]any{
+						"type":        "string",
+						"description": "DDSA JavaScript rule source, not base64",
+					},
+					"tree_sitter_query": map[string]any{
+						"type":        "string",
+						"description": "Tree-sitter query source, not base64",
+					},
+					"language": map[string]any{
+						"type":        "string",
+						"description": "Scanner language enum, for example TYPESCRIPT",
+					},
+					"rule_name": map[string]any{
+						"type":        "string",
+						"description": "Lowercase rule slug, 5 to 32 characters",
+					},
+					"ruleset_name": map[string]any{
+						"type":        "string",
+						"description": "Lowercase ruleset slug. Defaults to variant-hunter",
+					},
+					"description": map[string]any{
+						"type":        "string",
+						"description": "Plain-text description stored on the rule",
+					},
+					constants.ArgCalledBySkill: calledBySkillProperty(),
+				},
+				Required: []string{"user_confirmed", "rule_code", "tree_sitter_query", "language", "rule_name"},
+			},
+		},
+		handlePromoteSASTRule,
+	)
 }
