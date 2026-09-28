@@ -152,7 +152,7 @@ datadog-code-security-mcp promote-sast-rule --called-by-skill --user-confirmed \
   --ruleset-name variant-hunter
 ```
 
-That command needs `DD_API_KEY` and `DD_APP_KEY`.
+That command uses the same Datadog credentials as the MCP server: `DD_API_KEY` and `DD_APP_KEY`, or `DD_AUTH_DOMAIN` so `dd-auth` can supply a short-lived token.
 
 After the rule is saved, if this session is Cursor or VS Code, tell the user to run **Datadog: Refresh Static Analysis Rules** from the command palette. The Datadog extension keeps rules in memory and fetches them again after that command, after two hours, or when the static analysis engine restarts. The refresh only requests a ruleset the project already names in its static analysis config. Do not mention this command in any other client.
 

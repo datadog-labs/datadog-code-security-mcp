@@ -10,6 +10,7 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/spf13/cobra"
 
+	"github.com/datadog-labs/datadog-code-security-mcp/internal/auth"
 	"github.com/datadog-labs/datadog-code-security-mcp/internal/constants"
 	"github.com/datadog-labs/datadog-code-security-mcp/internal/promote"
 	"github.com/datadog-labs/datadog-code-security-mcp/internal/telemetry"
@@ -30,7 +31,7 @@ func newPromoteSASTRuleCmd() *cobra.Command {
 		Short: "Save a caller-supplied SAST rule as a custom rule",
 		Long: `Upload the exact JavaScript and tree-sitter query the caller supplies.
 The command does not infer an invariant and does not edit the rule.
-It requires --user-confirmed, plus DD_API_KEY and DD_APP_KEY.
+It requires --user-confirmed. Credentials are DD_API_KEY and DD_APP_KEY, or DD_AUTH_DOMAIN so dd-auth can supply a short-lived token.
 
 Example:
   datadog-code-security-mcp promote-sast-rule --called-by-skill --user-confirmed \
@@ -134,13 +135,19 @@ func parsePromoteArgs(arguments map[string]any) (promote.Request, error) {
 
 func runPromote(ctx context.Context, req promote.Request, iface telemetry.Interface, caller telemetry.Caller) (promote.Result, error) {
 	event := telemetry.OperationEvent{
-		Interface:  iface,
-		Operation:  "promote_sast_rule",
-		StartedAt:  time.Now(),
-		AuthMethod: "api_key",
-		Caller:     caller,
+		Interface: iface,
+		Operation: "promote_sast_rule",
+		StartedAt: time.Now(),
+		Caller:    caller,
 	}
 	defer func() { trackOperation(ctx, event) }()
+
+	method, err := preparePromoteAuth(ctx, iface)
+	event.AuthMethod = method
+	if err != nil {
+		event.Failure = err
+		return promote.Result{}, err
+	}
 
 	client := promote.NewClient(os.Getenv(constants.EnvAPIKey), os.Getenv(constants.EnvAPPKey), os.Getenv(constants.EnvSite))
 	result, err := client.Save(ctx, req)
@@ -149,4 +156,29 @@ func runPromote(ctx context.Context, req promote.Request, iface telemetry.Interf
 		return promote.Result{}, err
 	}
 	return result, nil
+}
+
+// preparePromoteAuth resolves Datadog credentials the same way the other API
+// calls do. Permanent keys in the environment win. Otherwise DD_AUTH_DOMAIN
+// makes the server run dd-auth, which prints a short-lived DD_API_KEY and
+// DD_APP_KEY. The HTTP call still sends those two headers.
+func preparePromoteAuth(ctx context.Context, iface telemetry.Interface) (string, error) {
+	if iface == telemetry.InterfaceMCP {
+		if err := setAuthCredentials(ctx); err != nil {
+			return detectAuthMethod(), authRequiredError(err)
+		}
+		if os.Getenv(constants.EnvAPIKey) == "" || os.Getenv(constants.EnvAPPKey) == "" {
+			return detectAuthMethod(), apiKeyRequiredError()
+		}
+		return detectAuthMethod(), nil
+	}
+
+	method, err := auth.LoadAndApplyToEnv(ctx)
+	if err != nil {
+		return method, authRequiredError(err)
+	}
+	if os.Getenv(constants.EnvAPIKey) == "" || os.Getenv(constants.EnvAPPKey) == "" {
+		return method, apiKeyRequiredError()
+	}
+	return method, nil
 }

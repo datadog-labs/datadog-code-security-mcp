@@ -456,7 +456,7 @@ Output: the scanner's JSON findings.`,
 			Name: "datadog_promote_sast_rule",
 			Description: `Save one SAST rule the user has already approved as a Datadog custom rule. Upload the exact JavaScript and tree-sitter query you are given. Do not infer an invariant, drop a match, or add a match. Refuse to call this until the user has agreed to that exact source.
 
-Requires DD_API_KEY and DD_APP_KEY on the MCP server. The rule is published at severity ERROR.
+Authentication: DD_API_KEY and DD_APP_KEY, or DD_AUTH_DOMAIN so dd-auth can supply a short-lived token. The rule is published at severity ERROR.
 
 Parameters:
 • user_confirmed (boolean, required) - true only after the user agrees to save this exact source.
