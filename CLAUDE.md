@@ -252,6 +252,7 @@ Returns component list (name, version, license)
 - `dd-codesec-scan-and-fix/`: Scan/fix/verify workflow and domain playbooks
 - `dd-codesec-verify-findings/`: Datadog platform enrichment workflow
 - `dd-codesec-setup-toolchain/`: Scanner install, update, and diagnosis guidance
+- `dd-codesec-find-security-variants/`: Variant search from an uncommitted security fix
 
 **`internal/types/`** - Centralized type definitions
 

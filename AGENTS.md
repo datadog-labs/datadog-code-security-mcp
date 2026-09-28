@@ -75,7 +75,8 @@ skills/                       # Skills embedded into release binaries
   ├── embed.go                # go:embed dd-codesec-* trees
   ├── dd-codesec-scan-and-fix/
   ├── dd-codesec-verify-findings/
-  └── dd-codesec-setup-toolchain/
+  ├── dd-codesec-setup-toolchain/
+  └── dd-codesec-find-security-variants/
 ```
 
 ## Skills

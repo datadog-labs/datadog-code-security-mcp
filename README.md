@@ -61,7 +61,7 @@ datadog-code-security-mcp version --detailed # Include every required scanner
 
 ### Install AI Client Skills
 
-The binary ships three Agent Skills for compatible AI coding clients:
+The binary ships four Agent Skills for compatible AI coding clients:
 
 - **`dd-codesec-scan-and-fix`** — scans local code, loads a focused SAST,
   Secrets, SCA, or IaC playbook, optionally enriches matches with
@@ -74,6 +74,9 @@ The binary ships three Agent Skills for compatible AI coding clients:
 - **`dd-codesec-setup-toolchain`** — installs, updates, and diagnoses the
   scanner binaries, relaying the CLI's platform-specific installation
   instructions with confirmation guardrails.
+- **`dd-codesec-find-security-variants`** — after an uncommitted security
+  fix, infers the invariant, runs a temporary SAST rule with the local
+  scanner, and reports other places that break the same invariant.
 
 Install them into the shared Agent Skills directory and every detected native
 client directory:
@@ -144,7 +147,8 @@ relevant files it offers one changed-file scan and waits for confirmation.
 ### Claude Code: skills missing or not auto-triggering
 
 After `setup`, Claude Code should list `dd-codesec-scan-and-fix`,
-`dd-codesec-verify-findings`, and `dd-codesec-setup-toolchain`. Restart
+`dd-codesec-verify-findings`, `dd-codesec-setup-toolchain`, and
+`dd-codesec-find-security-variants`. Restart
 Claude Code if they are missing from `/skills`. Confirm the trees exist under
 `~/.claude/skills` or `$CLAUDE_CONFIG_DIR/skills` (native), or
 `~/.agents/skills` (shared). You can still invoke a skill by name, for example
