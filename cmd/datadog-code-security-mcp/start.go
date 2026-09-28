@@ -396,4 +396,56 @@ Authentication: Requires DD_API_KEY and DD_APP_KEY.`,
 		},
 		handleLibraryVulnerabilityScan,
 	)
+
+	// Tool 8: one-off SAST rule. The caller supplies the JavaScript and the
+	// tree-sitter query. This tool only packs the envelope and runs the scanner.
+	s.AddTool(
+		mcp.Tool{
+			Name: "datadog_ephemeral_sast_scan",
+			Description: `Run one local, unpublished SAST rule. The caller supplies the rule JavaScript and the tree-sitter query. This tool base64-encodes them, builds the ruleset JSON, and runs datadog-static-analyzer with -r and -b. It does not infer a security invariant and it does not require Datadog API keys.
+
+Parameters:
+• rule_code (string, required) - DDSA JavaScript source. visit(captures) reports with buildError and addError.
+• tree_sitter_query (string, required) - tree-sitter query source.
+• language (string, required) - scanner language enum, for example TYPESCRIPT.
+• directory (string, optional) - repository directory passed to -i. Defaults to the current directory.
+• rule_name (string, optional) - rule name inside the ephemeral ruleset.
+• paths (array, optional) - subdirectories to scan. Omit to scan the whole directory.
+
+Output: the scanner's JSON findings.`,
+			InputSchema: mcp.ToolInputSchema{
+				Type: "object",
+				Properties: map[string]any{
+					"rule_code": map[string]any{
+						"type":        "string",
+						"description": "DDSA JavaScript rule source, not base64",
+					},
+					"tree_sitter_query": map[string]any{
+						"type":        "string",
+						"description": "Tree-sitter query source, not base64",
+					},
+					"language": map[string]any{
+						"type":        "string",
+						"description": "Scanner language enum, for example TYPESCRIPT",
+					},
+					"directory": map[string]any{
+						"type":        "string",
+						"description": "Directory to scan (datadog-static-analyzer -i)",
+					},
+					"rule_name": map[string]any{
+						"type":        "string",
+						"description": "Rule name inside the ephemeral ruleset",
+					},
+					"paths": map[string]any{
+						"type":        "array",
+						"items":       map[string]string{"type": "string"},
+						"description": "Optional subdirectories to scan",
+					},
+					constants.ArgCalledBySkill: calledBySkillProperty(),
+				},
+				Required: []string{"rule_code", "tree_sitter_query", "language"},
+			},
+		},
+		handleEphemeralScan,
+	)
 }
