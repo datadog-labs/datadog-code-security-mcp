@@ -229,7 +229,7 @@ func (c *Client) ensureRule(ctx context.Context, req preparedRequest) (bool, err
 
 func (c *Client) createRevision(ctx context.Context, req preparedRequest) (string, error) {
 	body, err := jsonAPI("custom_rule_revision", req.revisionID, map[string]any{
-		"creation_message":  defaultCreationMsg,
+		"creation_message":  base64.StdEncoding.EncodeToString([]byte(defaultCreationMsg)),
 		"short_description": req.shortDescription,
 		"description":       req.description,
 		"code":              req.code,
