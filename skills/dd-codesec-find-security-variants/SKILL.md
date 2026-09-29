@@ -131,7 +131,7 @@ MEDIUM
 
 ## 9. Ask before saving
 
-After the report, ask once whether to save a permanent custom rule. Do not call `datadog_promote_sast_rule` in this step.
+After the report, ask once whether to save a permanent custom rule. In that same question, suggest the ruleset `variant-hunter`. They can name another ruleset instead. A ruleset slug is 5 to 32 characters, lowercase letters, digits, and single hyphens, and it cannot start or end with a hyphen. If they agree and do not name one, use `variant-hunter`. Do not ask a second question only to collect the name. Do not call `datadog_promote_sast_rule` in this step.
 
 Propose the HIGH list only. Name each MEDIUM file that would stay out. Say that every saved hit appears in the IDE as an error, because the rule severity is ERROR.
 
@@ -139,7 +139,7 @@ The user can save that HIGH list, add a MEDIUM, drop a HIGH, or save nothing. If
 
 If they change the set, edit `$scratch/rule.js` so it reports only the operations they accepted. Keep the query. Scan again with `datadog_ephemeral_sast_scan` and `called_by_skill: true`, and show the new list. Ask once more whether to save that list.
 
-Only after they agree to the list just shown, call `datadog_promote_sast_rule` with `user_confirmed: true`, the exact `rule_code` and `tree_sitter_query` from `$scratch`, `language`, a slug `rule_name`, and `ruleset_name` `variant-hunter` unless they choose another. Pass `called_by_skill: true`. The tool uploads that source. It does not choose which hits belong. It refuses when `user_confirmed` is not true.
+Only after they agree to the list just shown, call `datadog_promote_sast_rule` with `user_confirmed: true`, the exact `rule_code` and `tree_sitter_query` from `$scratch`, `language`, a slug `rule_name`, and `ruleset_name` set to the name they chose, or `variant-hunter` when they did not. Pass `called_by_skill: true`. The tool uploads that source. It does not choose which hits belong. It refuses when `user_confirmed` is not true.
 
 If the tool is not registered, run:
 
@@ -149,12 +149,37 @@ datadog-code-security-mcp promote-sast-rule --called-by-skill --user-confirmed \
   --code-file "$scratch/rule.js" \
   --query-file "$scratch/query.scm" \
   --rule-name <slug> \
-  --ruleset-name variant-hunter
+  --ruleset-name <ruleset>
 ```
 
-That command uses the same Datadog credentials as the MCP server: `DD_API_KEY` and `DD_APP_KEY`, or `DD_AUTH_DOMAIN` so `dd-auth` can supply a short-lived token.
+`<ruleset>` is the name they chose, or `variant-hunter`. That command uses the same Datadog credentials as the MCP server: `DD_API_KEY` and `DD_APP_KEY`, or `DD_AUTH_DOMAIN` so `dd-auth` can supply a short-lived token.
 
-After the rule is saved, if this session is Cursor or VS Code, tell the user to run **Datadog: Refresh Static Analysis Rules** from the command palette. The Datadog extension keeps rules in memory and fetches them again after that command, after two hours, or when the static analysis engine restarts. The refresh only requests a ruleset the project already names in its static analysis config. Do not mention this command in any other client.
+## 10. Name the ruleset in the project config
+
+The IDE does not load a custom ruleset by language. It fetches only rulesets named in the project config. Static Analysis configuration is documented at <https://docs.datadoghq.com/security/code_security/static_analysis/configuration/>.
+
+After the rule is saved, look at the repository root for `code-security.datadog.yaml`, `code-security.datadog.yml`, `static-analysis.datadog.yaml`, and `static-analysis.datadog.yml`.
+
+If one of those files already names this ruleset, do not offer to edit it. A `code-security.datadog` file names it under `sast.use-rulesets`. A legacy `static-analysis.datadog` file names it in the top-level `rulesets` list.
+
+If none of them names it, offer once to add it. Show the configuration link in that offer. Do not write until they accept. When they accept:
+
+- If `code-security.datadog.yaml` or `code-security.datadog.yml` exists, add the slug under `sast.use-rulesets`. Keep every other setting. Do not set `use-default-rulesets` to false.
+- If only a legacy `static-analysis.datadog.yml` or `.yaml` exists, add the slug to its `rulesets` list. Do not create a second config file. The extension prefers `code-security.datadog.yaml` when both exist, and a new file would hide the legacy rulesets.
+- If no config file exists, create `code-security.datadog.yaml` at the repository root:
+
+```yaml
+schema-version: v1.0
+sast:
+  use-rulesets:
+    - <ruleset>
+```
+
+Do not set `use-default-rulesets: false`. Default language rulesets stay on. Do not write this file under `$scratch`.
+
+If they decline, show the configuration link again so they can add the name themselves.
+
+When this session is Cursor or VS Code, tell them to run **Datadog: Refresh Static Analysis Rules** from the command palette. Say that whether the config already named the ruleset or they just accepted the edit. The command stays hidden until that file is the effective config and static analysis is enabled. Saving the config file clears the in-memory rule cache. The extension fetches the rules again after that command, after two hours, or when the static analysis engine restarts. If they declined the edit, say the refresh will not request this ruleset until the config names it. Do not mention this command in any other client.
 
 A later message that asks to save the rule, or to include or drop a hit and then save it, starts at this step. Read the files in `$scratch`. Do not repeat the diff analysis unless those files are missing.
 
