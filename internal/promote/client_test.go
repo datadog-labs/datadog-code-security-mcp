@@ -84,6 +84,9 @@ func TestSaveCreatesRulesetRuleAndRevision(t *testing.T) {
 func TestSaveContinuesWhenRulesetAndRuleAlreadyExist(t *testing.T) {
 	var revisionCalls int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut {
+			t.Errorf("unexpected method %s", r.Method)
+		}
 		if strings.HasSuffix(r.URL.Path, "/revisions") {
 			revisionCalls++
 			w.WriteHeader(http.StatusOK)
@@ -106,6 +109,61 @@ func TestSaveContinuesWhenRulesetAndRuleAlreadyExist(t *testing.T) {
 	}
 }
 
+func TestSaveKeepsTheRulesetDescriptionGeneric(t *testing.T) {
+	var rulesetBody map[string]any
+	var revisionBody map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut {
+			t.Errorf("unexpected method %s", r.Method)
+		}
+		raw, _ := io.ReadAll(r.Body)
+		var payload map[string]any
+		if err := json.Unmarshal(raw, &payload); err != nil {
+			t.Fatal(err)
+		}
+		if r.URL.Path == "/custom/rulesets" {
+			rulesetBody = payload
+		}
+		if strings.HasSuffix(r.URL.Path, "/revisions") {
+			revisionBody = payload
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	req := sampleRequest(true)
+	req.ShortDescription = "requireAdmin before privileged user changes"
+	req.Description = "After authenticate(req), deleteUser must call requireAdmin(user) before database.deleteUser."
+	client := newClientWithBaseURL("api", "app", server.URL)
+	if _, err := client.Save(context.Background(), req); err != nil {
+		t.Fatal(err)
+	}
+
+	rulesetAttrs := rulesetBody["data"].(map[string]any)["attributes"].(map[string]any)
+	rulesetDescription := decodeField(t, rulesetAttrs["description"].(string))
+	rulesetShort := decodeField(t, rulesetAttrs["short_description"].(string))
+	if rulesetDescription != defaultDescription || rulesetShort != defaultShort {
+		t.Fatalf("ruleset text short=%q description=%q", rulesetShort, rulesetDescription)
+	}
+
+	revisionAttrs := revisionBody["data"].(map[string]any)["attributes"].(map[string]any)
+	if decodeField(t, revisionAttrs["description"].(string)) != req.Description {
+		t.Fatal("rule description was not stored on the revision")
+	}
+	if decodeField(t, revisionAttrs["short_description"].(string)) != req.ShortDescription {
+		t.Fatal("rule short description was not stored on the revision")
+	}
+}
+
+func decodeField(t *testing.T, raw string) string {
+	t.Helper()
+	decoded, err := base64.StdEncoding.DecodeString(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(decoded)
+}
+
 func TestSaveRejectsABadSlugBeforeCalling(t *testing.T) {
 	called := false
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -115,6 +173,65 @@ func TestSaveRejectsABadSlugBeforeCalling(t *testing.T) {
 
 	req := sampleRequest(true)
 	req.RuleName = "Bad_Name"
+	client := newClientWithBaseURL("api", "app", server.URL)
+	if _, err := client.Save(context.Background(), req); err == nil {
+		t.Fatal("expected an error")
+	}
+	if called {
+		t.Fatal("the API was called")
+	}
+}
+
+func TestSaveStoresMeasuredTests(t *testing.T) {
+	var revisionBody map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/revisions") {
+			raw, _ := io.ReadAll(r.Body)
+			if err := json.Unmarshal(raw, &revisionBody); err != nil {
+				t.Fatal(err)
+			}
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	req := sampleRequest(true)
+	req.Tests = []Test{
+		{Filename: "compliant.ts", Code: "function ok() { requireAdmin(user); }", AnnotationCount: 0},
+		{Filename: "noncompliant.ts", Code: "function bad() { database.deleteUser(id); }", AnnotationCount: 1},
+	}
+	client := newClientWithBaseURL("api", "app", server.URL)
+	if _, err := client.Save(context.Background(), req); err != nil {
+		t.Fatal(err)
+	}
+	attrs := revisionBody["data"].(map[string]any)["attributes"].(map[string]any)
+	tests, ok := attrs["tests"].([]any)
+	if !ok || len(tests) != 2 {
+		t.Fatalf("tests %#v", attrs["tests"])
+	}
+	first := tests[0].(map[string]any)
+	code, err := base64.StdEncoding.DecodeString(first["code"].(string))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first["filename"] != "compliant.ts" || string(code) != req.Tests[0].Code || first["annotation_count"] != float64(0) {
+		t.Fatalf("first test %#v", first)
+	}
+	second := tests[1].(map[string]any)
+	if second["annotation_count"] != float64(1) {
+		t.Fatalf("second test %#v", second)
+	}
+}
+
+func TestSaveRejectsANegativeAnnotationCountBeforeCalling(t *testing.T) {
+	called := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+	}))
+	defer server.Close()
+
+	req := sampleRequest(true)
+	req.Tests = []Test{{Filename: "bad.ts", Code: "function bad() {}", AnnotationCount: -1}}
 	client := newClientWithBaseURL("api", "app", server.URL)
 	if _, err := client.Save(context.Background(), req); err == nil {
 		t.Fatal("expected an error")

@@ -18,12 +18,15 @@ import (
 
 func newPromoteSASTRuleCmd() *cobra.Command {
 	var (
-		codeFile    string
-		queryFile   string
-		language    string
-		ruleName    string
-		rulesetName string
-		confirmed   bool
+		codeFile         string
+		queryFile        string
+		language         string
+		ruleName         string
+		rulesetName      string
+		testsFile        string
+		descriptionFile  string
+		shortDescription string
+		confirmed        bool
 	)
 
 	cmd := &cobra.Command{
@@ -46,13 +49,24 @@ Example:
 			if err != nil {
 				return fmt.Errorf("tree-sitter query: %w", err)
 			}
+			tests, err := readTestsFile(testsFile)
+			if err != nil {
+				return err
+			}
+			description, err := readOptionalFile(descriptionFile)
+			if err != nil {
+				return err
+			}
 			result, err := runPromote(cmd.Context(), promote.Request{
-				UserConfirmed:   confirmed,
-				RuleCode:        string(code),
-				TreeSitterQuery: string(query),
-				Language:        language,
-				RuleName:        ruleName,
-				RulesetName:     rulesetName,
+				UserConfirmed:    confirmed,
+				RuleCode:         string(code),
+				TreeSitterQuery:  string(query),
+				Language:         language,
+				RuleName:         ruleName,
+				RulesetName:      rulesetName,
+				ShortDescription: shortDescription,
+				Description:      description,
+				Tests:            tests,
 			}, telemetry.InterfaceCLI, cliCaller())
 			if err != nil {
 				return err
@@ -71,6 +85,9 @@ Example:
 	cmd.Flags().StringVar(&language, "language", "", "Scanner language enum, for example TYPESCRIPT")
 	cmd.Flags().StringVar(&ruleName, "rule-name", "", "Rule slug")
 	cmd.Flags().StringVar(&rulesetName, "ruleset-name", "", "Ruleset slug (default: variant-hunter)")
+	cmd.Flags().StringVar(&testsFile, "tests-file", "", "Optional JSON array of measured examples: filename, code, annotation_count")
+	cmd.Flags().StringVar(&descriptionFile, "description-file", "", "Plain-text file. States the guard, where it must run, and every operation the rule flags")
+	cmd.Flags().StringVar(&shortDescription, "short-description", "", "One line, at most 60 characters, naming the guard and the operation")
 	cmd.Flags().BoolVar(&confirmed, "user-confirmed", false, "Required. The user has agreed to save this exact rule")
 	_ = cmd.MarkFlagRequired("code-file")
 	_ = cmd.MarkFlagRequired("query-file")
@@ -127,10 +144,101 @@ func parsePromoteArgs(arguments map[string]any) (promote.Request, error) {
 	if name, ok := arguments["ruleset_name"].(string); ok {
 		req.RulesetName = name
 	}
+	if text, ok := arguments["short_description"].(string); ok {
+		req.ShortDescription = text
+	}
 	if text, ok := arguments["description"].(string); ok {
 		req.Description = text
 	}
+	if raw, ok := arguments["tests"]; ok {
+		tests, err := parseTestArgs(raw)
+		if err != nil {
+			return promote.Request{}, err
+		}
+		req.Tests = tests
+	}
 	return req, nil
+}
+
+func readOptionalFile(path string) (string, error) {
+	if path == "" {
+		return "", nil
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("description file: %w", err)
+	}
+	return string(raw), nil
+}
+
+func readTestsFile(path string) ([]promote.Test, error) {
+	if path == "" {
+		return nil, nil
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("tests file: %w", err)
+	}
+	var decoded []struct {
+		Filename        string `json:"filename"`
+		Code            string `json:"code"`
+		AnnotationCount int    `json:"annotation_count"`
+	}
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		return nil, fmt.Errorf("tests file: %w", err)
+	}
+	tests := make([]promote.Test, 0, len(decoded))
+	for _, test := range decoded {
+		tests = append(tests, promote.Test{
+			Filename:        test.Filename,
+			Code:            test.Code,
+			AnnotationCount: test.AnnotationCount,
+		})
+	}
+	return tests, nil
+}
+
+func parseTestArgs(raw any) ([]promote.Test, error) {
+	items, ok := raw.([]any)
+	if !ok {
+		return nil, fmt.Errorf("tests must be an array")
+	}
+	tests := make([]promote.Test, 0, len(items))
+	for _, item := range items {
+		fields, ok := item.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("tests must be objects")
+		}
+		filename, _ := fields["filename"].(string)
+		code, _ := fields["code"].(string)
+		count, err := annotationCount(fields["annotation_count"])
+		if err != nil {
+			return nil, err
+		}
+		tests = append(tests, promote.Test{
+			Filename:        filename,
+			Code:            code,
+			AnnotationCount: count,
+		})
+	}
+	return tests, nil
+}
+
+func annotationCount(raw any) (int, error) {
+	switch value := raw.(type) {
+	case float64:
+		if value < 0 || value != float64(int(value)) {
+			return 0, fmt.Errorf("annotation_count must be a non-negative integer")
+		}
+		return int(value), nil
+	case int:
+		if value < 0 {
+			return 0, fmt.Errorf("annotation_count must be a non-negative integer")
+		}
+		return value, nil
+	default:
+		return 0, fmt.Errorf("annotation_count must be a non-negative integer")
+	}
 }
 
 func runPromote(ctx context.Context, req promote.Request, iface telemetry.Interface, caller telemetry.Caller) (promote.Result, error) {

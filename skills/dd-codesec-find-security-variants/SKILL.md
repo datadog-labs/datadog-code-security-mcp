@@ -14,7 +14,7 @@ description: >-
 
 # Find security variants
 
-The developer just fixed a security issue and has not committed it. Find other places that break the same invariant. Do not ask them to paste the diff, name the invariant, or point at a line.
+The developer just fixed a security issue and has not committed it. Find other places that break the same invariant. Do not ask them to paste the diff or to write the invariant. Confirm the invariant you inferred before you search. Ask which file and lines are the fix only when the diff is not a single change and they have not already pointed at it.
 
 The report names where the same mistake is. It does not say which path found each hit.
 
@@ -45,9 +45,11 @@ have seen it here.
 
 Run `git diff` and `git diff --cached`. If both are empty, stop and say there is no uncommitted change.
 
-## 2. Infer the invariant
+If that diff is one function, that function is the fix. If the user already attached a file or named lines, that is the fix. Do not ask. If the diff changes more than one function, more than one file, or mixes unrelated edits, ask once which file and which lines are the security fix.
 
-From that diff only, write a structured invariant. Generalize the fix. You may read the functions and helpers the diff touches so the invariant names the real guard and the real operation. Do not go hunting for other violations in this step.
+## 2. Infer the invariant, then confirm it
+
+From that fix only, write a structured invariant. Generalize the fix. You may read the functions and helpers the diff touches so the invariant names the real guard and the real operation. Do not go hunting for other violations in this step.
 
 ```yaml
 vulnerability:
@@ -63,9 +65,13 @@ privileged_operations:
 
 Save it at `$scratch/invariant.yaml`.
 
+Show the invariant in two lines: the guard, and the operation it protects. Ask once whether that is the rule. Do not generate the rule, scan, or search until they agree.
+
+If they correct it, rewrite `$scratch/invariant.yaml` from their correction and continue. Do not ask again unless they only said no and did not say what the guard or the operation is. Then ask once for those two facts.
+
 ## 3. Generate the rule
 
-Write `$scratch/rule.js` and `$scratch/query.scm` from the invariant you just inferred. Favor recall. The scanner contract is in [rule-contract.md](rule-contract.md). That file is part of this skill. Do not look for an example rule in the repository.
+Write `$scratch/rule.js` and `$scratch/query.scm` from the invariant they confirmed. Favor recall. The scanner contract is in [rule-contract.md](rule-contract.md). That file is part of this skill. Do not look for an example rule in the repository.
 
 ## 4. Scan with the local MCP
 
@@ -139,9 +145,35 @@ The user can save that HIGH list, add a MEDIUM, drop a HIGH, or save nothing. If
 
 If they change the set, edit `$scratch/rule.js` so it reports only the operations they accepted. Keep the query. Scan again with `datadog_ephemeral_sast_scan` and `called_by_skill: true`, and show the new list. Ask once more whether to save that list.
 
-Only after they agree to the list just shown, call `datadog_promote_sast_rule` with `user_confirmed: true`, the exact `rule_code` and `tree_sitter_query` from `$scratch`, `language`, a slug `rule_name`, and `ruleset_name` set to the name they chose, or `variant-hunter` when they did not. Pass `called_by_skill: true`. The tool uploads that source. It does not choose which hits belong. It refuses when `user_confirmed` is not true.
+Before that upload, measure at most two examples for the Datadog rule page. That page shows tests, not the rule JavaScript. An annotation count of 0 is the compliant example. Any other count is the non-compliant example. Do not invent a count.
 
-If the tool is not registered, run:
+Write each example outside the repository, in its own directory:
+
+- `$scratch/examples/compliant/compliant.<ext>` is the whole function the diff changed, after the fix.
+- `$scratch/examples/noncompliant/noncompliant.<ext>` is the whole function of one HIGH hit the user accepted.
+
+`<ext>` is the extension for the language (`ts` for TYPESCRIPT, `js` for JAVASCRIPT, otherwise the normal extension). Use the whole function. A diff hunk or a truncated snippet will not match the query.
+
+Scan each directory on its own with `datadog_ephemeral_sast_scan`, `called_by_skill: true`, and `directory` set to that directory. The annotation count is the number of findings in the JSON array. Do not scan the repository again for this measurement.
+
+Keep the compliant file only when its count is 0. Keep the non-compliant file only when its count is greater than 0. Drop a file whose count does not match. If neither matches, upload with no tests.
+
+Before the upload, write `$scratch/description.md` from the confirmed invariant and from the rule source you are about to save. The rule page shows this text. The ruleset is shared, so its description stays generic and this upload does not change it. Make the rule text as specific as the rule:
+
+- the guard function, and that the rule flags its absence
+- the precondition, such as `authenticate(req)` already having run
+- where the guard has to run, relative to that precondition and the privileged call
+- every operation the rule flags, by the name used in the rule
+- the wider same-shape case, when the rule still flags other calls on that object, and that those need a human check
+- every same-shape operation left out, by name, and why it is not this rule
+
+Write several sentences. Do not shorten it to one generic line, and do not write "Custom SAST rule saved from a local variant search."
+
+Also write one line of at most 60 characters that names the guard and the operation class. Count the characters. Pass that line as `short_description` and the file text as `description`.
+
+Only after they agree to the list just shown, call `datadog_promote_sast_rule` with `user_confirmed: true`, the exact `rule_code` and `tree_sitter_query` from `$scratch`, `language`, a slug `rule_name`, `ruleset_name` set to the name they chose or `variant-hunter` when they did not, `short_description`, and `description`. Pass `called_by_skill: true`. When a measured example was kept, also pass `tests`: each item is `filename`, `code` (the file text, not base64), and `annotation_count`. At most two. The tool uploads that source and those counts. It does not measure them and it does not choose which hits belong. It refuses when `user_confirmed` is not true.
+
+If the tool is not registered, write the kept examples to `$scratch/tests.json` as a JSON array of `{filename, code, annotation_count}` and run:
 
 ```bash
 datadog-code-security-mcp promote-sast-rule --called-by-skill --user-confirmed \
@@ -149,8 +181,13 @@ datadog-code-security-mcp promote-sast-rule --called-by-skill --user-confirmed \
   --code-file "$scratch/rule.js" \
   --query-file "$scratch/query.scm" \
   --rule-name <slug> \
-  --ruleset-name <ruleset>
+  --ruleset-name <ruleset> \
+  --short-description "<line of at most 60 characters>" \
+  --description-file "$scratch/description.md" \
+  --tests-file "$scratch/tests.json"
 ```
+
+Omit `--tests-file` when there are no kept examples. Always pass `--description-file` and `--short-description`.
 
 `<ruleset>` is the name they chose, or `variant-hunter`. That command uses the same Datadog credentials as the MCP server: `DD_API_KEY` and `DD_APP_KEY`, or `DD_AUTH_DOMAIN` so `dd-auth` can supply a short-lived token.
 

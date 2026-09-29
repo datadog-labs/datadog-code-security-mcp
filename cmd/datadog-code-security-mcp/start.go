@@ -465,7 +465,9 @@ Parameters:
 • language (string, required) - scanner language enum, for example TYPESCRIPT.
 • rule_name (string, required) - lowercase slug, 5 to 32 characters.
 • ruleset_name (string, optional) - lowercase slug. Defaults to variant-hunter.
-• description (string, optional) - plain-text description stored on the rule.
+• short_description (string, optional) - one line stored on the rule, at most 60 characters. Names the guard and the operation. The ruleset keeps its own generic label.
+• description (string, optional) - plain text stored on the rule. State the guard, where it must run, and every operation the rule flags. The ruleset description stays generic and is not updated.
+• tests (array, optional) - at most two measured examples. Each item has filename, code, and annotation_count. Count 0 is the compliant example. Any other count is non-compliant. Do not invent the count. Omit a test whose measured count does not match that role. Omit tests entirely rather than upload a mislabeled example.
 
 Output: the ruleset name, rule name, and revision id.`,
 			InputSchema: mcp.ToolInputSchema{
@@ -495,9 +497,35 @@ Output: the ruleset name, rule name, and revision id.`,
 						"type":        "string",
 						"description": "Lowercase ruleset slug. Defaults to variant-hunter",
 					},
+					"short_description": map[string]any{
+						"type":        "string",
+						"description": "One line stored on the rule, at most 60 characters. The ruleset label stays generic.",
+					},
 					"description": map[string]any{
 						"type":        "string",
-						"description": "Plain-text description stored on the rule",
+						"description": "Detailed plain text stored on the rule. The ruleset description is not updated.",
+					},
+					"tests": map[string]any{
+						"type":        "array",
+						"description": "At most two measured examples. annotation_count 0 is compliant. Any other count is non-compliant.",
+						"items": map[string]any{
+							"type": "object",
+							"properties": map[string]any{
+								"filename": map[string]any{
+									"type":        "string",
+									"description": "Example filename, a single path segment",
+								},
+								"code": map[string]any{
+									"type":        "string",
+									"description": "Example source, not base64",
+								},
+								"annotation_count": map[string]any{
+									"type":        "integer",
+									"description": "Violation count measured by scanning this example. 0 is compliant.",
+								},
+							},
+							"required": []string{"filename", "code", "annotation_count"},
+						},
 					},
 					constants.ArgCalledBySkill: calledBySkillProperty(),
 				},

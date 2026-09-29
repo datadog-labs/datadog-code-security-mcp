@@ -28,7 +28,17 @@ const (
 	maxShortDescription = 60
 	minSlugLength       = 5
 	maxSlugLength       = 32
+	maxTests            = 2
 )
+
+// Test is one example the Datadog rule page shows.
+// AnnotationCount 0 is the compliant example. Any other count is non-compliant.
+// The caller measures the count. This package does not scan the example.
+type Test struct {
+	Filename        string
+	Code            string
+	AnnotationCount int
+}
 
 // Request is the rule the caller has already approved.
 type Request struct {
@@ -48,6 +58,8 @@ type Request struct {
 	ShortDescription string
 	// Description is plain text stored on the revision.
 	Description string
+	// Tests are measured examples. Empty leaves the rule page without a sample.
+	Tests []Test
 }
 
 // Result is what the API accepted.
@@ -137,6 +149,7 @@ type preparedRequest struct {
 	shortDescription string
 	description      string
 	revisionID       string
+	tests            []any
 }
 
 func prepare(req Request) (preparedRequest, error) {
@@ -172,6 +185,10 @@ func prepare(req Request) (preparedRequest, error) {
 	if description == "" {
 		description = defaultDescription
 	}
+	tests, err := encodeTests(req.Tests)
+	if err != nil {
+		return preparedRequest{}, err
+	}
 
 	return preparedRequest{
 		rulesetName:      rulesetName,
@@ -181,14 +198,44 @@ func prepare(req Request) (preparedRequest, error) {
 		query:            base64.StdEncoding.EncodeToString([]byte(req.TreeSitterQuery)),
 		shortDescription: base64.StdEncoding.EncodeToString([]byte(short)),
 		description:      base64.StdEncoding.EncodeToString([]byte(description)),
+		tests:            tests,
 	}, nil
 }
 
+func encodeTests(tests []Test) ([]any, error) {
+	if len(tests) > maxTests {
+		return nil, fmt.Errorf("at most %d tests", maxTests)
+	}
+	encoded := make([]any, 0, len(tests))
+	for _, test := range tests {
+		filename := strings.TrimSpace(test.Filename)
+		if filename == "" || strings.ContainsAny(filename, `/\`) {
+			return nil, fmt.Errorf("test filename must be a single path segment")
+		}
+		code := test.Code
+		if strings.TrimSpace(code) == "" {
+			return nil, fmt.Errorf("test code is empty")
+		}
+		if test.AnnotationCount < 0 {
+			return nil, fmt.Errorf("annotation_count must be >= 0")
+		}
+		encoded = append(encoded, map[string]any{
+			"filename":         filename,
+			"code":             base64.StdEncoding.EncodeToString([]byte(code)),
+			"annotation_count": test.AnnotationCount,
+		})
+	}
+	return encoded, nil
+}
+
 func (c *Client) ensureRuleset(ctx context.Context, req preparedRequest) (bool, error) {
+	// The ruleset is shared by every rule saved into it. Its text stays generic.
+	// A ruleset that already exists is left as it is. The detailed description
+	// is stored on the rule revision.
 	body, err := jsonAPI("custom_ruleset", req.rulesetName, map[string]any{
 		"name":              req.rulesetName,
-		"short_description": req.shortDescription,
-		"description":       req.description,
+		"short_description": base64.StdEncoding.EncodeToString([]byte(defaultShort)),
+		"description":       base64.StdEncoding.EncodeToString([]byte(defaultDescription)),
 	})
 	if err != nil {
 		return false, err
@@ -238,7 +285,7 @@ func (c *Client) createRevision(ctx context.Context, req preparedRequest) (strin
 		"severity":          "ERROR",
 		"category":          "SECURITY",
 		"arguments":         []any{},
-		"tests":             []any{},
+		"tests":             req.tests,
 		"tags":              []string{"security"},
 		"is_published":      true,
 		"should_use_ai_fix": false,
@@ -259,7 +306,15 @@ func (c *Client) createRevision(ctx context.Context, req preparedRequest) (strin
 }
 
 func (c *Client) put(ctx context.Context, path string, body []byte) (int, string, error) {
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPut, c.baseURL+path, bytes.NewReader(body))
+	return c.do(ctx, http.MethodPut, path, body)
+}
+
+func (c *Client) do(ctx context.Context, method, path string, body []byte) (int, string, error) {
+	var reader io.Reader
+	if body != nil {
+		reader = bytes.NewReader(body)
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, reader)
 	if err != nil {
 		return 0, "", fmt.Errorf("create request: %w", err)
 	}
