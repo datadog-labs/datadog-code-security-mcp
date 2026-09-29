@@ -145,18 +145,14 @@ The user can save that HIGH list, add a MEDIUM, drop a HIGH, or save nothing. If
 
 If they change the set, edit `$scratch/rule.js` so it reports only the operations they accepted. Keep the query. Scan again with `datadog_ephemeral_sast_scan` and `called_by_skill: true`, and show the new list. Ask once more whether to save that list.
 
-Before that upload, measure at most two examples for the Datadog rule page. That page shows tests, not the rule JavaScript. An annotation count of 0 is the compliant example. Any other count is the non-compliant example. Do not invent a count.
+Before the upload, attach two examples. The rule page shows them. You already have both: the function after the fix, and that same function before the fix.
 
-Write each example outside the repository, in its own directory:
+Write them outside the repository:
 
-- `$scratch/examples/compliant/compliant.<ext>` is the whole function the diff changed, after the fix.
-- `$scratch/examples/noncompliant/noncompliant.<ext>` is the whole function of one HIGH hit the user accepted.
+- `$scratch/examples/compliant/compliant.<ext>` is the whole function after the fix. Its `annotation_count` is 0.
+- `$scratch/examples/noncompliant/noncompliant.<ext>` is that same function as it was before the fix, from the committed file. Its `annotation_count` is 1.
 
-`<ext>` is the extension for the language (`ts` for TYPESCRIPT, `js` for JAVASCRIPT, otherwise the normal extension). Use the whole function. A diff hunk or a truncated snippet will not match the query.
-
-Scan each directory on its own with `datadog_ephemeral_sast_scan`, `called_by_skill: true`, and `directory` set to that directory. The annotation count is the number of findings in the JSON array. Do not scan the repository again for this measurement.
-
-Keep the compliant file only when its count is 0. Keep the non-compliant file only when its count is greater than 0. Drop a file whose count does not match. If neither matches, upload with no tests.
+`<ext>` is the extension for the language (`ts` for TYPESCRIPT, `js` for JAVASCRIPT, otherwise the normal extension). Use the whole function. Always pass both. Do not scan them to decide whether to keep them, and do not save the rule without them.
 
 Before the upload, write `$scratch/description.md` from the confirmed invariant and from the rule source you are about to save. The rule page shows this text. The ruleset is shared, so its description stays generic and this upload does not change it. Make the rule text as specific as the rule:
 
@@ -171,9 +167,9 @@ Write several sentences. Do not shorten it to one generic line, and do not write
 
 Also write one line of at most 60 characters that names the guard and the operation class. Count the characters. Pass that line as `short_description` and the file text as `description`.
 
-Only after they agree to the list just shown, call `datadog_promote_sast_rule` with `user_confirmed: true`, the exact `rule_code` and `tree_sitter_query` from `$scratch`, `language`, a slug `rule_name`, `ruleset_name` set to the name they chose or `variant-hunter` when they did not, `short_description`, and `description`. Pass `called_by_skill: true`. When a measured example was kept, also pass `tests`: each item is `filename`, `code` (the file text, not base64), and `annotation_count`. At most two. The tool uploads that source and those counts. It does not measure them and it does not choose which hits belong. It refuses when `user_confirmed` is not true.
+Only after they agree to the list just shown, call `datadog_promote_sast_rule` with `user_confirmed: true`, the exact `rule_code` and `tree_sitter_query` from `$scratch`, `language`, a slug `rule_name`, `ruleset_name` set to the name they chose or `variant-hunter` when they did not, `short_description`, and `description`. Pass `called_by_skill: true`. Also pass `tests`: the fixed function with `annotation_count` 0, and the same function before the fix with `annotation_count` 1. Each item is `filename`, `code` (the file text, not base64), and `annotation_count`. The tool uploads that source and those two examples. It refuses when `user_confirmed` is not true.
 
-If the tool is not registered, write the kept examples to `$scratch/tests.json` as a JSON array of `{filename, code, annotation_count}` and run:
+If the tool is not registered, write both examples to `$scratch/tests.json` as a JSON array of `{filename, code, annotation_count}` and run:
 
 ```bash
 datadog-code-security-mcp promote-sast-rule --called-by-skill --user-confirmed \
@@ -187,7 +183,7 @@ datadog-code-security-mcp promote-sast-rule --called-by-skill --user-confirmed \
   --tests-file "$scratch/tests.json"
 ```
 
-Omit `--tests-file` when there are no kept examples. Always pass `--description-file` and `--short-description`.
+Always pass `--tests-file`, `--description-file`, and `--short-description`.
 
 `<ruleset>` is the name they chose, or `variant-hunter`. That command uses the same Datadog credentials as the MCP server: `DD_API_KEY` and `DD_APP_KEY`, or `DD_AUTH_DOMAIN` so `dd-auth` can supply a short-lived token.
 

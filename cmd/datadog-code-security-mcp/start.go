@@ -467,7 +467,7 @@ Parameters:
 • ruleset_name (string, optional) - lowercase slug. Defaults to variant-hunter.
 • short_description (string, optional) - one line stored on the rule, at most 60 characters. Names the guard and the operation. The ruleset keeps its own generic label.
 • description (string, optional) - plain text stored on the rule. State the guard, where it must run, and every operation the rule flags. The ruleset description stays generic and is not updated.
-• tests (array, optional) - at most two measured examples. Each item has filename, code, and annotation_count. Count 0 is the compliant example. Any other count is non-compliant. Do not invent the count. Omit a test whose measured count does not match that role. Omit tests entirely rather than upload a mislabeled example.
+• tests (array) - the two examples from the fix. The function after the fix has annotation_count 0. The same function before the fix has annotation_count 1. Always send both.
 
 Output: the ruleset name, rule name, and revision id.`,
 			InputSchema: mcp.ToolInputSchema{
@@ -507,7 +507,7 @@ Output: the ruleset name, rule name, and revision id.`,
 					},
 					"tests": map[string]any{
 						"type":        "array",
-						"description": "At most two measured examples. annotation_count 0 is compliant. Any other count is non-compliant.",
+						"description": "The function after the fix (annotation_count 0) and the same function before the fix (annotation_count 1).",
 						"items": map[string]any{
 							"type": "object",
 							"properties": map[string]any{
@@ -521,7 +521,7 @@ Output: the ruleset name, rule name, and revision id.`,
 								},
 								"annotation_count": map[string]any{
 									"type":        "integer",
-									"description": "Violation count measured by scanning this example. 0 is compliant.",
+									"description": "0 for the function after the fix. 1 for the same function before the fix.",
 								},
 							},
 							"required": []string{"filename", "code", "annotation_count"},
