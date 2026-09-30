@@ -252,4 +252,4 @@ Open one of these files, or right-click the folder and run **Datadog Code Securi
 
 Omit the "Not in the rule" line when nothing was left out. When this session is not Cursor or VS Code, replace the last line with: open these files and apply the fix the rule suggests.
 
-When this session is Cursor or VS Code, and the config names the ruleset, add one line: if the custom rule does not show yet, run **Datadog: Refresh Static Analysis Rules** from the command palette. If they declined the config edit, say instead that the IDE will not load this ruleset until the config names it. Do not mention the refresh command in any other client.
+When this session is Cursor or VS Code, and the config names the ruleset, add one line: if the custom rule does not show yet, or shows without the quick fix, run **Datadog: Refresh Static Analysis Rules** from the command palette. The IDE can keep an older revision of a rule that already existed. If they declined the config edit, say instead that the IDE will not load this ruleset until the config names it. Do not mention the refresh command in any other client.
