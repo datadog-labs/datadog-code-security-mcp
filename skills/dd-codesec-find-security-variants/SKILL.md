@@ -45,7 +45,7 @@ have seen it here.
 
 Run `git diff` and `git diff --cached`. If both are empty, stop and say there is no uncommitted change.
 
-If that diff is one function, that function is the fix. If the user already attached a file or named lines, that is the fix. Do not ask. If the diff changes more than one function, more than one file, or mixes unrelated edits, ask once which file and which lines are the security fix.
+If that diff is one function, that function is the fix. If the user already attached a file or named lines, that is the fix. Do not ask. If the diff changes more than one function, more than one file, or mixes unrelated edits, ask with one question card which change is the security fix. One option per changed function, named as `path:line`. Add a last option: none of these, I'll point at it. Do not generate the rule until they pick one.
 
 ## 2. Infer the invariant, then confirm it
 
@@ -65,7 +65,12 @@ privileged_operations:
 
 Save it at `$scratch/invariant.yaml`.
 
-Show the invariant in two lines: the guard, and the operation it protects. Ask once whether that is the rule. Do not generate the rule, scan, or search until they agree.
+Show the invariant in two lines: the guard, and the operation it protects. Then ask with one question card whether that is the rule. Options:
+
+- Yes, that is the rule (recommended)
+- No, I'll correct it
+
+Do not generate the rule, scan, or search until they pick yes.
 
 If they correct it, rewrite `$scratch/invariant.yaml` from their correction and continue. Do not ask again unless they only said no and did not say what the guard or the operation is. Then ask once for those two facts.
 
@@ -171,7 +176,10 @@ The card proposes the HIGH list. Name each MEDIUM file that would stay out. Say 
 
 If they pick nothing, stop. If they name another ruleset in the question, use that name.
 
-If they change the set, edit `$scratch/rule.js` so it reports only the operations they accepted. Keep the query. Scan again with `datadog_ephemeral_sast_scan` and `called_by_skill: true`, and show the new list. Ask once more whether to save that list.
+If they change the set, edit `$scratch/rule.js` so it reports only the operations they accepted. Keep the query. Scan again with `datadog_ephemeral_sast_scan` and `called_by_skill: true`, and show the new list. Ask once more with one question card whether to save that list. Options:
+
+- Save this list (recommended)
+- Don't save anything
 
 Before the upload, attach two examples. The rule page shows them. You already have both: the function after the fix, and that same function before the fix.
 
@@ -223,7 +231,12 @@ After the rule is saved, look at the repository root for `code-security.datadog.
 
 If one of those files already names this ruleset, do not offer to edit it. A `code-security.datadog` file names it under `sast.use-rulesets`. A legacy `static-analysis.datadog` file names it in the top-level `rulesets` list.
 
-If none of them names it, offer once to add it. Show the configuration link in that offer. Do not write until they accept. When they accept:
+If none of them names it, ask with one question card whether to add the ruleset. Show the configuration link in that question. Options:
+
+- Add it to the project config (recommended)
+- Don't add it
+
+Do not write until they pick the first option. When they do:
 
 - If `code-security.datadog.yaml` or `code-security.datadog.yml` exists, add the slug under `sast.use-rulesets`. Keep every other setting. Do not set `use-default-rulesets` to false.
 - If only a legacy `static-analysis.datadog.yml` or `.yaml` exists, add the slug to its `rulesets` list. Do not create a second config file. The extension prefers `code-security.datadog.yaml` when both exist, and a new file would hide the legacy rulesets.
@@ -240,7 +253,7 @@ Do not set `use-default-rulesets: false`. Default language rulesets stay on. Do 
 
 If they decline, show the configuration link again so they can add the name themselves.
 
-When this session is Cursor or VS Code, tell them to run **Datadog: Refresh Static Analysis Rules** from the command palette. Say that whether the config already named the ruleset or they just accepted the edit. The command stays hidden until that file is the effective config and static analysis is enabled. Saving the config file clears the in-memory rule cache. The extension fetches the rules again after that command, after two hours, or when the static analysis engine restarts. If they declined the edit, say the refresh will not request this ruleset until the config names it. Do not mention this command in any other client.
+When this session is Cursor or VS Code, and the config names the ruleset, say the extension can load the rule as soon as that file is in place. If they do not see the custom rule applied, run **Datadog: Refresh Static Analysis Rules** from the command palette. That is a fallback, not a required step. The command stays hidden until that file is the effective config and static analysis is enabled. Saving the config file clears the in-memory rule cache. The extension fetches the rules again after that command, after two hours, or when the static analysis engine restarts. If they declined the edit, say the refresh will not request this ruleset until the config names it. Do not mention this command in any other client.
 
 A later message that asks to save the rule, or to include or drop a hit and then save it, starts at this step. Read the files in `$scratch`. Do not repeat the diff analysis unless those files are missing.
 
