@@ -73,6 +73,16 @@ If they correct it, rewrite `$scratch/invariant.yaml` from their correction and 
 
 Write `$scratch/rule.js` and `$scratch/query.scm` from the invariant they confirmed. Favor recall. The scanner contract is in [rule-contract.md](rule-contract.md). That file is part of this skill. Do not look for an example rule in the repository.
 
+Attach the developer's fix on every violation. Read the inserted or replaced text from the diff. Place the edit from the match, not from the line numbers in the original file. For a statement inserted after a call, find that call in the function and insert on the next line, at the same indentation. One insertion uses `buildEditAdd`. A replacement uses `buildEditUpdate`. A deletion uses `buildEditRemove`. Then:
+
+```javascript
+const error = buildError(fn.start.line, fn.start.col, fn.end.line, fn.end.col, message);
+const edit = buildEditAdd(line, col, insertedText);
+addError(error.addFix(buildFix("short description of the edit", [edit])));
+```
+
+If the diff is not a single local edit, do not attach a fix. Do not enable an AI fix. The rule carries this edit only.
+
 ## 4. Scan with the local MCP
 
 Prefer the MCP tool `datadog_ephemeral_sast_scan` with `rule_code`, `tree_sitter_query`, `language`, and `directory`. Pass `called_by_skill: true`.

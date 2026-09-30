@@ -24,7 +24,17 @@ function visit(captures) {
 }
 ```
 
-`buildError` and `addError` are runtime globals. Do not `import` them. Do not assign `module.exports`. Top-level `const` bindings are visible inside `visit`.
+`buildError`, `addError`, `buildEditAdd`, `buildEditUpdate`, `buildEditRemove`, and `buildFix` are runtime globals. Do not `import` them. Do not assign `module.exports`. Top-level `const` bindings are visible inside `visit`.
+
+Attach the fix on the violation before reporting it:
+
+```javascript
+const error = buildError(fn.start.line, fn.start.col, fn.end.line, fn.end.col, "message");
+const edit = buildEditAdd(line, col, "inserted text");
+addError(error.addFix(buildFix("what the edit does", [edit])));
+```
+
+`buildEditAdd(line, col, content)` inserts. `buildEditUpdate(startLine, startCol, endLine, endCol, content)` replaces. `buildEditRemove(startLine, startCol, endLine, endCol)` deletes. Line and column come from the matched node.
 
 Severity is the rule's severity (`ERROR`), not an argument of `buildError`. Put confidence in the message text.
 
