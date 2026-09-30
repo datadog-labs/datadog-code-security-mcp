@@ -117,7 +117,7 @@ func (c *Client) Save(ctx context.Context, req Request) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	prepared.revisionID = strconv.FormatInt(c.now().UnixNano(), 10)
+	prepared.requestID = strconv.FormatInt(c.now().UnixNano(), 10)
 
 	rulesetExisted, err := c.ensureRuleset(ctx, prepared)
 	if err != nil {
@@ -148,7 +148,7 @@ type preparedRequest struct {
 	query            string
 	shortDescription string
 	description      string
-	revisionID       string
+	requestID        string
 	tests            []any
 }
 
@@ -275,7 +275,7 @@ func (c *Client) ensureRule(ctx context.Context, req preparedRequest) (bool, err
 }
 
 func (c *Client) createRevision(ctx context.Context, req preparedRequest) (string, error) {
-	body, err := jsonAPI("custom_rule_revision", req.revisionID, map[string]any{
+	body, err := jsonAPI("custom_rule_revision", req.requestID, map[string]any{
 		"creation_message":  base64.StdEncoding.EncodeToString([]byte(defaultCreationMsg)),
 		"short_description": req.shortDescription,
 		"description":       req.description,
@@ -302,7 +302,34 @@ func (c *Client) createRevision(ctx context.Context, req preparedRequest) (strin
 	if status != http.StatusOK {
 		return "", fmt.Errorf("create rule revision returned status %d: %s", status, resp)
 	}
-	return req.revisionID, nil
+	if id := jsonAPIID(resp); id != "" {
+		return id, nil
+	}
+	return c.lastRevisionID(ctx, req), nil
+}
+
+// lastRevisionID reads the server-assigned id of the rule's latest revision.
+// The id sent in the create request is not the one Datadog stores. An empty
+// result means the lookup failed after a successful save.
+func (c *Client) lastRevisionID(ctx context.Context, req preparedRequest) string {
+	path := "/custom/rulesets/" + url.PathEscape(req.rulesetName) + "/rules/" + url.PathEscape(req.ruleName)
+	status, resp, err := c.do(ctx, http.MethodGet, path, nil)
+	if err != nil || status != http.StatusOK {
+		return ""
+	}
+	var payload struct {
+		Data struct {
+			Attributes struct {
+				LastRevision struct {
+					ID json.RawMessage `json:"id"`
+				} `json:"last_revision"`
+			} `json:"attributes"`
+		} `json:"data"`
+	}
+	if json.Unmarshal([]byte(resp), &payload) != nil {
+		return ""
+	}
+	return rawID(payload.Data.Attributes.LastRevision.ID)
 }
 
 func (c *Client) put(ctx context.Context, path string, body []byte) (int, string, error) {
@@ -348,6 +375,34 @@ func jsonAPI(resourceType, id string, attributes map[string]any) ([]byte, error)
 		return nil, fmt.Errorf("encode request: %w", err)
 	}
 	return encoded, nil
+}
+
+func jsonAPIID(body string) string {
+	var payload struct {
+		Data struct {
+			ID json.RawMessage `json:"id"`
+		} `json:"data"`
+	}
+	if json.Unmarshal([]byte(body), &payload) != nil {
+		return ""
+	}
+	return rawID(payload.Data.ID)
+}
+
+// rawID accepts a JSON:API id sent as a string or as a number.
+func rawID(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var text string
+	if json.Unmarshal(raw, &text) == nil {
+		return text
+	}
+	var number json.Number
+	if json.Unmarshal(raw, &number) == nil {
+		return number.String()
+	}
+	return ""
 }
 
 func validateSlug(name string) error {

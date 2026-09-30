@@ -44,6 +44,8 @@ func TestSaveCreatesRulesetRuleAndRevision(t *testing.T) {
 			if err := json.Unmarshal(raw, &revisionBody); err != nil {
 				t.Fatal(err)
 			}
+			_, _ = io.WriteString(w, `{"data":{"id":"2067","type":"custom_rule_revision"}}`)
+			return
 		}
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -59,6 +61,9 @@ func TestSaveCreatesRulesetRuleAndRevision(t *testing.T) {
 	}
 	if result.RulesetName != "variant-hunter" || result.RuleName != "missing-admin" {
 		t.Fatalf("names: %+v", result)
+	}
+	if result.RevisionID != "2067" {
+		t.Fatalf("revision id %q, want the server id 2067", result.RevisionID)
 	}
 	want := []string{
 		"/custom/rulesets",
@@ -89,7 +94,7 @@ func TestSaveContinuesWhenRulesetAndRuleAlreadyExist(t *testing.T) {
 		}
 		if strings.HasSuffix(r.URL.Path, "/revisions") {
 			revisionCalls++
-			w.WriteHeader(http.StatusOK)
+			_, _ = io.WriteString(w, `{"data":{"id":"2068","type":"custom_rule_revision"}}`)
 			return
 		}
 		w.WriteHeader(http.StatusConflict)
@@ -106,6 +111,60 @@ func TestSaveContinuesWhenRulesetAndRuleAlreadyExist(t *testing.T) {
 	}
 	if revisionCalls != 1 {
 		t.Fatalf("revision calls %d", revisionCalls)
+	}
+}
+
+func TestSaveReadsTheRevisionIDFromTheRuleWhenTheCreateResponseHasNone(t *testing.T) {
+	var gets []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			gets = append(gets, r.URL.Path)
+			_, _ = io.WriteString(w, `{"data":{"id":"missing-admin","attributes":{"last_revision":{"id":"2069"}}}}`)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	client := newClientWithBaseURL("api", "app", server.URL)
+	result, err := client.Save(context.Background(), sampleRequest(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.RevisionID != "2069" {
+		t.Fatalf("revision id %q, want 2069 from the rule", result.RevisionID)
+	}
+	if strings.Join(gets, ",") != "/custom/rulesets/variant-hunter/rules/missing-admin" {
+		t.Fatalf("gets %v", gets)
+	}
+}
+
+func TestSaveSucceedsWithAnEmptyRevisionIDWhenTheLookupFails(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	client := newClientWithBaseURL("api", "app", server.URL)
+	result, err := client.Save(context.Background(), sampleRequest(true))
+	if err != nil {
+		t.Fatalf("a failed lookup after a successful save must not fail the save: %v", err)
+	}
+	if result.RevisionID != "" {
+		t.Fatalf("revision id %q, want empty rather than the request id", result.RevisionID)
+	}
+}
+
+func TestRawIDAcceptsStringAndNumber(t *testing.T) {
+	cases := map[string]string{`"2067"`: "2067", `2067`: "2067", `null`: "", ``: ""}
+	for raw, want := range cases {
+		if got := rawID(json.RawMessage(raw)); got != want {
+			t.Errorf("rawID(%s) = %q, want %q", raw, got, want)
+		}
 	}
 }
 
@@ -126,6 +185,8 @@ func TestSaveKeepsTheRulesetDescriptionGeneric(t *testing.T) {
 		}
 		if strings.HasSuffix(r.URL.Path, "/revisions") {
 			revisionBody = payload
+			_, _ = io.WriteString(w, `{"data":{"id":"2070","type":"custom_rule_revision"}}`)
+			return
 		}
 		w.WriteHeader(http.StatusOK)
 	}))

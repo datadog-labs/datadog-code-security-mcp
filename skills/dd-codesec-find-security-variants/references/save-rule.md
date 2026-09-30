@@ -32,7 +32,7 @@ Also write one line of at most 60 characters that names the guard and the operat
 
 Call `datadog_promote_sast_rule` with `user_confirmed: true`, the exact `rule_code` and `tree_sitter_query` from `$scratch`, `language`, `rule_name` set to the slug the report showed or the rule name they gave, `ruleset_name` set to the ruleset they named or `variant-hunter`, `short_description`, and `description`. Pass `called_by_skill: true`. Also pass `tests`: the fixed function with `annotation_count` 0, and the same function before the fix with `annotation_count` 1. Each item is `filename`, `code` (the file text, not base64), and `annotation_count`. The tool uploads that source and those two examples. It refuses when `user_confirmed` is not true.
 
-After the upload, name the rule and the ruleset. Do not quote the revision id in the tool reply. It is not the revision number the rule page shows.
+After the upload, name the rule, the ruleset, and the `revision_id` from the tool reply. It is the revision number the rule page shows. Leave it out when it is empty.
 
 If the tool is not registered, write both examples to `$scratch/tests.json` as a JSON array of `{filename, code, annotation_count}` and run:
 
