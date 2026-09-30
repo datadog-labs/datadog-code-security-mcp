@@ -73,15 +73,18 @@ If they correct it, rewrite `$scratch/invariant.yaml` from their correction and 
 
 Write `$scratch/rule.js` and `$scratch/query.scm` from the invariant they confirmed. Favor recall. The scanner contract is in [rule-contract.md](rule-contract.md). That file is part of this skill. Do not look for an example rule in the repository.
 
-Attach the developer's fix on every violation. Read the inserted or replaced text from the diff. Place the edit from the match, not from the line numbers in the original file. For a statement inserted after a call, find that call in the function and insert on the next line, at the same indentation. One insertion uses `buildEditAdd`. A replacement uses `buildEditUpdate`. A deletion uses `buildEditRemove`. Then:
+Attach the developer's fix on every violation. Read the inserted or replaced text from the diff. Place each edit from the match, not from the line numbers in the original file. One `buildFix` holds every edit that belongs to that one change. Adding the guard to an existing import and changing the call that must run the guard are one fix, even when the diff touches the import and rewrites one statement into two lines. Replacing that statement is one `buildEditUpdate`. Adding the guard's name to the import in the same file is another `buildEditUpdate`. A pure insertion uses `buildEditAdd`. A pure deletion uses `buildEditRemove`. Then:
 
 ```javascript
 const error = buildError(fn.start.line, fn.start.col, fn.end.line, fn.end.col, message);
-const edit = buildEditAdd(line, col, insertedText);
-addError(error.addFix(buildFix("short description of the edit", [edit])));
+const importEdit = buildEditUpdate(importStartLine, importStartCol, importEndLine, importEndCol, updatedImport);
+const bodyEdit = buildEditUpdate(callStartLine, callStartCol, callEndLine, callEndCol, updatedCall);
+addError(error.addFix(buildFix("short description of the edit", [importEdit, bodyEdit])));
 ```
 
-If the diff is not a single local edit, do not attach a fix. Do not enable an AI fix. The rule carries this edit only.
+If the diff also changes code that is not this guard, do not attach a fix. Do not enable an AI fix. The rule carries this edit only.
+
+When the diff adds or changes the guard, a rule that only calls `addError(buildError(...))` is not finished. Do not scan until `addError` receives `error.addFix(buildFix(...))`.
 
 ## 4. Scan, then show that pass
 
@@ -99,7 +102,7 @@ datadog-code-security-mcp ephemeral-scan --called-by-skill \
 
 `<LANGUAGE>` is the scanner enum for the code under the diff (`TYPESCRIPT`, `JAVASCRIPT`, …). Omit `--path` to scan the whole directory. Pass `--path` only for a subdirectory the diff actually touches.
 
-As soon as the scan returns, show that list. It is not the final report. Drop the function the diff itself changed. List each remaining hit as `path:line`. Say this is what the scanner found so far, and that you are still checking the code. Do not rewrite the invariant or the rule from this list.
+As soon as the scan returns, show that list and stop. It is not the final report. Drop the function the diff itself changed. List each remaining hit as `path:line`. Say this is what the scanner found so far, and that you are still checking the code. Do not rewrite the invariant or the rule from this list. Do not read candidate files, do not search the repository, and do not write the final report in this same turn. The next tool call happens only after that message is visible to the user.
 
 ## 5. Explore
 

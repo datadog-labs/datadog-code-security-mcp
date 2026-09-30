@@ -34,7 +34,7 @@ const edit = buildEditAdd(line, col, "inserted text");
 addError(error.addFix(buildFix("what the edit does", [edit])));
 ```
 
-`buildEditAdd(line, col, content)` inserts. `buildEditUpdate(startLine, startCol, endLine, endCol, content)` replaces. `buildEditRemove(startLine, startCol, endLine, endCol)` deletes. Line and column come from the matched node.
+`buildEditAdd(line, col, content)` inserts. `buildEditUpdate(startLine, startCol, endLine, endCol, content)` replaces. `buildEditRemove(startLine, startCol, endLine, endCol)` deletes. Line and column come from the matched node. The array passed to `buildFix` can hold more than one edit. The import of the guard and the body edit that calls it are one fix.
 
 Severity is the rule's severity (`ERROR`), not an argument of `buildError`. Put confidence in the message text.
 
