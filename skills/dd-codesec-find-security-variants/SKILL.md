@@ -83,7 +83,7 @@ addError(error.addFix(buildFix("short description of the edit", [edit])));
 
 If the diff is not a single local edit, do not attach a fix. Do not enable an AI fix. The rule carries this edit only.
 
-## 4. Scan with the local MCP
+## 4. Scan, then show that pass
 
 Prefer the MCP tool `datadog_ephemeral_sast_scan` with `rule_code`, `tree_sitter_query`, `language`, and `directory`. Pass `called_by_skill: true`.
 
@@ -99,9 +99,11 @@ datadog-code-security-mcp ephemeral-scan --called-by-skill \
 
 `<LANGUAGE>` is the scanner enum for the code under the diff (`TYPESCRIPT`, `JAVASCRIPT`, …). Omit `--path` to scan the whole directory. Pass `--path` only for a subdirectory the diff actually touches.
 
-## 5. Explore, separately
+As soon as the scan returns, show that list. It is not the final report. Drop the function the diff itself changed. List each remaining hit as `path:line`. Say this is what the scanner found so far, and that you are still checking the code. Do not rewrite the invariant or the rule from this list.
 
-Before you treat the scan as the answer, search the repository with the usual read and search tools for code that breaks the invariant. Do not open the scan output until this list is written down.
+## 5. Explore
+
+Search the repository with the usual read and search tools for code that breaks the confirmed invariant. Do not rewrite the invariant or the rule from what you find in this search.
 
 ## 6. Merge
 
@@ -119,7 +121,11 @@ Base the class on the operation, not on a comment that labels the file as a test
 
 Do not rank hits by how damaging they look. HIGH means the operation is the same class the fix protects. MEDIUM means the shape matches, but the operation is not that class. A sensitive read is not HIGH only because the data is sensitive. An operation of the same class as the fix does not drop to MEDIUM because it looks less severe.
 
-## 8. Report
+## 8. Cover every same-class hit in the rule
+
+Every likely variant has to be reported by the scanner, including one that only the repository search found. If any likely variant is absent from the latest scan, widen `$scratch/query.scm` or the operations matched in `$scratch/rule.js` until a new scan reports that function. Do not change the invariant. Do not drop the finding to make the lists match. Scan again with the same tool and `called_by_skill: true`. The source you save is this updated rule. If that scan still misses one of those functions, name it, say the rule cannot express it, and keep it in the report.
+
+## 9. Report
 
 ```text
 Analyzing current security fix...
@@ -145,7 +151,7 @@ MEDIUM
 
 `N` counts only likely variants. HIGH is likely variant: the same class of operation the fix protects. MEDIUM is needs review: the same shape, not that class. Do not rank by impact. One short paragraph each. If a section has no hits, omit it.
 
-## 9. Ask before saving
+## 10. Ask before saving
 
 After the report, ask once whether to save a permanent custom rule. In that same question, suggest the ruleset `variant-hunter`. They can name another ruleset instead. A ruleset slug is 5 to 32 characters, lowercase letters, digits, and single hyphens, and it cannot start or end with a hyphen. If they agree and do not name one, use `variant-hunter`. Do not ask a second question only to collect the name. Do not call `datadog_promote_sast_rule` in this step.
 
@@ -197,7 +203,7 @@ Always pass `--tests-file`, `--description-file`, and `--short-description`.
 
 `<ruleset>` is the name they chose, or `variant-hunter`. That command uses the same Datadog credentials as the MCP server: `DD_API_KEY` and `DD_APP_KEY`, or `DD_AUTH_DOMAIN` so `dd-auth` can supply a short-lived token.
 
-## 10. Name the ruleset in the project config
+## 11. Name the ruleset in the project config
 
 The IDE does not load a custom ruleset by language. It fetches only rulesets named in the project config. Static Analysis configuration is documented at <https://docs.datadoghq.com/security/code_security/static_analysis/configuration/>.
 
