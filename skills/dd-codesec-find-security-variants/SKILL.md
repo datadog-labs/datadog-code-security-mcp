@@ -102,11 +102,16 @@ datadog-code-security-mcp ephemeral-scan --called-by-skill \
 
 `<LANGUAGE>` is the scanner enum for the code under the diff (`TYPESCRIPT`, `JAVASCRIPT`, …). Omit `--path` to scan the whole directory. Pass `--path` only for a subdirectory the diff actually touches.
 
-As soon as the scan returns, show that list and stop. It is not the final report. Drop the function the diff itself changed. List each remaining hit as `path:line`. Say this is what the scanner found so far, and that you are still checking the code. Do not rewrite the invariant or the rule from this list. Do not read candidate files, do not search the repository, and do not write the final report in this same turn. The next tool call happens only after that message is visible to the user.
+As soon as the scan returns, show that list. It is not the final report. Drop the function the diff itself changed. List each remaining hit as `path:line`. Say this is what the scanner found so far. Then ask with one question card, the same kind used before saving. The question is whether to keep checking the code for anything this pass missed. Options:
+
+- Continue (recommended)
+- Stop here
+
+Do not rewrite the invariant or the rule from this list. Do not read candidate files, do not search the repository, and do not write the final report in this same turn. Wait for their choice.
 
 ## 5. Explore
 
-Search the repository with the usual read and search tools for code that breaks the confirmed invariant. Do not rewrite the invariant or the rule from what you find in this search.
+Only after they agree to continue. If they say no, stop. Search the repository with the usual read and search tools for code that breaks the confirmed invariant. Do not rewrite the invariant or the rule from what you find in this search.
 
 ## 6. Merge
 
@@ -156,11 +161,15 @@ MEDIUM
 
 ## 10. Ask before saving
 
-After the report, ask once whether to save a permanent custom rule. In that same question, suggest the ruleset `variant-hunter`. They can name another ruleset instead. A ruleset slug is 5 to 32 characters, lowercase letters, digits, and single hyphens, and it cannot start or end with a hyphen. If they agree and do not name one, use `variant-hunter`. Do not ask a second question only to collect the name. Do not call `datadog_promote_sast_rule` in this step.
+After the report, ask with one question card whether to save a permanent custom rule. In that same question, name the ruleset `variant-hunter` and say they can choose another. A ruleset slug is 5 to 32 characters, lowercase letters, digits, and single hyphens, and it cannot start or end with a hyphen. If they agree and do not name one, use `variant-hunter`. Do not ask a second question only to collect the name. Do not call `datadog_promote_sast_rule` in this step.
 
-Propose the HIGH list only. Name each MEDIUM file that would stay out. Say that every saved hit appears in the IDE as an error, because the rule severity is ERROR.
+The card proposes the HIGH list. Name each MEDIUM file that would stay out. Say that every saved hit appears in the IDE as an error, because the rule severity is ERROR. Options:
 
-The user can save that HIGH list, add a MEDIUM, drop a HIGH, or save nothing. If they do not agree, stop.
+- Save the HIGH list to `variant-hunter` (recommended)
+- Save the HIGH list and the MEDIUM files just named
+- Don't save anything
+
+If they pick nothing, stop. If they name another ruleset in the question, use that name.
 
 If they change the set, edit `$scratch/rule.js` so it reports only the operations they accepted. Keep the query. Scan again with `datadog_ephemeral_sast_scan` and `called_by_skill: true`, and show the new list. Ask once more whether to save that list.
 
