@@ -365,6 +365,11 @@ curl -L "https://github.com/DataDog/datadog-sbom-generator/releases/latest/downl
 unzip -o /tmp/sbom.zip -d /tmp/ && mkdir -p ~/.local/bin && mv /tmp/datadog-sbom-generator ~/.local/bin/ && chmod +x ~/.local/bin/datadog-sbom-generator
 ```
 
+On Windows, download the zip for your architecture, extract `datadog-sbom-generator.exe`, and move it to a directory in your `PATH`:
+
+- [datadog-sbom-generator_windows_amd64.zip](https://github.com/DataDog/datadog-sbom-generator/releases/latest/download/datadog-sbom-generator_windows_amd64.zip)
+- [datadog-sbom-generator_windows_arm64.zip](https://github.com/DataDog/datadog-sbom-generator/releases/latest/download/datadog-sbom-generator_windows_arm64.zip)
+
 **datadog-security-cli** (SCA)
 
 ```bash

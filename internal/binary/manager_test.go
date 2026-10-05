@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -54,6 +55,35 @@ func TestScanTypeBinaryMapping(t *testing.T) {
 				t.Errorf("TelemetryKeysForScanType(%q) = %v, want %v", tc.scanType, got, tc.wantKeys)
 			}
 		})
+	}
+}
+
+func TestSBOMGeneratorWindowsInstallInstructions(t *testing.T) {
+	tests := []struct {
+		arch     string
+		wantFile string
+	}{
+		{"amd64", "datadog-sbom-generator_windows_amd64.zip"},
+		{"arm64", "datadog-sbom-generator_windows_arm64.zip"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.arch, func(t *testing.T) {
+			got := NewSBOMGeneratorManager().installInstructionsFor("windows", tc.arch)
+			wantURL := "https://github.com/DataDog/datadog-sbom-generator/releases/latest/download/" + tc.wantFile
+			if !strings.Contains(got, wantURL) {
+				t.Errorf("instructions missing %q:\n%s", wantURL, got)
+			}
+			if strings.Contains(got, "Binary not available") {
+				t.Errorf("instructions report windows/%s as unavailable:\n%s", tc.arch, got)
+			}
+		})
+	}
+}
+
+func TestSecurityCLIUnavailableOnWindows(t *testing.T) {
+	got := NewManager(BinaryTypeSecurity).installInstructionsFor("windows", "amd64")
+	if !strings.Contains(got, "only available for Linux and macOS") {
+		t.Errorf("expected Linux/macOS-only notice, got:\n%s", got)
 	}
 }
 

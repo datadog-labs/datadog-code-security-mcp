@@ -85,6 +85,8 @@ var BinaryConfigs = map[BinaryType]BinaryConfig{
 			{OS: "linux", Arch: "arm64"},
 			{OS: "darwin", Arch: "amd64"},
 			{OS: "darwin", Arch: "arm64"},
+			{OS: "windows", Arch: "amd64"},
+			{OS: "windows", Arch: "arm64"},
 		},
 	},
 	BinaryTypeSecurity: {
@@ -281,13 +283,14 @@ func (bm *BinaryManager) Execute(ctx context.Context, binaryPath string, args []
 }
 
 func (bm *BinaryManager) generateInstallInstructions() string {
+	return bm.installInstructionsFor(runtime.GOOS, runtime.GOARCH)
+}
+
+func (bm *BinaryManager) installInstructionsFor(os, arch string) string {
 	// Special handling for datadog-security-cli (package-based installation)
 	if bm.config.BinaryName == "datadog-security-cli" {
-		return bm.generateSecurityCLIInstructions()
+		return bm.generateSecurityCLIInstructions(os)
 	}
-
-	os := runtime.GOOS
-	arch := runtime.GOARCH
 
 	archName := bm.mapArchitecture(arch)
 	if archName == "" {
@@ -452,9 +455,7 @@ func (bm *BinaryManager) generateUnsupportedPlatformMessage(os, arch string) str
 	return supportedList.String()
 }
 
-func (bm *BinaryManager) generateSecurityCLIInstructions() string {
-	os := runtime.GOOS
-
+func (bm *BinaryManager) generateSecurityCLIInstructions(os string) string {
 	switch os {
 	case "linux":
 		// Detect if it's Debian/Ubuntu or Red Hat based

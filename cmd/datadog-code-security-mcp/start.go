@@ -237,16 +237,15 @@ Output: Returns JSON with:
 - Components: Detailed list with name, version, type, license, package URL (purl), and language
 
 The tool automatically:
-1. Detects system architecture (x86_64, aarch64, darwin, linux)
+1. Detects the OS (macOS, Linux, Windows) and architecture (amd64, arm64)
 2. Checks if datadog-sbom-generator is installed
 3. If not installed, provides OS-specific installation commands
 4. Scans for supported package managers and generates CycloneDX 1.5 format SBOM
 
 Installation process:
 - Downloads latest release from GitHub (DataDog/datadog-sbom-generator)
-- Installs to ~/.local/bin (no sudo required)
-- Updates PATH if needed
-- Verifies installation`, scan.SupportedPackageManagers),
+- macOS/Linux: installs to ~/.local/bin (no sudo required), updates PATH if needed, and verifies installation
+- Windows: returns the release zip URL; extract datadog-sbom-generator.exe into a directory in PATH`, scan.SupportedPackageManagers),
 			InputSchema: mcp.ToolInputSchema{
 				Type: "object",
 				Properties: map[string]any{
