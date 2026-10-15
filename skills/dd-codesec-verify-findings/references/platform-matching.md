@@ -82,20 +82,23 @@ candidate has its own `name`, `original_name`, `version`, `fixed_advisories`,
 `remaining_advisories`, `new_advisories`, `has_incomplete_data`, and
 `is_auto_solvable`.
 
-Identify a candidate by `original_name`, and match it against `@package.name`,
-`@package.root_parents`, and the local graph. `name` can be a rename or casing
-variant (for example a Go module path with different capitalization); if it
-differs, confirm locally which identifier the package manager accepts before
-using it. Ignore a leading `v` when comparing versions.
+Identify a candidate by `original_name`, which uses the same normalized form as
+`@package.name` and `@package.root_parents`. Neither `original_name` nor `name`
+is reliably the identifier a package manager accepts: Go module paths can come
+back lowercased or with stray capitals (`github.com/dataDog/dd-trace-go/v2` for
+`github.com/DataDog/dd-trace-go/v2`). Take the identifier for any command from
+the local manifest or lockfile. Ignore a leading `v` when comparing versions.
 
 1. Keep only candidates whose `fixed_advisories[].id` includes this finding's
-   `@advisory.id` and whose `new_advisories` is empty. Use one candidate's
-   identity and `version` together.
+   `@advisory.id` and whose `new_advisories` is empty or absent. Use one
+   candidate's identity and `version` together.
 2. Prefer `closest_*` over `latest_*` to avoid unnecessary major upgrades, and
    prefer upgrading the direct dependency over pinning the transitive package,
    as in the SCA playbook.
-3. Say which strategy you used, and flag a candidate with
-   `has_incomplete_data: true`.
+3. Say which strategy you used. Flag a candidate with
+   `has_incomplete_data: true` or a pre-release or Go pseudo-version (such as
+   `14.0.1-beta2` or `v3.268.1-0.20261009175711-2255563bcc6b`), and prefer a
+   released version when one qualifies.
 4. If the candidate's `is_auto_solvable` is `true`, or it names a direct
    dependency at the version already installed (the matching
    `@package.root_parents` entry), the manifest already allows a fixed version
@@ -103,9 +106,10 @@ using it. Ignore a leading `v` when comparing versions.
    package manager's targeted update, as in the SCA playbook, instead of
    editing the direct dependency, and confirm its resolved version changed.
 5. If no candidate qualifies, say so rather than picking one. The platform's
-   pick in `@remediation.recommended` can leave this advisory unfixed. It
-   holds only `name`, `original_name`, and `version`, so find the candidate
-   with the same `original_name` and `version` and apply step 1 to it.
+   pick in `@remediation.recommended` can leave this advisory unfixed or add
+   new ones. For package findings it holds only `name`, `original_name`, and
+   `version`, so find the candidate with the same `original_name` and
+   `version` and apply step 1 to it.
 
 For `root_package`, the vulnerable package is transitive.
 `@package.root_parents` is a list that can repeat entries; use the entry whose
