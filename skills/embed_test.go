@@ -120,6 +120,43 @@ func TestShippedSkillsAttributeMCPToolCalls(t *testing.T) {
 	}
 }
 
+func TestPlatformMatchingRemediationGuidance(t *testing.T) {
+	data, err := fs.ReadFile(FS, "dd-codesec-verify-findings/references/platform-matching.md")
+	if err != nil {
+		t.Fatalf("read platform-matching.md: %v", err)
+	}
+	text := strings.Join(strings.Fields(string(data)), " ")
+	for _, want := range []string{
+		"`library_vulnerability` payloads carry them too",
+		"never report whether a Datadog-generated fix is open, merged, or under review",
+		"`fixed_advisories[].id` includes this finding's `@advisory.id`",
+		"Use one candidate's identity and `version` together",
+		"Identify a candidate by `original_name`",
+		"Take the identifier for any command from the local manifest or lockfile",
+		"`new_advisories` is empty or absent",
+		"Among those candidates, prefer `closest_*` over `latest_*`",
+		"pre-release or Go pseudo-version",
+		"even if that means pinning the transitive package instead of upgrading the direct dependency",
+		"Ignore a leading `v` when comparing versions",
+		"find the candidate with the same `original_name` and `version`",
+		"If no candidate qualifies, say so rather than picking one",
+		"If the vulnerable package is transitive and the candidate's `is_auto_solvable` is `true`",
+		"use the entry whose `name` matches the candidate",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("platform-matching.md does not state: %s", want)
+		}
+	}
+
+	sca, err := fs.ReadFile(FS, "dd-codesec-scan-and-fix/references/sca.md")
+	if err != nil {
+		t.Fatalf("read sca.md: %v", err)
+	}
+	if !strings.Contains(strings.Join(strings.Fields(string(sca)), " "), "If a transitive package's existing constraints already allow a fixed version") {
+		t.Error("sca.md does not limit the lockfile-only refresh to transitive packages")
+	}
+}
+
 func TestScanSkillsPreferLocalMCP(t *testing.T) {
 	for _, skillID := range []string{
 		"dd-codesec-scan-and-fix",
