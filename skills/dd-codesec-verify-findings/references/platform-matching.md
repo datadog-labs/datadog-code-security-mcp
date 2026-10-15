@@ -62,28 +62,50 @@ patch. Keep the proposal separate from local evidence and branch on
   candidate edits. Validate the stable finding identity, current source,
   ranges, replacement content, and nearby tests. Reconstruct a current diff
   instead of applying remote offsets.
-- `package`: verify advisory, package, detected version, and recommended
-  version against the local dependency graph, then follow the SCA playbook.
-  Never invent source edits.
-- `root_package`: the vulnerable package is transitive. Pick one strategy
-  object under `@remediation.root_package` (for example `base`), use its
-  `name` and `version` together, and say which one you used. Confirm with
-  the local dependency graph that this direct dependency, at the version in
-  `@package.root_parents.version`, introduces the vulnerable package, then
-  follow the SCA playbook as for `package`.
+- `package` or `root_package`: choose an upgrade as described below, verify
+  it against the local dependency graph, then follow the SCA playbook. Never
+  invent source edits.
 - `codegen`: report the codegen status described below. Handle any populated
   `@remediation.code_update.edits[]` as in `code_update`; otherwise use the
   local playbook.
 - Unknown, absent, or unavailable: report the state and use the local playbook.
 
-`@remediation.codegen.id` and `@remediation.codegen.status` exist only on
-`static_code_vulnerability` and `iac_misconfiguration` findings. The ID tracks
-the remediation inside Datadog's code generation backend. `status:generated`
-means the backend produced a fix; `error` and `not_available_*` values explain
-why it did not. Neither field holds edit content, a pull request or session
-identifier, or pull request state, so never report whether a Datadog-generated
-fix is open, merged, or under review. `library_vulnerability` findings have no
-codegen fields at all: say that this platform state is not exposed rather than
-inferring it. Candidate edits are not a Bits AI patch unless the response
-establishes that provenance. Never apply any proposal without the normal
-remediation approval.
+### Choose a package upgrade
+
+`@remediation.package` and `@remediation.root_package` group candidates by
+upgrade strategy, such as `closest_no_vulnerabilities`, `closest_no_critical`,
+`latest_no_vulnerabilities`, `latest_no_critical`, `base`, and
+`closest_minimum_risk_only_no_fix_vulnerabilities`. Only some strategies are
+populated, each holds a list of candidates, and a candidate may name either
+the vulnerable package or the direct dependency that introduces it. Each
+candidate has its own `name`, `version`, `fixed_advisories`,
+`remaining_advisories`, `new_advisories`, and `has_incomplete_data`.
+
+1. Keep only candidates whose `fixed_advisories[].id` includes this finding's
+   `@advisory.id` and whose `new_advisories` is empty. Use one candidate's
+   `name` and `version` together.
+2. Prefer `closest_*` over `latest_*` to avoid unnecessary major upgrades, and
+   prefer upgrading the direct dependency over pinning the transitive package,
+   as in the SCA playbook.
+3. Say which strategy you used, and flag `has_incomplete_data: true`.
+4. If no candidate qualifies, say so rather than picking one. The platform's
+   recommended upgrade can leave this advisory unfixed, so apply the same
+   check to it.
+
+For `root_package`, the vulnerable package is transitive. Confirm with the
+local dependency graph that the direct dependency, at the version in
+`@package.root_parents.version`, introduces the vulnerable package.
+
+### Codegen metadata
+
+The schema documents `@remediation.codegen.id` and
+`@remediation.codegen.status` for `static_code_vulnerability` and
+`iac_misconfiguration`, but `library_vulnerability` payloads carry them too.
+Report them only when present. The ID tracks the remediation inside Datadog's
+code generation backend. `status:generated` means the backend produced a fix;
+`error` and `not_available_*` values explain why it did not. Neither field
+holds edit content, a pull request or session identifier, or pull request
+state, and no finding exposes that state, so never report whether a
+Datadog-generated fix is open, merged, or under review. Candidate edits are
+not a Bits AI patch unless the response establishes that provenance. Never
+apply any proposal without the normal remediation approval.

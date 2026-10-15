@@ -127,11 +127,11 @@ func TestPlatformMatchingRemediationGuidance(t *testing.T) {
 	}
 	text := strings.Join(strings.Fields(string(data)), " ")
 	for _, want := range []string{
-		"exist only on `static_code_vulnerability` and `iac_misconfiguration` findings",
-		"`library_vulnerability` findings have no codegen fields",
+		"`library_vulnerability` payloads carry them too",
 		"never report whether a Datadog-generated fix is open, merged, or under review",
-		"`root_package`: the vulnerable package is transitive",
-		"use its `name` and `version` together",
+		"`fixed_advisories[].id` includes this finding's `@advisory.id`",
+		"Use one candidate's `name` and `version` together",
+		"If no candidate qualifies, say so rather than picking one",
 		"`@package.root_parents.version`",
 	} {
 		if !strings.Contains(text, want) {
