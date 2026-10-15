@@ -139,6 +139,14 @@ func TestPlatformMatchingRemediationGuidance(t *testing.T) {
 			t.Errorf("platform-matching.md does not state: %s", want)
 		}
 	}
+
+	sca, err := fs.ReadFile(FS, "dd-codesec-scan-and-fix/references/sca.md")
+	if err != nil {
+		t.Fatalf("read sca.md: %v", err)
+	}
+	if !strings.Contains(strings.Join(strings.Fields(string(sca)), " "), "only the lockfile pins the vulnerable one") {
+		t.Error("sca.md does not cover refreshing a lockfile-only transitive fix")
+	}
 }
 
 func TestScanSkillsPreferLocalMCP(t *testing.T) {

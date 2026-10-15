@@ -9,6 +9,9 @@ whether the dependency is direct or transitive.
   manager. For a transitive dependency, first upgrade the direct parent that
   introduced it; use a supported override or constraint only when that cannot
   produce a safe graph.
+- If the existing manifest constraints already allow a fixed version and only
+  the lockfile pins the vulnerable one, leave the manifest unchanged and
+  refresh that package with the ecosystem's targeted update below.
 - Regenerate lockfiles and checksum files with the package manager. Never edit
   `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, `poetry.lock`, `uv.lock`,
   `go.sum`, `Cargo.lock`, `packages.lock.json`, `composer.lock`, or
@@ -28,7 +31,9 @@ package manager.
 
 - **npm:** inspect with `npm explain <package>`. Update a direct dependency with
   `npm install <package>@<safe-version>`. For a transitive dependency, upgrade
-  its parent or use the root `overrides` field, then run `npm install`.
+  its parent or use the root `overrides` field, then run `npm install`. When
+  the parent's range already allows a fixed version, run
+  `npm update <package>`.
 - **Yarn:** inspect with `yarn why <package>`. Use the repository's Yarn
   generation (`yarn up` for modern Yarn, its established upgrade command for
   Classic) and `resolutions` only for a justified transitive override.

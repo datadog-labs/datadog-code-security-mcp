@@ -79,7 +79,8 @@ upgrade strategy, such as `closest_no_vulnerabilities`, `closest_no_critical`,
 populated, each holds a list of candidates, and a candidate may name either
 the vulnerable package or the direct dependency that introduces it. Each
 candidate has its own `name`, `version`, `fixed_advisories`,
-`remaining_advisories`, `new_advisories`, and `has_incomplete_data`.
+`remaining_advisories`, `new_advisories`, `has_incomplete_data`, and
+`is_auto_solvable`.
 
 1. Keep only candidates whose `fixed_advisories[].id` includes this finding's
    `@advisory.id` and whose `new_advisories` is empty. Use one candidate's
@@ -87,14 +88,14 @@ candidate has its own `name`, `version`, `fixed_advisories`,
 2. Prefer `closest_*` over `latest_*` to avoid unnecessary major upgrades, and
    prefer upgrading the direct dependency over pinning the transitive package,
    as in the SCA playbook.
-3. Say which strategy you used, and flag `has_incomplete_data: true`.
-4. If the candidate's `is_auto_solvable` is `true`, or its `version` equals
-   the installed version (`@package.version` for the vulnerable package, the
-   matching `@package.root_parents` entry for a direct dependency), the
-   manifest already allows a fixed version and only the lockfile is stale.
-   Re-resolve the vulnerable package with the package manager's targeted
-   update, as in the SCA playbook, instead of editing the direct dependency,
-   and confirm its resolved version changed.
+3. Say which strategy you used, and flag a candidate with
+   `has_incomplete_data: true`.
+4. If the candidate's `is_auto_solvable` is `true`, or it names a direct
+   dependency at the version already installed (the matching
+   `@package.root_parents` entry), the manifest already allows a fixed version
+   and only the lockfile is stale. Re-resolve the vulnerable package with the
+   package manager's targeted update, as in the SCA playbook, instead of
+   editing the direct dependency, and confirm its resolved version changed.
 5. If no candidate qualifies, say so rather than picking one. The platform's
    recommended upgrade can leave this advisory unfixed, so apply the same
    check to it.
