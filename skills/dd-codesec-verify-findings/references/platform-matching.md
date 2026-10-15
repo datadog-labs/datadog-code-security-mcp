@@ -65,10 +65,12 @@ patch. Keep the proposal separate from local evidence and branch on
 - `package`: verify advisory, package, detected version, and recommended
   version against the local dependency graph, then follow the SCA playbook.
   Never invent source edits.
-- `root_package`: the vulnerable package is transitive, and
-  `@remediation.root_package.*` names the direct dependency and version that
-  remove it. Confirm locally that this direct dependency introduces the
-  vulnerable package, then handle it as `package`.
+- `root_package`: the vulnerable package is transitive. Pick one strategy
+  object under `@remediation.root_package` (for example `base`), use its
+  `name` and `version` together, and say which one you used. Confirm with
+  the local dependency graph that this direct dependency, at the version in
+  `@package.root_parents.version`, introduces the vulnerable package, then
+  follow the SCA playbook as for `package`.
 - `codegen`: report the codegen status described below. Handle any populated
   `@remediation.code_update.edits[]` as in `code_update`; otherwise use the
   local playbook.

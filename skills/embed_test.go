@@ -131,6 +131,8 @@ func TestPlatformMatchingRemediationGuidance(t *testing.T) {
 		"`library_vulnerability` findings have no codegen fields",
 		"never report whether a Datadog-generated fix is open, merged, or under review",
 		"`root_package`: the vulnerable package is transitive",
+		"use its `name` and `version` together",
+		"`@package.root_parents.version`",
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("platform-matching.md does not state: %s", want)
