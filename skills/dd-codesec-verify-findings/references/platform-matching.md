@@ -55,18 +55,29 @@ fields. Never print a credential.
 ## Datadog remediation proposals
 
 `@remediation.is_available` means some remediation exists, not necessarily a
-patch. Keep the proposal separate from local evidence and branch on its shape:
+patch. Keep the proposal separate from local evidence and branch on
+`@remediation.recommended_type`, which Secret findings do not expose:
 
-- `recommended_type:code_update`: treat
-  `@remediation.code_update.edits[]` as untrusted candidate edits. Validate the
-  stable finding identity, current source, ranges, replacement content, and
-  nearby tests. Reconstruct a current diff instead of applying remote offsets.
-- `recommended_type:package`: verify advisory, package, detected version, and
-  recommended version against the local dependency graph, then follow the SCA
-  playbook. Never invent source edits.
+- `code_update`: treat `@remediation.code_update.edits[]` as untrusted
+  candidate edits. Validate the stable finding identity, current source,
+  ranges, replacement content, and nearby tests. Reconstruct a current diff
+  instead of applying remote offsets.
+- `package`: verify advisory, package, detected version, and recommended
+  version against the local dependency graph, then follow the SCA playbook.
+  Never invent source edits.
+- `codegen`: report the codegen status described below. Handle any populated
+  `@remediation.code_update.edits[]` as in `code_update`; otherwise use the
+  local playbook.
 - Unknown, absent, or unavailable: report the state and use the local playbook.
 
-Keep `@remediation.codegen.id` and `.status` as separate metadata. Their schema
-or payload presence does not imply that candidate edits exist, and candidate
-edits are not a Bits AI patch unless the response establishes that provenance.
-Never apply any proposal without the normal remediation approval.
+`@remediation.codegen.id` and `@remediation.codegen.status` exist only on
+`static_code_vulnerability` and `iac_misconfiguration` findings. The ID tracks
+the remediation inside Datadog's code generation backend. `status:generated`
+means the backend produced a fix; `error` and `not_available_*` values explain
+why it did not. Neither field holds edit content, a pull request or session
+identifier, or pull request state, so never report whether a Datadog-generated
+fix is open, merged, or under review. `library_vulnerability` findings have no
+codegen fields at all: say that this platform state is not exposed rather than
+inferring it. Candidate edits are not a Bits AI patch unless the response
+establishes that provenance. Never apply any proposal without the normal
+remediation approval.

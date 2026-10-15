@@ -120,6 +120,23 @@ func TestShippedSkillsAttributeMCPToolCalls(t *testing.T) {
 	}
 }
 
+func TestPlatformMatchingScopesCodegenMetadata(t *testing.T) {
+	data, err := fs.ReadFile(FS, "dd-codesec-verify-findings/references/platform-matching.md")
+	if err != nil {
+		t.Fatalf("read platform-matching.md: %v", err)
+	}
+	text := strings.Join(strings.Fields(string(data)), " ")
+	for _, want := range []string{
+		"exist only on `static_code_vulnerability` and `iac_misconfiguration` findings",
+		"`library_vulnerability` findings have no codegen fields",
+		"never report whether a Datadog-generated fix is open, merged, or under review",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("platform-matching.md does not state: %s", want)
+		}
+	}
+}
+
 func TestScanSkillsPreferLocalMCP(t *testing.T) {
 	for _, skillID := range []string{
 		"dd-codesec-scan-and-fix",
