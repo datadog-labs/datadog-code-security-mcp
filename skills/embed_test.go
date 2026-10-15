@@ -120,7 +120,7 @@ func TestShippedSkillsAttributeMCPToolCalls(t *testing.T) {
 	}
 }
 
-func TestPlatformMatchingScopesCodegenMetadata(t *testing.T) {
+func TestPlatformMatchingRemediationGuidance(t *testing.T) {
 	data, err := fs.ReadFile(FS, "dd-codesec-verify-findings/references/platform-matching.md")
 	if err != nil {
 		t.Fatalf("read platform-matching.md: %v", err)
@@ -130,6 +130,7 @@ func TestPlatformMatchingScopesCodegenMetadata(t *testing.T) {
 		"exist only on `static_code_vulnerability` and `iac_misconfiguration` findings",
 		"`library_vulnerability` findings have no codegen fields",
 		"never report whether a Datadog-generated fix is open, merged, or under review",
+		"`root_package`: the vulnerable package is transitive",
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("platform-matching.md does not state: %s", want)
