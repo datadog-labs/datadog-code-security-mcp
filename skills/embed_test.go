@@ -132,7 +132,8 @@ func TestPlatformMatchingRemediationGuidance(t *testing.T) {
 		"`fixed_advisories[].id` includes this finding's `@advisory.id`",
 		"Use one candidate's `name` and `version` together",
 		"If no candidate qualifies, say so rather than picking one",
-		"`@package.root_parents.version`",
+		"`is_auto_solvable` is `true`",
+		"use the entry whose `name` matches the candidate",
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("platform-matching.md does not state: %s", want)

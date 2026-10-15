@@ -88,13 +88,22 @@ candidate has its own `name`, `version`, `fixed_advisories`,
    prefer upgrading the direct dependency over pinning the transitive package,
    as in the SCA playbook.
 3. Say which strategy you used, and flag `has_incomplete_data: true`.
-4. If no candidate qualifies, say so rather than picking one. The platform's
+4. If the candidate's `is_auto_solvable` is `true`, or its `version` equals
+   the installed version (`@package.version` for the vulnerable package, the
+   matching `@package.root_parents` entry for a direct dependency), the
+   manifest already allows a fixed version and only the lockfile is stale.
+   Re-resolve the vulnerable package with the package manager's targeted
+   update, as in the SCA playbook, instead of editing the direct dependency,
+   and confirm its resolved version changed.
+5. If no candidate qualifies, say so rather than picking one. The platform's
    recommended upgrade can leave this advisory unfixed, so apply the same
    check to it.
 
-For `root_package`, the vulnerable package is transitive. Confirm with the
-local dependency graph that the direct dependency, at the version in
-`@package.root_parents.version`, introduces the vulnerable package.
+For `root_package`, the vulnerable package is transitive.
+`@package.root_parents` is a list that can repeat entries; use the entry whose
+`name` matches the candidate, and confirm with the local dependency graph that
+this direct dependency, at that entry's `version`, introduces the vulnerable
+package.
 
 ### Codegen metadata
 
