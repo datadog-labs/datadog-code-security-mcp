@@ -99,12 +99,13 @@ the local manifest or lockfile. Ignore a leading `v` when comparing versions.
    `has_incomplete_data: true` or a pre-release or Go pseudo-version (such as
    `14.0.1-beta2` or `v3.268.1-0.20261009175711-2255563bcc6b`), and prefer a
    released version when one qualifies.
-4. If the candidate's `is_auto_solvable` is `true`, or it names a direct
-   dependency at the version already installed (the matching
-   `@package.root_parents` entry), the manifest already allows a fixed version
-   and only the lockfile is stale. Re-resolve the vulnerable package with the
-   package manager's targeted update, as in the SCA playbook, instead of
-   editing the direct dependency, and confirm its resolved version changed.
+4. If the vulnerable package is transitive and the candidate's
+   `is_auto_solvable` is `true`, or it names the direct dependency at the
+   version already installed (the matching `@package.root_parents` entry), the
+   manifest already allows a fixed version and only the lockfile is stale.
+   Re-resolve the vulnerable package with the package manager's targeted
+   update, as in the SCA playbook, instead of editing the direct dependency,
+   and confirm its resolved version changed.
 5. If no candidate qualifies, say so rather than picking one. The platform's
    pick in `@remediation.recommended` can leave this advisory unfixed or add
    new ones. For package findings it holds only `name`, `original_name`, and

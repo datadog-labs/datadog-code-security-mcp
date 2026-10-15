@@ -9,9 +9,9 @@ whether the dependency is direct or transitive.
   manager. For a transitive dependency, first upgrade the direct parent that
   introduced it; use a supported override or constraint only when that cannot
   produce a safe graph.
-- If the existing manifest constraints already allow a fixed version and only
-  the lockfile pins the vulnerable one, leave the manifest unchanged and
-  refresh that package with the ecosystem's targeted update below.
+- If a transitive package's existing constraints already allow a fixed version
+  and only the lockfile pins the vulnerable one, leave the manifest unchanged
+  and refresh that package with the ecosystem's targeted update below.
 - Regenerate lockfiles and checksum files with the package manager. Never edit
   `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, `poetry.lock`, `uv.lock`,
   `go.sum`, `Cargo.lock`, `packages.lock.json`, `composer.lock`, or

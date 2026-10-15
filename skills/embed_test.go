@@ -138,7 +138,7 @@ func TestPlatformMatchingRemediationGuidance(t *testing.T) {
 		"Ignore a leading `v` when comparing versions",
 		"find the candidate with the same `original_name` and `version`",
 		"If no candidate qualifies, say so rather than picking one",
-		"`is_auto_solvable` is `true`",
+		"If the vulnerable package is transitive and the candidate's `is_auto_solvable` is `true`",
 		"use the entry whose `name` matches the candidate",
 	} {
 		if !strings.Contains(text, want) {
@@ -150,8 +150,8 @@ func TestPlatformMatchingRemediationGuidance(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read sca.md: %v", err)
 	}
-	if !strings.Contains(strings.Join(strings.Fields(string(sca)), " "), "only the lockfile pins the vulnerable one") {
-		t.Error("sca.md does not cover refreshing a lockfile-only transitive fix")
+	if !strings.Contains(strings.Join(strings.Fields(string(sca)), " "), "If a transitive package's existing constraints already allow a fixed version") {
+		t.Error("sca.md does not limit the lockfile-only refresh to transitive packages")
 	}
 }
 
