@@ -19,7 +19,9 @@ This workflow needs either the local Datadog Code Security MCP server or the
    wrapper on `PATH`.
 2. Otherwise, silently check that a wrapper executable exists:
    - Prefer the exact path from the MCP client configuration when that file
-     exists and is executable.
+     exists and is executable. The configuration holds credentials: extract
+     only the server's `command` value, for example with `jq`, and never
+     print the file, its `env` block, or the lines around `command`.
    - Otherwise resolve `datadog-code-security-mcp` from `PATH`.
    Do not run the binary, print the check, or diagnose scanners.
 
@@ -84,7 +86,8 @@ missing or incompatible and the user declines installation, report the
 finding as not locally verified. The presence gate already handled a missing
 wrapper and missing MCP tools; do not offer to install the wrapper here.
 Resolve the wrapper for this preflight from the MCP client configuration when
-present, even if the scan itself will call MCP tools.
+present, even if the scan itself will call MCP tools. Read it with the same
+limit as the presence check: only the `command` value.
 
 Once the local target is known:
 

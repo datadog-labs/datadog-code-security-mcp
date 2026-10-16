@@ -152,8 +152,41 @@ func TestPlatformMatchingRemediationGuidance(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read sca.md: %v", err)
 	}
-	if !strings.Contains(strings.Join(strings.Fields(string(sca)), " "), "If a transitive package's existing constraints already allow a fixed version") {
-		t.Error("sca.md does not limit the lockfile-only refresh to transitive packages")
+	scaText := strings.Join(strings.Fields(string(sca)), " ")
+	for _, want := range []string{
+		"If a transitive package's existing constraints already allow a fixed version",
+		"(ecosystem, recommended package)",
+		"once per package upgrade",
+		"separate list of findings with no recommended upgrade",
+		"use `@remediation.recommended.name`, the field the platform groups package updates by",
+		"Do not group by `@remediation.package.base`: the platform does not group by it",
+		"The local scan does not include a fix version",
+		"A count of advisories does not replace this list",
+		"The group keeps the recommended package as its name even when the proposed change uses another candidate",
+		"In every group where the package or version differs",
+		"Local SCA results do not include a package URL or ecosystem",
+		"report them as pending until the next platform scan, not as fixed",
+	} {
+		if !strings.Contains(scaText, want) {
+			t.Errorf("sca.md does not state: %s", want)
+		}
+	}
+
+	skill, err := fs.ReadFile(FS, "dd-codesec-scan-and-fix/SKILL.md")
+	if err != nil {
+		t.Fatalf("read SKILL.md: %v", err)
+	}
+	skillText := strings.Join(strings.Fields(string(skill)), " ")
+	if !strings.Contains(skillText, "one finding at a time, except SCA") {
+		t.Error("SKILL.md still applies fixes one finding at a time for SCA")
+	}
+	for _, want := range []string{
+		"For SCA, do not skip this lookup when the remote MCP is available",
+		"as in the SCA playbook, only after enrichment",
+	} {
+		if !strings.Contains(skillText, want) {
+			t.Errorf("SKILL.md does not state: %s", want)
+		}
 	}
 }
 
@@ -183,6 +216,24 @@ func TestScanSkillsPreferLocalMCP(t *testing.T) {
 		}
 		if !strings.Contains(text, "same scanner binaries") {
 			t.Errorf("%s does not require toolchain preflight for MCP and CLI scans alike", skillID)
+		}
+	}
+}
+
+func TestSkillsDoNotPrintMCPClientCredentials(t *testing.T) {
+	for _, skillID := range []string{
+		"dd-codesec-scan-and-fix",
+		"dd-codesec-setup-toolchain",
+		"dd-codesec-verify-findings",
+	} {
+		data, err := fs.ReadFile(FS, skillID+"/SKILL.md")
+		if err != nil {
+			t.Fatalf("read %s/SKILL.md: %v", skillID, err)
+		}
+		text := strings.Join(strings.Fields(string(data)), " ")
+		if !strings.Contains(text, "extract only the server's `command` value") ||
+			!strings.Contains(text, "never print the file, its `env` block") {
+			t.Errorf("%s does not forbid printing MCP client configuration credentials", skillID)
 		}
 	}
 }
