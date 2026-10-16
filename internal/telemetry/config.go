@@ -91,9 +91,11 @@ type configUpdateResult struct {
 // creating it (and its directory) on first run with a fresh install_id. All filesystem
 // errors are non-fatal; callers always receive a usable config.
 //
-// No cross-process lock is taken: reads are safe because writes are atomic
-// (write-temp + rename), and first-run creation uses an atomic create-if-absent
-// so concurrent first-runs converge on a single install_id. Concurrent targeted
+// No cross-process lock is taken: writes are atomic (write-temp + rename), and
+// first-run creation uses an atomic create-if-absent so concurrent first-runs
+// converge on a single install_id. On Windows a concurrent ReadFile can still
+// fail with a sharing violation while MoveFileEx replaces the destination, so
+// reads retry that transient error the same way renames do. Concurrent targeted
 // updates to distinct fields are last-writer-wins — an accepted trade-off given
 // they are rare (opt-out and the one-time notice flag) and low-stakes.
 func loadOrCreateConfig() configLoadResult {
@@ -173,8 +175,13 @@ func isConfigParseError(err error) bool {
 	return ok
 }
 
+// readFileFn reads a config file. Tests replace it to simulate the transient
+// Windows sharing violation that os.ReadFile returns while another goroutine
+// renames the same path. Production always uses os.ReadFile.
+var readFileFn = os.ReadFile
+
 func readConfig(path string) (persistedConfig, error) {
-	data, err := os.ReadFile(path)
+	data, err := readFileWithRetry(path)
 	if err != nil {
 		return persistedConfig{}, err
 	}
@@ -184,6 +191,29 @@ func readConfig(path string) (persistedConfig, error) {
 		return persistedConfig{}, &configParseError{err: err}
 	}
 	return cfg, nil
+}
+
+// readFileWithRetry reads path, retrying errors other than a missing file.
+// A missing file is a real state (first run) and must surface immediately.
+// JSON parse failures are not retried: they happen only after a successful
+// read. Every other error is treated like renameWithRetry's transient Windows
+// sharing violation: a few attempts with backoff and jitter, then the last error.
+func readFileWithRetry(path string) ([]byte, error) {
+	const maxAttempts = 10
+	var lastErr error
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		data, err := readFileFn(path)
+		if err == nil || os.IsNotExist(err) {
+			return data, err
+		}
+		lastErr = err
+		if attempt < maxAttempts-1 {
+			backoff := time.Duration(attempt+1) * 5 * time.Millisecond
+			jitter := time.Duration(rand.Int63n(int64(5 * time.Millisecond)))
+			time.Sleep(backoff + jitter)
+		}
+	}
+	return nil, lastErr
 }
 
 // writeTempConfigFile marshals cfg and writes it to a new temp file in dir,
