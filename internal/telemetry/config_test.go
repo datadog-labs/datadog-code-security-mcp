@@ -137,6 +137,85 @@ func TestRenameWithRetry_RecoversAfterTransientFailures(t *testing.T) {
 	}
 }
 
+// TestReadFileWithRetry_RecoversAfterTransientFailures pins the read retry:
+// Windows can return a sharing violation from ReadFile while another goroutine
+// renames the same config file. The loop must ride that out and still parse.
+func TestReadFileWithRetry_RecoversAfterTransientFailures(t *testing.T) {
+	original := readFileFn
+	defer func() { readFileFn = original }()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, configFileName)
+	if err := os.WriteFile(path, []byte(`{"install_id":"stable-id"}`), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	const wantFailures = 3
+	calls := 0
+	readFileFn = func(p string) ([]byte, error) {
+		calls++
+		if calls <= wantFailures {
+			return nil, fmt.Errorf("simulated sharing violation %d", calls)
+		}
+		return os.ReadFile(p)
+	}
+
+	cfg, err := readConfig(path)
+	if err != nil {
+		t.Fatalf("readConfig: %v", err)
+	}
+	if cfg.InstallID != "stable-id" {
+		t.Errorf("install_id = %q, want stable-id", cfg.InstallID)
+	}
+	if want := wantFailures + 1; calls != want {
+		t.Errorf("reads = %d, want %d", calls, want)
+	}
+}
+
+// TestReadFileWithRetry_DoesNotRetryMissingFile keeps first-run detection
+// immediate: a missing config is not a transient read error.
+func TestReadFileWithRetry_DoesNotRetryMissingFile(t *testing.T) {
+	original := readFileFn
+	defer func() { readFileFn = original }()
+
+	calls := 0
+	readFileFn = func(string) ([]byte, error) {
+		calls++
+		return nil, os.ErrNotExist
+	}
+
+	_, err := readConfig(filepath.Join(t.TempDir(), configFileName))
+	if !os.IsNotExist(err) {
+		t.Fatalf("err = %v, want not exist", err)
+	}
+	if calls != 1 {
+		t.Errorf("reads = %d, want 1", calls)
+	}
+}
+
+// TestReadFileWithRetry_ExhaustsAttemptsAndReturnsError verifies a permanent
+// read error is surfaced after the same attempt budget as renameWithRetry.
+func TestReadFileWithRetry_ExhaustsAttemptsAndReturnsError(t *testing.T) {
+	original := readFileFn
+	defer func() { readFileFn = original }()
+
+	wantErr := errors.New("permanent read failure")
+	calls := 0
+	readFileFn = func(string) ([]byte, error) {
+		calls++
+		return nil, wantErr
+	}
+
+	_, err := readConfig(filepath.Join(t.TempDir(), configFileName))
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("err = %v, want %v", err, wantErr)
+	}
+	const maxAttempts = 10
+	if calls != maxAttempts {
+		t.Errorf("reads = %d, want %d", calls, maxAttempts)
+	}
+}
+
 // TestRenameWithRetry_ExhaustsAttemptsAndReturnsError verifies the loop gives
 // up after maxAttempts and surfaces the last underlying error.
 func TestRenameWithRetry_ExhaustsAttemptsAndReturnsError(t *testing.T) {
