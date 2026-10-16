@@ -201,6 +201,13 @@ domain playbook and local result.
 4. Inspect the vulnerable code and nearby tests before proposing a change.
 5. Explain the smallest safe fix. Ask before changes that alter public
    behavior, dependencies, infrastructure semantics, credentials, or history.
+   A request to scan and fix is not approval of a specific change: present
+   the proposed SCA groups and wait for approval before changing any manifest
+   or lockfile, even for a lockfile-only refresh. End the turn with the
+   proposal as plain markdown and a direct question, such as "Reply with the
+   groups to apply, or all". Do not put a proposal in a question card: the
+   card collapses once answered, and text written before it in the same turn
+   may not be shown.
 6. Apply approved fixes one finding at a time, except SCA, where approval and
    the fix happen once per package-upgrade group. Preserve project conventions.
 7. Run the relevant formatter and focused tests.
