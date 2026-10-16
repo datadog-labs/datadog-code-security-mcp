@@ -20,23 +20,34 @@ Derive the recommended package:
   the field the platform groups package updates by. Do not group by
   `@remediation.package.base`: the platform does not group by it, and it
   appears mostly on advisories without a package upgrade, such as unmaintained
-  or license findings. As in the platform-matching contract, find the candidate
-  with the same `original_name` and `version`, and use the recommendation only
-  if that candidate's `fixed_advisories` include this finding. Otherwise use
-  the package this playbook would actually change.
+  or license findings. Choose the upgrade with the platform-matching
+  contract, which defaults to the recommendation. For a transitive package,
+  take the parent from the `root_package` candidate instead of searching for
+  it, and confirm it with the local dependency graph.
 - Otherwise use the package this playbook would actually change. That is the
   vulnerable package when it is a direct dependency, and the direct parent that
   introduces it when it is transitive. Find that parent with the ecosystem's
   `why` or `tree` command. For a lockfile-only refresh, use the transitive
   package itself.
 
-Choose one target version that fixes every advisory in the group. If no single
-version does, split off the advisories it cannot fix. Do not claim the upgrade
+Retrieve the recommendation for every affected package and version before
+grouping. If a search result is truncated or paginated, page through it or
+aggregate the fields you need instead; never treat a package missing from a
+partial result as having no platform record.
+
+For each package the group changes, choose one target version that fixes all
+of that package's advisories in the group. If no single version does, split
+off the advisories it cannot fix. Do not claim the upgrade
 closes an advisory it leaves open.
 
 The group keeps the recommended package as its name even when the proposed
-change uses another candidate's package or version, such as a closer version
-of the installed package. In every group where the package or version
+change uses another candidate's package or version because the
+recommendation does not qualify or a lockfile refresh suffices. If the
+recommended package is not in the local dependency graph, name the group
+after the package you would change instead, and say which group Datadog puts
+it in. Transitive packages that share a recommended parent stay in one group,
+and a lockfile refresh for that group lists each refreshed package with its
+current and target version. In every group where the package or version
 differs, show both the platform recommendation and the proposed change, and
 explain why.
 
@@ -47,7 +58,9 @@ Present each group as one proposed upgrade: the group name, the package to
 change, its current version, and the target version. Under it, list every
 advisory the upgrade closes, with its severity and the affected package when
 that package differs from the group package. A count of advisories does not
-replace this list.
+replace this list. When platform candidates are available, also list the
+advisories the upgrade leaves open and add the major-version note described
+in the platform-matching contract.
 
 A finding joins a group only when a fixed version can be established. The
 local scan does not include a fix version, so determine it from the advisory

@@ -16,6 +16,13 @@ Use the remote Datadog MCP `security` toolset only for platform data:
 3. For a URL or known ID, query exactly `@finding_id:"<id>"`. For file
    discovery, scope by repository identity and normalized
    `@code_location.filename`.
+4. Scope a repository with an exact `@git.repository_id`, built from the
+   checkout's remote as host, owner, and repository in lowercase, without
+   scheme or `.git` (`github.com/acme/web-shop` for
+   `git@github.com:Acme/Web-Shop.git`). The match is case-sensitive, so
+   a mixed-case ID returns nothing. A wildcard such as `*web-shop*` also
+   matches other repositories. An empty result from an unnormalized identity
+   is not evidence that the platform has no findings.
 
 ## Match by detection type
 
@@ -89,29 +96,47 @@ back lowercased or with stray capitals (`github.com/dataDog/dd-trace-go/v2` for
 `github.com/DataDog/dd-trace-go/v2`). Take the identifier for any command from
 the local manifest or lockfile. Ignore a leading `v` when comparing versions.
 
-1. Keep only candidates whose `fixed_advisories[].id` includes this finding's
-   `@advisory.id` and whose `new_advisories` is empty or absent. Use one
-   candidate's identity and `version` together.
-2. Prefer upgrading the direct dependency over pinning the transitive package,
-   as in the SCA playbook. Among those candidates, prefer `closest_*` over
-   `latest_*` to avoid unnecessary major upgrades.
-3. Say which strategy you used. Flag a candidate with
+A candidate qualifies when its `fixed_advisories[].id` includes this finding's
+`@advisory.id`, its `new_advisories` is empty or absent, and its version is a
+released version newer than the installed one. Use one candidate's identity
+and `version` together. Version ordering can mislead: Maven date-style
+versions such as `commons-collections:20040616` sort above `3.2.2` but are
+older releases, so check the release history before trusting the order.
+
+1. Prefer a lockfile refresh when one suffices. If the vulnerable package is
+   transitive and a candidate that fixes this advisory without new ones has
+   `is_auto_solvable: true`, or names the direct dependency at the version
+   already installed (the matching `@package.root_parents` entry), the
+   manifest already allows a fixed version and only the lockfile is stale.
+   Re-resolve the vulnerable package with the package manager's targeted
+   update, as in the SCA playbook, instead of editing the direct dependency,
+   and confirm its resolved version changed. The platform's recommendation
+   then usually upgrades the direct dependency anyway; show it as information
+   and explain that the refresh closes the same advisories with a smaller
+   change. This is the only case that departs from a qualifying
+   recommendation.
+2. Otherwise default to the platform's pick, so local fixes match the
+   platform's package groups and automations. `@remediation.recommended`
+   holds only `name`, `original_name`, and `version`; find the candidate with
+   the same `original_name` and `version` under the group named by
+   `@remediation.recommended_type`, and use it when it qualifies.
+3. If the recommendation is absent or does not qualify, fall back to another
+   qualifying candidate and say why the recommendation was not used. Prefer
+   upgrading the direct dependency over pinning the transitive package, as in
+   the SCA playbook, and prefer `closest_*` over `latest_*`.
+4. Say which strategy you used. Flag a candidate with
    `has_incomplete_data: true` or a pre-release or Go pseudo-version (such as
    `14.0.1-beta2` or `v3.268.1-0.20261009175711-2255563bcc6b`), and prefer a
    released version when one qualifies, even if that means pinning the
    transitive package instead of upgrading the direct dependency.
-4. If the vulnerable package is transitive and the candidate's
-   `is_auto_solvable` is `true`, or it names the direct dependency at the
-   version already installed (the matching `@package.root_parents` entry), the
-   manifest already allows a fixed version and only the lockfile is stale.
-   Re-resolve the vulnerable package with the package manager's targeted
-   update, as in the SCA playbook, instead of editing the direct dependency,
-   and confirm its resolved version changed.
-5. If no candidate qualifies, say so rather than picking one. The platform's
-   pick in `@remediation.recommended` can leave this advisory unfixed or add
-   new ones. For package findings it holds only `name`, `original_name`, and
-   `version`, so find the candidate with the same `original_name` and
-   `version` and apply step 1 to it.
+5. If no candidate qualifies, say so rather than picking one.
+
+State the consequence of the chosen candidate: the advisories it fixes, from
+`fixed_advisories`, and any it leaves open, from `remaining_advisories`, each
+with its severity. When it crosses a major version, warn about likely breaking
+changes. If a `closest_no_vulnerabilities` candidate also qualifies at a lower
+major version, mention its version as information only; do not offer it as a
+choice or apply it unless the user asks.
 
 For `root_package`, the vulnerable package is transitive.
 `@package.root_parents` is a list that can repeat entries; use the entry whose
