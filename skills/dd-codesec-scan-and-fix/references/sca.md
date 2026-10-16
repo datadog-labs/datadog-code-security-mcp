@@ -7,16 +7,20 @@ whether the dependency is direct or transitive.
 
 Group findings by `(ecosystem, recommended package)` before proposing a fix,
 and ask for approval once per package upgrade. The repository is not part of
-the key: this flow always runs inside a single checkout. Take the ecosystem
-from the package URL type. Take the name of the package to change, as used in
-commands, from the local manifest or lockfile.
+the key: this flow always runs inside a single checkout. Local SCA results do
+not include a package URL or ecosystem. Take the ecosystem from the matched
+platform finding's `@vulnerability.stack.ecosystem`, the value the platform
+groups by. Otherwise take it from the package manager of the manifest or
+lockfile that declares the package. Take the name of the package to change, as
+used in commands, from the local manifest or lockfile.
 
 Derive the recommended package:
 
 - When a platform finding is available, use `@remediation.recommended.name`,
-  the field the platform groups package updates by. Do not use
-  `@remediation.package.base`: it describes the installed package, not the
-  recommendation. As in the platform-matching contract, find the candidate
+  the field the platform groups package updates by. Do not group by
+  `@remediation.package.base`: the platform does not group by it, and it
+  appears mostly on advisories without a package upgrade, such as unmaintained
+  or license findings. As in the platform-matching contract, find the candidate
   with the same `original_name` and `version`, and use the recommendation only
   if that candidate's `fixed_advisories` include this finding. Otherwise use
   the package this playbook would actually change.

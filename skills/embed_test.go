@@ -159,11 +159,12 @@ func TestPlatformMatchingRemediationGuidance(t *testing.T) {
 		"once per package upgrade",
 		"separate list of findings with no recommended upgrade",
 		"use `@remediation.recommended.name`, the field the platform groups package updates by",
-		"Do not use `@remediation.package.base`",
+		"Do not group by `@remediation.package.base`: the platform does not group by it",
 		"The local scan does not include a fix version",
 		"A count of advisories does not replace this list",
 		"The group keeps the recommended package as its name even when the proposed change uses another candidate",
 		"In every group where the package or version differs",
+		"Local SCA results do not include a package URL or ecosystem",
 		"report them as pending until the next platform scan, not as fixed",
 	} {
 		if !strings.Contains(scaText, want) {
@@ -223,6 +224,7 @@ func TestSkillsDoNotPrintMCPClientCredentials(t *testing.T) {
 	for _, skillID := range []string{
 		"dd-codesec-scan-and-fix",
 		"dd-codesec-setup-toolchain",
+		"dd-codesec-verify-findings",
 	} {
 		data, err := fs.ReadFile(FS, skillID+"/SKILL.md")
 		if err != nil {

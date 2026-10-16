@@ -98,7 +98,8 @@ a required install means the finding cannot be locally verified. The presence
 gate already handled a missing wrapper and missing MCP tools; do not offer to
 install the wrapper here. Resolve the wrapper for this preflight from the MCP
 client configuration when present, even if the scan itself will call MCP
-tools.
+tools. Read it with the same limit as the presence check: only the `command`
+value.
 
 ## Choose the scan
 
