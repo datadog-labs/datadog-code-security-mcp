@@ -126,6 +126,7 @@ github.com/kubernetes-sigs/custom-metrics-apiserver: Copyright 2018 The Kubernet
 github.com/mostynb/go-grpc-compression/snappy: Copyright 2017 gRPC authors.
 github.com/mostynb/go-grpc-compression/zstd: ["Copyright 2020 Mostyn Bramley-Moore.","Copyright 2020 Mostyn Bramley-Moore."]
 github.com/sassoftware/go-rpmutils: Copyright (c) SAS Institute Inc.
+github.com/santhosh-tekuri/jsonschema/v6*: Copyright 2017 Santhosh Kumar Tekuri. All rights reserved.
 github.com/spf13/cobra: Copyright © 2013 Steve Francia <spf@spf13.com>.
 github.com/xeipuuv/gojsonpointer: Copyright 2015 xeipuuv ( https://github.com/xeipuuv )
 github.com/xeipuuv/gojsonreference: Copyright 2015 xeipuuv ( https://github.com/xeipuuv )

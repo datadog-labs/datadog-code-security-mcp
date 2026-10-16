@@ -161,7 +161,7 @@ Before the first production release, add the following secret to the GitHub repo
 
 If the secret is absent when a release tag is pushed, the pipeline emits a warning annotation and continues — the binary is published but telemetry will be silently disabled in that release.
 
-The canonical Go version for the project is declared in `go.mod` (`go 1.23.0`). All CI workflows and the release pipeline use `go-version-file: 'go.mod'` so they stay in sync automatically; to upgrade Go, update `go.mod` only.
+The canonical Go version for the project is declared in `go.mod` (`go 1.25.5`). All CI workflows and the release pipeline use `go-version-file: 'go.mod'` so they stay in sync automatically; to upgrade Go, update `go.mod` only.
 
 ## Local development
 
