@@ -5,7 +5,7 @@ Quick reference for AI coding assistants working on this codebase.
 ## Project Overview
 
 **What**: MCP server providing local security scanning (SAST + Secrets) to AI assistants
-**Language**: Go (requires 1.22+)
+**Language**: Go (requires 1.25.5+)
 **Build System**: Go modules + Makefile
 **Distribution**: Homebrew, GitHub releases, Docker
 
