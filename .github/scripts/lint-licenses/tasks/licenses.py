@@ -130,8 +130,7 @@ def wwhrd_licenses(ctx):
         wwhrd_conf = yaml.safe_load(wwhrd_conf_yml)
         for pkg in wwhrd_conf['exceptions']:
             if pkg.endswith("/..."):
-                # TODO(python3.9): use removesuffix
-                exceptions_wildcard.append(pkg[: -len("/...")])
+                exceptions_wildcard.append(pkg.removesuffix("/..."))
             else:
                 exceptions.append(pkg)
 
