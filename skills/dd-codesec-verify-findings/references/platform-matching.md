@@ -23,6 +23,11 @@ Use the remote Datadog MCP `security` toolset only for platform data:
    a mixed-case ID returns nothing. A wildcard such as `*web-shop*` also
    matches other repositories. An empty result from an unnormalized identity
    is not evidence that the platform has no findings.
+5. Scope repository queries to the checkout's branch with an exact
+   `@git.branch`. The platform keeps one record per branch, and other branches
+   can carry different versions and recommendations. If the branch has no
+   records, use `@git.is_default_branch:true`, the branch the platform's
+   remediation groups use, and say so.
 
 ## Match by detection type
 

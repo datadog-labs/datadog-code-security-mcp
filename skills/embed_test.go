@@ -136,6 +136,8 @@ func TestPlatformMatchingRemediationGuidance(t *testing.T) {
 		"`new_advisories` is empty or absent",
 		"The match is case-sensitive, so a mixed-case ID returns nothing",
 		"An empty result from an unnormalized identity is not evidence that the platform has no findings",
+		"Scope repository queries to the checkout's branch with an exact `@git.branch`",
+		"If the branch has no records, use `@git.is_default_branch:true`",
 		"Prefer a lockfile refresh when one suffices",
 		"This is the only case that departs from a qualifying recommendation",
 		"Otherwise default to the platform's pick",
