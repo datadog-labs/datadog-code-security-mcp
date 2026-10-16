@@ -3,6 +3,59 @@
 Identify the ecosystem, affected package, installed version, fix version, and
 whether the dependency is direct or transitive.
 
+## Group by recommended package
+
+Group findings by `(ecosystem, recommended package)` before proposing a fix,
+and ask for approval once per package upgrade. The repository is not part of
+the key: this flow always runs inside a single checkout. Take the ecosystem
+from the package URL type. Take the name of the package to change, as used in
+commands, from the local manifest or lockfile.
+
+Derive the recommended package:
+
+- When a platform finding is available, use `@remediation.recommended.name`,
+  the field the platform groups package updates by. Do not use
+  `@remediation.package.base`: it describes the installed package, not the
+  recommendation. As in the platform-matching contract, find the candidate
+  with the same `original_name` and `version`, and use the recommendation only
+  if that candidate's `fixed_advisories` include this finding. Otherwise use
+  the package this playbook would actually change.
+- Otherwise use the package this playbook would actually change. That is the
+  vulnerable package when it is a direct dependency, and the direct parent that
+  introduces it when it is transitive. Find that parent with the ecosystem's
+  `why` or `tree` command. For a lockfile-only refresh, use the transitive
+  package itself.
+
+Choose one target version that fixes every advisory in the group. If no single
+version does, split off the advisories it cannot fix. Do not claim the upgrade
+closes an advisory it leaves open.
+
+The group keeps the recommended package as its name even when the proposed
+change uses another candidate's package or version, such as a closer version
+of the installed package. In every group where the package or version
+differs, show both the platform recommendation and the proposed change, and
+explain why.
+
+Order groups by the highest severity in the group, descending, then by the
+number of findings, descending, then by group name alphabetically.
+
+Present each group as one proposed upgrade: the group name, the package to
+change, its current version, and the target version. Under it, list every
+advisory the upgrade closes, with its severity and the affected package when
+that package differs from the group package. A count of advisories does not
+replace this list.
+
+A finding joins a group only when a fixed version can be established. The
+local scan does not include a fix version, so determine it from the advisory
+or a platform candidate before deciding. Findings with no fixed version, and
+`MAL-*` advisories, never join a group. Report them in a separate list of
+findings with no recommended upgrade, with their advisories, and handle them
+with the rules below. Never drop them silently.
+
+A local rescan cannot confirm advisories the local scan never reported, such
+as transitive findings only the platform sees. After the fix, report them as
+pending until the next platform scan, not as fixed.
+
 ## Universal rules
 
 - A direct dependency is updated in its manifest with the repository's package

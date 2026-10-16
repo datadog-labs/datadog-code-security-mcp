@@ -19,7 +19,9 @@ This workflow needs either the local Datadog Code Security MCP server or the
    wrapper on `PATH`.
 2. Otherwise, silently check that a wrapper executable exists:
    - Prefer the exact path from the MCP client configuration when that file
-     exists and is executable.
+     exists and is executable. The configuration holds credentials: extract
+     only the server's `command` value, for example with `jq`, and never
+     print the file, its `env` block, or the lines around `command`.
    - Otherwise resolve `datadog-code-security-mcp` from `PATH`.
    Do not run the binary, print the check, or diagnose scanners.
 
@@ -157,7 +159,7 @@ need `DD_API_KEY` and `DD_APP_KEY`.
   `datadog-code-security-mcp`. Keys configured only for MCP are not inherited
   by a raw CLI invocation. Without them, scans such as secrets will fail.
 
-## Optional platform enrichment
+## Platform enrichment
 
 After a local scan returns findings, use the remote Datadog MCP when available
 to look for corresponding platform records. Load `dd-codesec-verify-findings`,
@@ -165,9 +167,13 @@ which points to the platform-matching contract covering schema, privacy,
 matching, triage-state, stale-commit, and organization-boundary rules. Query
 once per unique affected file for SAST, Secrets, and IaC. For SCA, correlate
 by advisory, package, version, and trustworthy repository, service, or entity
-identity; a declaration file may not exist.
+identity; a declaration file may not exist. Query the repository's open SCA
+findings in one request rather than once per finding.
 
-This lookup is best effort and never replaces or blocks the local workflow.
+For SCA, do not skip this lookup when the remote MCP is available: grouping
+depends on the platform's recommended package.
+
+This lookup never replaces or blocks the local workflow.
 Keep current local evidence, platform state, a Datadog-proposed code update or
 package upgrade, and codegen status visibly separate. Muted, resolved, and
 auto-closed platform findings do not enter remediation by default.
@@ -181,21 +187,27 @@ domain playbook and local result.
 
 ## Triage and remediate
 
-1. Present findings highest severity first, grouped by detection type.
-2. For every type present, load only its playbook:
+1. For every type present, load only its playbook:
    - SAST: [references/sast.md](references/sast.md)
    - Secrets: [references/secrets.md](references/secrets.md)
    - SCA: [references/sca.md](references/sca.md)
    - IaC: [references/iac.md](references/iac.md)
-3. Enrich matching findings from Datadog when available, without suppressing
+2. Enrich matching findings from Datadog when available, without suppressing
    local-only results.
+3. Present findings highest severity first, grouped by detection type. Group
+   SCA findings further by recommended package, as in the SCA playbook, only
+   after enrichment.
 4. Inspect the vulnerable code and nearby tests before proposing a change.
 5. Explain the smallest safe fix. Ask before changes that alter public
    behavior, dependencies, infrastructure semantics, credentials, or history.
-6. Apply approved fixes one finding at a time, preserving project conventions.
+6. Apply approved fixes one finding at a time, except SCA, where approval and
+   the fix happen once per package-upgrade group. Preserve project conventions.
 7. Run the relevant formatter and focused tests.
 8. Re-run the same Datadog scan against the same target. Do not claim the
-   finding is fixed unless the rescan confirms it.
+   finding is fixed unless the rescan confirms it. Report an SCA group as
+   fixed only when the rescan shows none of its advisories remain. Report any
+   advisory that is still present individually, and any the local scan cannot
+   see as pending, as in the SCA playbook.
 
 Never replace remediation with a scanner suppression. If a finding is a false
 positive, explain the evidence and ask before adding an ignore.
