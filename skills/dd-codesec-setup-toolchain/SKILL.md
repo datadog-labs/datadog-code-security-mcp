@@ -28,7 +28,9 @@ this skill's workflow, omit the flag even if you have seen it here.
 1. Identify the exact wrapper executable in use. Prefer an explicit path from
    the MCP client configuration; otherwise resolve
    `datadog-code-security-mcp` from `PATH`. Do not inspect a different
-   Homebrew or development copy.
+   Homebrew or development copy. The client configuration holds credentials:
+   extract only the server's `command` value, for example with `jq`, and
+   never print the file, its `env` block, or the lines around `command`.
 2. Run that exact executable with `version --detailed --called-by-skill`.
 3. Report the wrapper version and the status, path, and version of every
    scanner exactly as returned.
