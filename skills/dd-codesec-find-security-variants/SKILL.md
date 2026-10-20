@@ -31,14 +31,15 @@ Write every message in this skill as normal markdown: bold labels, bullet lists,
 
 ## Scratch files
 
-Write `invariant.yaml`, `rule.js`, and `query.scm` in one directory under the system temporary directory, outside this repository. Create it once and reuse it for the rest of the run:
+Write `invariant.yaml`, `rule.js`, and `query.scm` in one new directory under the system temporary directory, outside this repository. Create it once, at the start of the run:
 
 ```bash
-scratch="${TMPDIR:-/tmp}/dd-codesec-find-security-variants$(pwd -P | tr '/' '-')"
-mkdir -p "$scratch"
+mktemp -d "${TMPDIR:-/tmp}/dd-codesec-find-security-variants.XXXXXX"
 ```
 
-Do not write these files in the repository. Do not mention this directory in the report. The first time this run writes each file, write the whole file. Do not edit a copy left by an earlier run.
+If the command fails, stop and say the scratch directory could not be created. Otherwise it prints the directory, which only the current user can read. `$scratch` in this skill and its references means that printed path. Write it literally in every later command, because shell variables do not survive between commands. Never create the directory again in this run, and never reuse a directory from an earlier run.
+
+Do not write these files in the repository. Do not mention this directory in the report.
 
 ## Skill attribution
 
@@ -213,17 +214,17 @@ Do not upload a rule that still matches a MEDIUM the user did not accept.
 
 Only after they agree to the list just shown, save it as [save-rule.md](references/save-rule.md) says: two examples, a rule description, and the upload. That file is part of this skill. Read it now, not earlier in the run.
 
-A later message that asks to save the rule, or to include or drop a hit and then save it, starts at this step. Read the files in `$scratch`. Do not repeat the diff analysis unless those files are missing.
+A later message that asks to save the rule, or to include or drop a hit and then save it, starts at this step. Read the files in the `$scratch` directory this run created. Do not repeat the diff analysis unless those files are missing.
 
 ## 11. Name the ruleset in the project config
 
 The IDE does not load a custom ruleset by language. It fetches only rulesets named in the project config. Static Analysis configuration is documented at <https://docs.datadoghq.com/security/code_security/static_analysis/configuration/>.
 
-After the rule is saved, look at the repository root for `code-security.datadog.yaml`, `code-security.datadog.yml`, `static-analysis.datadog.yaml`, and `static-analysis.datadog.yml`.
+After the rule is saved, find the effective config at the repository root. It is `code-security.datadog.yaml` or `code-security.datadog.yml` when either exists, because the IDE then ignores any legacy file. Otherwise it is `static-analysis.datadog.yaml` or `static-analysis.datadog.yml`. Otherwise there is none.
 
-If one of those files already names this ruleset, do not offer to edit it. A `code-security.datadog` file names it under `sast.use-rulesets`. A legacy `static-analysis.datadog` file names it in the top-level `rulesets` list.
+Check only the effective config. A `code-security.datadog` file names the ruleset under `sast.use-rulesets`. A legacy `static-analysis.datadog` file names it in the top-level `rulesets` list. If the effective config already names this ruleset, do not offer to edit it. A legacy file that names it while a `code-security.datadog` file exists does not count.
 
-If none of them names it, pause at the end of the turn with this message. Put the YAML you would write, or the lines you would add to the existing file, as the "Project config" section of [save-rule.md](references/save-rule.md) says:
+If the effective config does not name it, or there is none, pause at the end of the turn with this message. Put the YAML you would write, or the lines you would add to the existing file, as the "Project config" section of [save-rule.md](references/save-rule.md) says:
 
 ````markdown
 The IDE loads a custom ruleset only when the project config names it. I would <create | edit> `<file>` with:
