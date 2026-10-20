@@ -142,6 +142,10 @@ func resolveTargets(directory string, paths []string) (string, []string, error) 
 	if !info.IsDir() {
 		return "", nil, fmt.Errorf("directory %s is not a directory", root)
 	}
+	resolvedRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return "", nil, fmt.Errorf("directory: %w", err)
+	}
 
 	var relative []string
 	for _, path := range paths {
@@ -154,16 +158,30 @@ func resolveTargets(directory string, paths []string) (string, []string, error) 
 			target = filepath.Join(root, target)
 		}
 		target = filepath.Clean(target)
-		rel, err := filepath.Rel(root, target)
-		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		rel, ok := within(root, target)
+		if !ok {
 			return "", nil, fmt.Errorf("path %s is outside directory %s", path, root)
 		}
-		if _, err := os.Stat(target); err != nil {
+		// The analyzer follows symlinks, so the link target must stay inside too.
+		resolved, err := filepath.EvalSymlinks(target)
+		if err != nil {
 			return "", nil, fmt.Errorf("path %s: %w", path, err)
+		}
+		if _, ok := within(resolvedRoot, resolved); !ok {
+			return "", nil, fmt.Errorf("path %s is outside directory %s", path, root)
 		}
 		relative = append(relative, rel)
 	}
 	return root, relative, nil
+}
+
+// within returns target relative to root, and false when it is outside root.
+func within(root, target string) (string, bool) {
+	rel, err := filepath.Rel(root, target)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", false
+	}
+	return rel, true
 }
 
 func truncate(b []byte) string {

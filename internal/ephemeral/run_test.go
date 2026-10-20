@@ -138,6 +138,38 @@ func TestScanReportsScannerFailure(t *testing.T) {
 	}
 }
 
+func TestResolveTargetsFollowsSymlinks(t *testing.T) {
+	repo := t.TempDir()
+	outside := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(repo, "src"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	links := map[string]string{
+		filepath.Join(repo, "escape"):      outside,
+		filepath.Join(repo, "inside"):      filepath.Join(repo, "src"),
+		filepath.Join(outside, "repolink"): repo,
+	}
+	for link, target := range links {
+		if err := os.Symlink(target, link); err != nil {
+			t.Skipf("symlinks unavailable: %v", err)
+		}
+	}
+
+	if _, _, err := resolveTargets(repo, []string{"escape"}); err == nil || !strings.Contains(err.Error(), "outside directory") {
+		t.Fatalf("link to outside: error = %v, want outside directory", err)
+	}
+	if _, got, err := resolveTargets(repo, []string{"inside"}); err != nil || !slices.Equal(got, []string{"inside"}) {
+		t.Fatalf("link inside: paths = %v, error = %v", got, err)
+	}
+	symlinkedRoot := filepath.Join(outside, "repolink")
+	if _, got, err := resolveTargets(symlinkedRoot, []string{"src", "inside"}); err != nil || !slices.Equal(got, []string{"src", "inside"}) {
+		t.Fatalf("symlinked root: paths = %v, error = %v", got, err)
+	}
+	if _, _, err := resolveTargets(symlinkedRoot, []string{"escape"}); err == nil || !strings.Contains(err.Error(), "outside directory") {
+		t.Fatalf("symlinked root, link to outside: error = %v, want outside directory", err)
+	}
+}
+
 func TestResolveTargets(t *testing.T) {
 	repo := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(repo, "a", "b"), 0o755); err != nil {
