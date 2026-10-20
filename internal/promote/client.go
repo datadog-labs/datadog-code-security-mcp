@@ -152,6 +152,10 @@ func (c *Client) Save(ctx context.Context, req Request) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
+	// Someone else can create the rule between the check above and this call.
+	if ruleExisted && !req.Overwrite {
+		return Result{}, &RuleExistsError{RulesetName: prepared.rulesetName, RuleName: prepared.ruleName}
+	}
 	revisionID, err := c.createRevision(ctx, prepared)
 	if err != nil {
 		return Result{}, err

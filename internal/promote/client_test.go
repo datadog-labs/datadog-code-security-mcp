@@ -120,6 +120,34 @@ func TestSaveRefusesToOverwriteAnExistingRuleWithoutOverwrite(t *testing.T) {
 	}
 }
 
+func TestSaveRefusesWhenTheRuleIsCreatedAfterTheCheck(t *testing.T) {
+	var revisionCalls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet:
+			w.WriteHeader(http.StatusNotFound)
+		case strings.HasSuffix(r.URL.Path, "/revisions"):
+			revisionCalls++
+			_, _ = io.WriteString(w, `{"data":{"id":"2068"}}`)
+		case strings.HasSuffix(r.URL.Path, "/rules"):
+			w.WriteHeader(http.StatusConflict)
+		default:
+			w.WriteHeader(http.StatusOK)
+		}
+	}))
+	defer server.Close()
+
+	client := newClientWithBaseURL("api", "app", server.URL)
+	_, err := client.Save(context.Background(), sampleRequest(true))
+	var exists *RuleExistsError
+	if !errors.As(err, &exists) {
+		t.Fatalf("error = %v, want RuleExistsError", err)
+	}
+	if revisionCalls != 0 {
+		t.Fatalf("%d revisions published over a rule created after the check", revisionCalls)
+	}
+}
+
 func TestSaveStopsWhenTheExistingRuleCheckFails(t *testing.T) {
 	var puts int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
