@@ -1,9 +1,19 @@
 package auth
 
 import (
-	"os"
 	"testing"
+
+	"github.com/datadog-labs/datadog-code-security-mcp/internal/constants"
 )
+
+// clearAuthEnv empties the variables LoadConfig reads, restoring them when the
+// test ends. os.Clearenv would also wipe PATH for every later test.
+func clearAuthEnv(t *testing.T) {
+	t.Helper()
+	for _, key := range []string{constants.EnvAPIKey, constants.EnvAPPKey, constants.EnvSite, constants.EnvAuthDomain} {
+		t.Setenv(key, "")
+	}
+}
 
 func TestLoadConfig(t *testing.T) {
 	tests := []struct {
@@ -72,12 +82,9 @@ func TestLoadConfig(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Clear environment
-			os.Clearenv()
-
-			// Set test environment variables
+			clearAuthEnv(t)
 			for k, v := range tt.envVars {
-				_ = os.Setenv(k, v)
+				t.Setenv(k, v)
 			}
 
 			cfg, err := LoadConfig()
@@ -171,8 +178,8 @@ func TestLoadConfig_SecurityValidation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			os.Clearenv()
-			_ = os.Setenv("DD_SITE", tt.site)
+			clearAuthEnv(t)
+			t.Setenv("DD_SITE", tt.site)
 
 			_, err := LoadConfig()
 			if (err != nil) != tt.wantErr {
