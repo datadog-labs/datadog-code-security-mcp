@@ -2,14 +2,13 @@ package auth
 
 import (
 	"context"
-	"os"
 	"testing"
 )
 
 // TestLoadAndApplyToEnv_None verifies that with nothing configured,
 // LoadAndApplyToEnv is a no-op that reports MethodNone.
 func TestLoadAndApplyToEnv_None(t *testing.T) {
-	os.Clearenv()
+	clearAuthEnv(t)
 
 	method, err := LoadAndApplyToEnv(context.Background())
 	if err != nil {
@@ -23,7 +22,7 @@ func TestLoadAndApplyToEnv_None(t *testing.T) {
 // TestLoadAndApplyToEnv_EnvVar verifies that when the user has already set
 // DD_API_KEY/DD_APP_KEY, LoadAndApplyToEnv reports MethodEnvVar.
 func TestLoadAndApplyToEnv_EnvVar(t *testing.T) {
-	os.Clearenv()
+	clearAuthEnv(t)
 	t.Setenv("DD_API_KEY", "test-api-key")
 	t.Setenv("DD_APP_KEY", "test-app-key")
 
@@ -44,7 +43,7 @@ func TestLoadAndApplyToEnv_EnvVar(t *testing.T) {
 // the error (as loadAuthToEnv does) still gets an accurate auth_method rather
 // than an empty string.
 func TestLoadAndApplyToEnv_DDAuthMethodSurvivesApplyFailure(t *testing.T) {
-	os.Clearenv()
+	clearAuthEnv(t)
 	t.Setenv("DD_AUTH_DOMAIN", "app.datadoghq.com")
 	t.Setenv("PATH", "") // ensure the dd-auth binary cannot be found
 

@@ -24,6 +24,7 @@ type Provider struct {
 	config *Config
 	mu     sync.RWMutex
 	cached *Credentials
+	now    func() time.Time
 }
 
 // NewProvider creates a new authentication provider
@@ -34,6 +35,7 @@ func NewProvider(cfg *Config) (*Provider, error) {
 
 	return &Provider{
 		config: cfg,
+		now:    time.Now,
 	}, nil
 }
 
@@ -127,7 +129,7 @@ func (p *Provider) getDDAuthCredentials(ctx context.Context) (*Credentials, erro
 	}
 
 	// dd-auth tokens typically expire after 1 hour
-	creds.Expires = time.Now().Add(1 * time.Hour)
+	creds.Expires = p.now().Add(1 * time.Hour)
 
 	return creds, nil
 }
@@ -142,7 +144,7 @@ func (p *Provider) getCached() *Credentials {
 	}
 
 	// Check if expired (for dd-auth)
-	if !p.cached.Expires.IsZero() && time.Now().After(p.cached.Expires) {
+	if !p.cached.Expires.IsZero() && p.now().After(p.cached.Expires) {
 		return nil
 	}
 
