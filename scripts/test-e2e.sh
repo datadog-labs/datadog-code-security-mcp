@@ -35,9 +35,9 @@ elif [[ -n "$1" ]]; then
 fi
 
 if [[ "$MODE" == "ci" ]]; then
-  echo -e "${BLUE}==> Running E2E tests in CI mode (9 tests, Claude Desktop skipped)${NC}"
+  echo -e "${BLUE}==> Running E2E tests in CI mode (10 tests, Claude Desktop skipped)${NC}"
 else
-  echo -e "${BLUE}==> Running E2E tests in FULL mode (10 tests, including Claude Desktop)${NC}"
+  echo -e "${BLUE}==> Running E2E tests in FULL mode (11 tests, including Claude Desktop)${NC}"
 fi
 echo ""
 
@@ -57,7 +57,7 @@ echo ""
 # =============================================================================
 # Test 1: BUILD - Build local MCP server
 # =============================================================================
-echo -e "${BLUE}==> Test 1/9: Building MCP server...${NC}"
+echo -e "${BLUE}==> Test 1/10: Building MCP server...${NC}"
 if make clean && make build; then
   if [[ -f "bin/datadog-code-security-mcp" ]]; then
     echo -e "${GREEN}✓ Build successful${NC}"
@@ -78,7 +78,7 @@ echo ""
 # =============================================================================
 # Test 2: CHECK BINARIES - Verify required binaries exist
 # =============================================================================
-echo -e "${BLUE}==> Test 2/9: Checking for required binaries...${NC}"
+echo -e "${BLUE}==> Test 2/10: Checking for required binaries...${NC}"
 
 BINARIES_OK=true
 
@@ -121,7 +121,7 @@ echo ""
 # =============================================================================
 # Test 3: TEST MCP PROTOCOL - Test STDIO directly (no Claude Desktop)
 # =============================================================================
-echo -e "${BLUE}==> Test 3/9: Testing MCP protocol (STDIO)...${NC}"
+echo -e "${BLUE}==> Test 3/10: Testing MCP protocol (STDIO)...${NC}"
 
 # Test initialize method
 echo -e "${BLUE}  Testing MCP initialize...${NC}"
@@ -160,11 +160,17 @@ if echo "${TOOLS_REQUEST}" | timeout 10 ./bin/datadog-code-security-mcp start > 
     # Extract just the JSON response (last line) - MCP server logs to stderr which gets mixed with stdout
     JSON_RESPONSE=$(tail -1 "${TEST_OUTPUT_DIR}/mcp-tools.json")
     TOOL_COUNT=$(echo "${JSON_RESPONSE}" | jq -r '.result.tools | length' 2>/dev/null || echo "0")
-    if [[ $TOOL_COUNT -ge 6 ]]; then
+    MISSING_TOOLS=""
+    for TOOL_NAME in datadog_ephemeral_sast_scan datadog_promote_sast_rule; do
+      if ! echo "${JSON_RESPONSE}" | jq -e --arg name "${TOOL_NAME}" '.result.tools | any(.name == $name)' > /dev/null 2>&1; then
+        MISSING_TOOLS="${MISSING_TOOLS} ${TOOL_NAME}"
+      fi
+    done
+    if [[ $TOOL_COUNT -ge 9 ]] && [[ -z "${MISSING_TOOLS}" ]]; then
       echo -e "${GREEN}✓ MCP tools registered: ${TOOL_COUNT} tools found${NC}"
       TESTS_PASSED=$((TESTS_PASSED + 1))
     else
-      echo -e "${RED}❌ ERROR: Expected at least 6 tools, found ${TOOL_COUNT}${NC}"
+      echo -e "${RED}❌ ERROR: Expected at least 9 tools including the variant tools, found ${TOOL_COUNT} (missing:${MISSING_TOOLS:- none})${NC}"
       echo "JSON Response:"
       echo "${JSON_RESPONSE}" | jq . || echo "${JSON_RESPONSE}"
       TESTS_FAILED=$((TESTS_FAILED + 1))
@@ -183,7 +189,7 @@ echo ""
 # =============================================================================
 # Test 4: TEST SAST SCANNER
 # =============================================================================
-echo -e "${BLUE}==> Test 4/9: Testing SAST scanner...${NC}"
+echo -e "${BLUE}==> Test 4/10: Testing SAST scanner...${NC}"
 
 SAST_EXIT_CODE=0
 ./bin/datadog-code-security-mcp scan sast ./testdata/vulnerabilities/sast \
@@ -251,7 +257,7 @@ echo ""
 # =============================================================================
 # Test 5: TEST SECRETS SCANNER
 # =============================================================================
-echo -e "${BLUE}==> Test 5/9: Testing Secrets scanner...${NC}"
+echo -e "${BLUE}==> Test 5/10: Testing Secrets scanner...${NC}"
 
 SECRETS_EXIT_CODE=0
 ./bin/datadog-code-security-mcp scan secrets ./testdata/vulnerabilities/secrets \
@@ -319,7 +325,7 @@ echo ""
 # =============================================================================
 # Test 6: TEST NEGATIVE CASE (Clean Code)
 # =============================================================================
-echo -e "${BLUE}==> Test 6/9: Testing negative case (clean code)...${NC}"
+echo -e "${BLUE}==> Test 6/10: Testing negative case (clean code)...${NC}"
 
 CLEAN_EXIT_CODE=0
 ./bin/datadog-code-security-mcp scan sast ./testdata/vulnerabilities/clean \
@@ -355,7 +361,7 @@ echo ""
 # =============================================================================
 # Test 7: TEST SBOM GENERATION
 # =============================================================================
-echo -e "${BLUE}==> Test 7/9: Testing SBOM generation...${NC}"
+echo -e "${BLUE}==> Test 7/10: Testing SBOM generation...${NC}"
 
 # Check if datadog-sbom-generator is installed
 if command -v datadog-sbom-generator &> /dev/null; then
@@ -439,7 +445,7 @@ check_claude_skill_listing_budget() {
 # =============================================================================
 # Test 8: TEST SETUP COMMAND
 # =============================================================================
-echo -e "${BLUE}==> Test 8/9: Testing setup command...${NC}"
+echo -e "${BLUE}==> Test 8/10: Testing setup command...${NC}"
 
 SETUP_HOME=$(mktemp -d)
 mkdir -p "${SETUP_HOME}/.claude" "${SETUP_HOME}/.codex/skills/.system"
@@ -565,7 +571,7 @@ echo ""
 # =============================================================================
 # Test 9: TEST IAC SCANNER
 # =============================================================================
-echo -e "${BLUE}==> Test 9/9: Testing IaC scanner...${NC}"
+echo -e "${BLUE}==> Test 9/10: Testing IaC scanner...${NC}"
 
 # Check if datadog-iac-scanner is installed
 if command -v datadog-iac-scanner &> /dev/null; then
@@ -676,10 +682,73 @@ fi
 echo ""
 
 # =============================================================================
-# Test 10: FULL MODE - Claude Desktop integration (optional, --full mode only)
+# Test 10: TEST EPHEMERAL SAST SCAN
+# =============================================================================
+# Uses only public fixtures and no Datadog credentials. The fixture has a local
+# static-analysis.datadog.yml that names go-security and ignores generated/**, so
+# a correct run reports only the ephemeral rule and nothing under generated/.
+echo -e "${BLUE}==> Test 10/10: Testing ephemeral SAST scan...${NC}"
+
+EPHEMERAL_FIXTURE="./testdata/ephemeral"
+EPHEMERAL_EXIT_CODE=0
+env -u DD_API_KEY -u DD_APP_KEY -u DD_AUTH_DOMAIN \
+  ./bin/datadog-code-security-mcp ephemeral-scan \
+  --language GO \
+  --directory "${EPHEMERAL_FIXTURE}" \
+  --code-file "${EPHEMERAL_FIXTURE}/rule.js" \
+  --query-file "${EPHEMERAL_FIXTURE}/query.scm" \
+  > "${TEST_OUTPUT_DIR}/ephemeral-output.json" 2> "${TEST_OUTPUT_DIR}/ephemeral-error.txt" || EPHEMERAL_EXIT_CODE=$?
+
+if ! datadog-static-analyzer --help 2>/dev/null | grep -q -- "--rules-with-config"; then
+  if [[ $EPHEMERAL_EXIT_CODE -ne 0 ]] && grep -q -- "--rules-with-config" "${TEST_OUTPUT_DIR}/ephemeral-error.txt"; then
+    echo -e "${YELLOW}⚠ Installed datadog-static-analyzer lacks --rules-with-config; the MCP returned the upgrade error as expected${NC}"
+  else
+    echo -e "${RED}❌ Installed analyzer lacks --rules-with-config but the MCP did not return the upgrade error${NC}"
+    cat "${TEST_OUTPUT_DIR}/ephemeral-error.txt"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+  fi
+  TESTS_WARNED=$((TESTS_WARNED + 1))
+elif [[ $EPHEMERAL_EXIT_CODE -ne 0 ]]; then
+  echo -e "${RED}❌ Ephemeral scan failed (exit ${EPHEMERAL_EXIT_CODE})${NC}"
+  cat "${TEST_OUTPUT_DIR}/ephemeral-error.txt"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+elif command -v jq &> /dev/null; then
+  EPHEMERAL_OK=true
+  FOREIGN_RULES=$(jq -r '[.[] | select((.violations | length) > 0) | .rule_name | select(. != "security-variants/ephemeral")] | unique | join(", ")' "${TEST_OUTPUT_DIR}/ephemeral-output.json")
+  HANDLER_HITS=$(jq '[.[] | select(.filename == "src/handler.go") | .violations[]] | length' "${TEST_OUTPUT_DIR}/ephemeral-output.json")
+  IGNORED_HITS=$(jq '[.[] | select(.filename | startswith("generated/")) | .violations[]] | length' "${TEST_OUTPUT_DIR}/ephemeral-output.json")
+
+  if [[ -n "${FOREIGN_RULES}" ]]; then
+    echo -e "${RED}❌ Ephemeral scan ran configured rules: ${FOREIGN_RULES}${NC}"
+    EPHEMERAL_OK=false
+  fi
+  if [[ "${HANDLER_HITS}" -ne 1 ]]; then
+    echo -e "${RED}❌ Expected 1 ephemeral finding in src/handler.go, found ${HANDLER_HITS}${NC}"
+    EPHEMERAL_OK=false
+  fi
+  if [[ "${IGNORED_HITS}" -ne 0 ]]; then
+    echo -e "${RED}❌ Ephemeral scan reported ${IGNORED_HITS} findings under the ignored generated/ path${NC}"
+    EPHEMERAL_OK=false
+  fi
+
+  if [[ "$EPHEMERAL_OK" == "true" ]]; then
+    echo -e "${GREEN}✓ Ephemeral scan ran only the supplied rule and honoured the local config's ignored paths${NC}"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+  else
+    cat "${TEST_OUTPUT_DIR}/ephemeral-output.json"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+  fi
+else
+  echo -e "${YELLOW}⚠ jq not found, skipping ephemeral finding validation${NC}"
+  TESTS_WARNED=$((TESTS_WARNED + 1))
+fi
+echo ""
+
+# =============================================================================
+# Test 11: FULL MODE - Claude Desktop integration (optional, --full mode only)
 # =============================================================================
 if [[ "$MODE" == "full" ]]; then
-  echo -e "${BLUE}==> Test 10/10: Configuring Claude Desktop...${NC}"
+  echo -e "${BLUE}==> Test 11/11: Configuring Claude Desktop...${NC}"
 
   # Check if claude CLI is available
   if ! command -v claude &> /dev/null; then
@@ -729,7 +798,7 @@ if [[ "$MODE" == "full" ]]; then
   echo ""
 fi
 
-# In CI mode, we skip Test 10 entirely (no Claude CLI available in CI environment)
+# In CI mode, we skip Test 11 entirely (no Claude CLI available in CI environment)
 
 # =============================================================================
 # SUMMARY
@@ -737,9 +806,9 @@ fi
 echo ""
 echo "=========================================="
 if [[ "$MODE" == "ci" ]]; then
-  echo "E2E Test Summary (CI Mode - 9 tests)"
+  echo "E2E Test Summary (CI Mode - 10 tests)"
 else
-  echo "E2E Test Summary (Full Mode - 10 tests)"
+  echo "E2E Test Summary (Full Mode - 11 tests)"
 fi
 echo "=========================================="
 echo ""
@@ -748,7 +817,7 @@ echo -e "Tests failed:  ${RED}${TESTS_FAILED}${NC}"
 echo -e "Tests warned:  ${YELLOW}${TESTS_WARNED}${NC}"
 echo ""
 if [[ "$MODE" == "ci" ]]; then
-  echo "Note: Claude Desktop integration (Test 10) skipped in CI mode"
+  echo "Note: Claude Desktop integration (Test 11) skipped in CI mode"
   echo ""
 fi
 echo "Test outputs saved to:"
@@ -759,6 +828,8 @@ echo "  ${TEST_OUTPUT_DIR}/secrets-output.json"
 echo "  ${TEST_OUTPUT_DIR}/clean-output.json"
 echo "  ${TEST_OUTPUT_DIR}/sbom-output.json"
 echo "  ${TEST_OUTPUT_DIR}/iac-output.json"
+echo "  ${TEST_OUTPUT_DIR}/ephemeral-output.json"
+echo "  ${TEST_OUTPUT_DIR}/ephemeral-error.txt"
 echo "  ${TEST_OUTPUT_DIR}/setup-output.json"
 echo "  ${TEST_OUTPUT_DIR}/setup-error.txt"
 echo "  ${TEST_OUTPUT_DIR}/setup-remove-output.json"

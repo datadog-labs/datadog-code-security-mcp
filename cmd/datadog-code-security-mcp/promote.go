@@ -27,6 +27,7 @@ func newPromoteSASTRuleCmd() *cobra.Command {
 		descriptionFile  string
 		shortDescription string
 		confirmed        bool
+		overwrite        bool
 	)
 
 	cmd := &cobra.Command{
@@ -67,6 +68,7 @@ Example:
 				ShortDescription: shortDescription,
 				Description:      description,
 				Tests:            tests,
+				Overwrite:        overwrite,
 			}, telemetry.InterfaceCLI, cliCaller())
 			if err != nil {
 				return err
@@ -84,11 +86,12 @@ Example:
 	cmd.Flags().StringVar(&queryFile, "query-file", "", "Path to the tree-sitter query")
 	cmd.Flags().StringVar(&language, "language", "", "Scanner language enum, for example TYPESCRIPT")
 	cmd.Flags().StringVar(&ruleName, "rule-name", "", "Rule slug")
-	cmd.Flags().StringVar(&rulesetName, "ruleset-name", "", "Ruleset slug (default: variant-hunter)")
+	cmd.Flags().StringVar(&rulesetName, "ruleset-name", "", "Ruleset slug (default: security-variants)")
 	cmd.Flags().StringVar(&testsFile, "tests-file", "", "Optional JSON array of measured examples: filename, code, annotation_count")
 	cmd.Flags().StringVar(&descriptionFile, "description-file", "", "Plain-text file. States the guard, where it must run, and every operation the rule flags")
 	cmd.Flags().StringVar(&shortDescription, "short-description", "", "One line, at most 60 characters, naming the guard and the operation")
 	cmd.Flags().BoolVar(&confirmed, "user-confirmed", false, "Required. The user has agreed to save this exact rule")
+	cmd.Flags().BoolVar(&overwrite, "overwrite", false, "Publish a new revision when the rule already exists. Only after the user agrees to replace it")
 	_ = cmd.MarkFlagRequired("code-file")
 	_ = cmd.MarkFlagRequired("query-file")
 	_ = cmd.MarkFlagRequired("language")
@@ -118,6 +121,7 @@ func handlePromoteSASTRule(ctx context.Context, request mcp.CallToolRequest) (*m
 
 func parsePromoteArgs(arguments map[string]any) (promote.Request, error) {
 	confirmed, _ := arguments["user_confirmed"].(bool)
+	overwrite, _ := arguments["overwrite"].(bool)
 	ruleCode, err := requiredArg(arguments, "rule_code")
 	if err != nil {
 		return promote.Request{}, err
@@ -136,6 +140,7 @@ func parsePromoteArgs(arguments map[string]any) (promote.Request, error) {
 	}
 	req := promote.Request{
 		UserConfirmed:   confirmed,
+		Overwrite:       overwrite,
 		RuleCode:        ruleCode,
 		TreeSitterQuery: query,
 		Language:        language,
@@ -276,7 +281,7 @@ func preparePromoteAuth(ctx context.Context, iface telemetry.Interface) (string,
 			return detectAuthMethod(), authRequiredError(err)
 		}
 		if os.Getenv(constants.EnvAPIKey) == "" || os.Getenv(constants.EnvAPPKey) == "" {
-			return detectAuthMethod(), apiKeyRequiredError()
+			return detectAuthMethod(), promoteCredentialsError(iface)
 		}
 		return detectAuthMethod(), nil
 	}
@@ -286,7 +291,22 @@ func preparePromoteAuth(ctx context.Context, iface telemetry.Interface) (string,
 		return method, authRequiredError(err)
 	}
 	if os.Getenv(constants.EnvAPIKey) == "" || os.Getenv(constants.EnvAPPKey) == "" {
-		return method, apiKeyRequiredError()
+		return method, promoteCredentialsError(iface)
 	}
 	return method, nil
+}
+
+// promoteCredentialsError explains how to provide credentials where they are
+// read: the MCP server env for MCP calls, the shell for the CLI.
+func promoteCredentialsError(iface telemetry.Interface) error {
+	if iface == telemetry.InterfaceMCP {
+		return fmt.Errorf("%s.\n\n%s\n\n%s",
+			constants.ErrPromoteCredentialsRequired,
+			constants.AuthInstructionDDAuth,
+			constants.AuthInstructionAPIKey)
+	}
+	return fmt.Errorf("%s.\n\n%s\n\n%s",
+		constants.ErrPromoteCredentialsRequired,
+		constants.AuthInstructionDDAuthShell,
+		constants.AuthInstructionAPIKeyShell)
 }

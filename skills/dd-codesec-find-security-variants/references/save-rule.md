@@ -30,9 +30,19 @@ Also write one line of at most 60 characters that names the guard and the operat
 
 ## Upload
 
-Call `datadog_promote_sast_rule` with `user_confirmed: true`, the exact `rule_code` and `tree_sitter_query` from `$scratch`, `language`, `rule_name` set to the slug the report showed or the rule name they gave, `ruleset_name` set to the ruleset they named or `variant-hunter`, `short_description`, and `description`. Pass `called_by_skill: true`. Also pass `tests`: the fixed function with `annotation_count` 0, and the same function before the fix with `annotation_count` 1. Each item is `filename`, `code` (the file text, not base64), and `annotation_count`. The tool uploads that source and those two examples. It refuses when `user_confirmed` is not true.
+Call `datadog_promote_sast_rule` with `user_confirmed: true`, the exact `rule_code` and `tree_sitter_query` from `$scratch`, `language`, `rule_name` set to the slug the report showed or the rule name they gave, `ruleset_name` set to the ruleset they named or `security-variants`, `short_description`, and `description`. Pass `called_by_skill: true`. Also pass `tests`: the fixed function with `annotation_count` 0, and the same function before the fix with `annotation_count` 1. Each item is `filename`, `code` (the file text, not base64), and `annotation_count`. The tool uploads that source and those two examples. It refuses when `user_confirmed` is not true.
 
-After the upload, name the rule, the ruleset, and the `revision_id` from the tool reply. It is the revision number the rule page shows. Leave it out when it is empty.
+After the upload, name the rule, the ruleset, and the `revision_id` from the tool reply. It is the revision number the rule page shows. When it is empty, the reply has a `warning`. Show that warning instead of the number.
+
+If the tool replies that the rule already exists, nothing was saved. The existing rule may be someone else's. Pause at the end of the turn with this message:
+
+````markdown
+**`<rule slug>` already exists** in the ruleset `<ruleset>`. Saving now would publish a new revision over it, and the IDE would report this rule's hits under that name.
+
+Replace it? Reply replace, or give another rule name.
+````
+
+If they reply replace, call the tool again with the same arguments and `overwrite: true`. If they give another name, call it again with that `rule_name`. Never pass `overwrite: true` without that reply.
 
 If the tool is not registered, write both examples to `$scratch/tests.json` as a JSON array of `{filename, code, annotation_count}` and run:
 
@@ -48,9 +58,9 @@ datadog-code-security-mcp promote-sast-rule --called-by-skill --user-confirmed \
   --tests-file "$scratch/tests.json"
 ```
 
-Always pass `--tests-file`, `--description-file`, and `--short-description`.
+Always pass `--tests-file`, `--description-file`, and `--short-description`. Add `--overwrite` only after they replied replace.
 
-`<ruleset>` is the name they chose, or `variant-hunter`. That command uses the same Datadog credentials as the MCP server: `DD_API_KEY` and `DD_APP_KEY`, or `DD_AUTH_DOMAIN` so `dd-auth` can supply a short-lived token.
+`<ruleset>` is the name they chose, or `security-variants`. That command uses the same Datadog credentials as the MCP server: `DD_API_KEY` and `DD_APP_KEY`, or `DD_AUTH_DOMAIN` so `dd-auth` can supply a short-lived token.
 
 ## Project config
 

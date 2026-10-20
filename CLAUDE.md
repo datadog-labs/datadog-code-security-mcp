@@ -53,6 +53,8 @@ and does not replace a local scan.
 - `mcp__datadog-code-security__datadog_sca_scan` - SCA only
 - `mcp__datadog-code-security__datadog_iac_scan` - IaC only
 - `mcp__datadog-code-security__datadog_generate_sbom` - Generate SBOM
+- `mcp__datadog-code-security__datadog_ephemeral_sast_scan` - Run one unpublished SAST rule (no API keys)
+- `mcp__datadog-code-security__datadog_promote_sast_rule` - Save an approved rule as a custom rule
 
 Build the wrapper first when testing local source changes. Configure the
 client MCP server to use that local binary, then exercise the MCP path as the

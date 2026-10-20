@@ -131,6 +131,7 @@ var errorRules = []errorRule{
 	{kind: ErrKindBinaryNotFound, contains: []string{"not found in PATH"}},
 	{kind: ErrKindBinaryNotFound, contains: []string{"executable file not found"}},
 	{kind: ErrKindBinaryNotFound, contains: []string{"binary validation failed"}},
+	{kind: ErrKindBinaryNotFound, contains: []string{"PREREQUISITE REQUIRED: Scanner Upgrade"}, message: "scanner upgrade required"},
 
 	{kind: ErrKindSetupError, contains: []string{"setup failed for:"}},
 	{kind: ErrKindSetupError, contains: []string{"resolve user home directory"}, message: "user home directory unavailable"},
@@ -151,12 +152,15 @@ var errorRules = []errorRule{
 	{kind: ErrKindInvalidArguments, contains: []string{constants.ErrInvalidArguments}},
 	{kind: ErrKindInvalidArguments, contains: []string{"unsupported client \""}},
 	{kind: ErrKindInvalidArguments, contains: []string{"invalid min_sast_severity"}, message: "invalid min_sast_severity"},
+	{kind: ErrKindInvalidArguments, contains: []string{"is outside directory"}, message: "path outside scan directory"},
+	{kind: ErrKindInvalidArguments, contains: []string{"already exists in ruleset"}, message: "custom rule already exists"},
 	{kind: ErrKindInvalidArguments, contains: []string{"is required"}},
 	{kind: ErrKindInvalidArguments, contains: []string{"must be"}},
 
 	// Tier 2: residual foreign scanner failure text (last resort before Unknown).
 	{kind: ErrKindScanError, contains: []string{"scanner execution failed"}},
 	{kind: ErrKindScanError, contains: []string{"detection failed"}},
+	{kind: ErrKindScanError, contains: []string{"scanner failed:"}},
 }
 
 var exitStatusRe = regexp.MustCompile(`exit status (\d+)`)

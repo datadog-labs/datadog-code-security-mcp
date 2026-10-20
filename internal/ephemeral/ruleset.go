@@ -22,7 +22,7 @@ type Input struct {
 	Language string
 	// RuleName is the rule id inside the ruleset. Defaults to "ephemeral".
 	RuleName string
-	// RulesetName is the Vec<RuleSet> name. Defaults to "variant-hunter".
+	// RulesetName is the Vec<RuleSet> name. Defaults to "security-variants".
 	RulesetName string
 	// Description is plain text on the ruleset, not base64.
 	Description string
@@ -71,7 +71,7 @@ func BuildRulesJSON(in Input) ([]byte, error) {
 	}
 	rulesetName := strings.TrimSpace(in.RulesetName)
 	if rulesetName == "" {
-		rulesetName = "variant-hunter"
+		rulesetName = "security-variants"
 	}
 
 	code := base64.StdEncoding.EncodeToString([]byte(in.RuleCode))

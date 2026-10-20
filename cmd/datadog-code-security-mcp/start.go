@@ -460,22 +460,27 @@ Authentication: DD_API_KEY and DD_APP_KEY, or DD_AUTH_DOMAIN so dd-auth can supp
 
 Parameters:
 • user_confirmed (boolean, required) - true only after the user agrees to save this exact source.
+• overwrite (boolean, optional) - true only after the user agrees to replace a rule that already exists. Without it, the tool refuses to save over an existing rule and says so.
 • rule_code (string, required) - DDSA JavaScript source, not base64.
 • tree_sitter_query (string, required) - tree-sitter query source, not base64.
 • language (string, required) - scanner language enum, for example TYPESCRIPT.
 • rule_name (string, required) - lowercase slug, 5 to 32 characters.
-• ruleset_name (string, optional) - lowercase slug. Defaults to variant-hunter.
+• ruleset_name (string, optional) - lowercase slug. Defaults to security-variants.
 • short_description (string, optional) - one line stored on the rule, at most 60 characters. Names the guard and the operation. The ruleset keeps its own generic label.
 • description (string, optional) - plain text stored on the rule. State the guard, where it must run, and every operation the rule flags. The ruleset description stays generic and is not updated.
 • tests (array) - the two examples from the fix. The function after the fix has annotation_count 0. The same function before the fix has annotation_count 1. Always send both.
 
-Output: the ruleset name, rule name, and revision id.`,
+Output: the ruleset name, rule name, revision id, and a warning when the revision id is missing.`,
 			InputSchema: mcp.ToolInputSchema{
 				Type: "object",
 				Properties: map[string]any{
 					"user_confirmed": map[string]any{
 						"type":        "boolean",
 						"description": "True only after the user agrees to save this exact rule source",
+					},
+					"overwrite": map[string]any{
+						"type":        "boolean",
+						"description": "True only after the user agrees to replace a rule that already exists",
 					},
 					"rule_code": map[string]any{
 						"type":        "string",
@@ -495,7 +500,7 @@ Output: the ruleset name, rule name, and revision id.`,
 					},
 					"ruleset_name": map[string]any{
 						"type":        "string",
-						"description": "Lowercase ruleset slug. Defaults to variant-hunter",
+						"description": "Lowercase ruleset slug. Defaults to security-variants",
 					},
 					"short_description": map[string]any{
 						"type":        "string",

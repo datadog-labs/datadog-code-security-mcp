@@ -153,10 +153,23 @@ func runEphemeralScan(ctx context.Context, req ephemeral.ScanRequest, iface tele
 		event.Failure = err
 		return nil, err
 	}
-	var findings []json.RawMessage
-	if err := json.Unmarshal(result.Findings, &findings); err == nil {
-		count := len(findings)
+	if count, ok := countViolations(result.Findings); ok {
 		event.FindingsCount = &count
 	}
 	return result.Findings, nil
+}
+
+// countViolations sums the violations across the analyzer's per-file results.
+func countViolations(findings json.RawMessage) (int, bool) {
+	var results []struct {
+		Violations []json.RawMessage `json:"violations"`
+	}
+	if err := json.Unmarshal(findings, &results); err != nil {
+		return 0, false
+	}
+	count := 0
+	for _, result := range results {
+		count += len(result.Violations)
+	}
+	return count, true
 }

@@ -107,6 +107,10 @@ func TestCategorizeErrorKnownKinds(t *testing.T) {
 		{"resolve user home directory: HOME is not set", ErrKindSetupError},
 		{`unsupported client "other" (valid options: agents, claude-code, codex)`, ErrKindInvalidArguments},
 		{"invalid min_sast_severity: INFO (valid options: LOW, MEDIUM, HIGH, or CRITICAL)", ErrKindInvalidArguments},
+		{"⚠️  PREREQUISITE REQUIRED: Scanner Upgrade\n\nThe installed 'datadog-static-analyzer' does not support --rules-with-config.\n\n# Add to PATH (if not already added):", ErrKindBinaryNotFound},
+		{"path ../x is outside directory /repo", ErrKindInvalidArguments},
+		{`rule "missing-admin" already exists in ruleset "security-variants". Saving would publish a new revision over it.`, ErrKindInvalidArguments},
+		{"scanner failed: exit status 3\nboom", ErrKindScanError},
 	}
 	for _, tc := range cases {
 		if got := CategorizeError(fmt.Errorf("%s", tc.msg)); got != tc.want {

@@ -114,13 +114,13 @@ For more information, visit: https://github.com/datadog-labs/datadog-code-securi
 
 	// Add commands
 	rootCmd.AddCommand(
-		newStartCmd(),         // MCP server mode
-		newScanCmd(),          // Direct scan mode
-		newEphemeralScanCmd(), // One-off local SAST rule
+		newStartCmd(),           // MCP server mode
+		newScanCmd(),            // Direct scan mode
+		newEphemeralScanCmd(),   // One-off local SAST rule
 		newPromoteSASTRuleCmd(), // Save that rule when the user agrees
-		newGenerateSBOMCmd(),  // SBOM generation
-		newVersionCmd(),       // Version info
-		newSetupCmd(),         // AI client skill installation
+		newGenerateSBOMCmd(),    // SBOM generation
+		newVersionCmd(),         // Version info
+		newSetupCmd(),           // AI client skill installation
 	)
 
 	// Execute root command. When RunE returns an error Cobra skips

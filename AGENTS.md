@@ -276,7 +276,8 @@ export DD_SITE=datadoghq.com
 7. ✅ **SBOM generation** - Generates and validates a component inventory
 8. ✅ **Setup command** - Verifies dry-run, installation, and `--remove-skills` in an isolated home
 9. ✅ **IaC scanner** - Detects infrastructure misconfigurations
-10. ✅ **Claude Desktop** - Configures local build (full mode only)
+10. ✅ **Ephemeral SAST rule** - Runs `testdata/ephemeral/` without API keys; only that rule reports, and the config's ignored paths stay ignored (warns if the analyzer lacks `--rules-with-config`)
+11. ✅ **Claude Desktop** - Configures local build (full mode only)
 
 **Option 2: Manual Step-by-Step Testing**
 
@@ -566,7 +567,7 @@ func runCommand(userInput string) error {
 
 **Before pushing code:**
 1. ✅ Run `./scripts/test-e2e.sh --ci` locally
-2. ✅ Verify all 9 CI test steps pass
+2. ✅ Verify all 10 CI test steps pass
 3. ✅ Check test outputs in `/tmp/*-output.json`
 4. ✅ Test with Claude Desktop (`--full` mode) for MCP changes
 5. ✅ Review any warnings in test output

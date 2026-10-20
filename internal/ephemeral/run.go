@@ -4,53 +4,64 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
+	"time"
 
 	"github.com/datadog-labs/datadog-code-security-mcp/internal/binary"
 )
 
+// DefaultScanTimeout bounds one ephemeral analyzer run.
+const DefaultScanTimeout = 10 * time.Minute
+
+// rulesWithConfigFlag makes -r run only the supplied rules when the repository
+// has a local or remote SAST configuration. The configuration's paths, file
+// size, gitignore, and ruleset-configs settings still apply.
+const rulesWithConfigFlag = "--rules-with-config"
+
 // ScanRequest is a local ephemeral scan. Directory is the repository root
-// passed to datadog-static-analyzer -i. Paths, when set, are -u subdirectories.
+// passed to datadog-static-analyzer -i. Paths, when set, are -u subdirectories
+// and must resolve inside Directory.
 type ScanRequest struct {
 	Input
 	Directory string
 	Paths     []string
 }
 
-// Scan runs the analyzer with -r and -b. It does not fetch Datadog rules and
-// does not require API keys. Findings is the scanner's JSON document.
+// ScanResult holds the scanner's JSON findings document.
 type ScanResult struct {
 	Findings json.RawMessage
 }
 
-// Scan builds the envelope in a temp directory and runs datadog-static-analyzer.
+// Scan builds the ruleset in a temp directory and runs datadog-static-analyzer
+// with -r, --rules-with-config, and -b. It does not fetch Datadog rules and
+// does not require API keys.
 func Scan(ctx context.Context, req ScanRequest) (ScanResult, error) {
 	rules, err := BuildRulesJSON(req.Input)
 	if err != nil {
 		return ScanResult{}, err
 	}
 
-	directory := req.Directory
-	if directory == "" {
-		directory, err = os.Getwd()
-		if err != nil {
-			return ScanResult{}, fmt.Errorf("working directory: %w", err)
-		}
-	}
-	info, err := os.Stat(directory)
-	if err != nil {
-		return ScanResult{}, fmt.Errorf("directory: %w", err)
-	}
-	if !info.IsDir() {
-		return ScanResult{}, fmt.Errorf("directory %s is not a directory", directory)
-	}
-
-	analyzer, err := binary.NewBinaryManager().GetBinaryPath(ctx)
+	directory, paths, err := resolveTargets(req.Directory, req.Paths)
 	if err != nil {
 		return ScanResult{}, err
+	}
+
+	manager := binary.NewBinaryManager()
+	analyzer, err := manager.GetBinaryPath(ctx)
+	if err != nil {
+		return ScanResult{}, err
+	}
+	supported, err := manager.SupportsFlag(ctx, analyzer, rulesWithConfigFlag)
+	if err != nil {
+		return ScanResult{}, err
+	}
+	if !supported {
+		return ScanResult{}, manager.UpgradeRequiredError(rulesWithConfigFlag + " (required for ephemeral SAST scans)")
 	}
 
 	tempDir, err := os.MkdirTemp("", "ephemeral-sast-")
@@ -65,25 +76,16 @@ func Scan(ctx context.Context, req ScanRequest) (ScanResult, error) {
 	}
 	outputPath := filepath.Join(tempDir, "findings.json")
 
-	args := []string{
-		"-r", rulesPath,
-		"-b",
-		"-i", directory,
-		"-f", "json",
-		"--output", outputPath,
-		"--enable-static-analysis", "true",
-		"--enable-secrets", "false",
-	}
-	for _, path := range req.Paths {
-		if path == "" {
-			continue
-		}
-		args = append(args, "-u", path)
-	}
+	ctx, cancel := context.WithTimeout(ctx, DefaultScanTimeout)
+	defer cancel()
 
-	cmd := exec.CommandContext(ctx, analyzer, args...)
+	// no-dd-sa:go-security/command-injection - analyzer comes from exec.LookPath and every path argument is resolved above
+	cmd := exec.CommandContext(ctx, analyzer, analyzerArgs(rulesPath, directory, outputPath, paths)...)
 	cmd.Dir = directory
 	output, runErr := cmd.CombinedOutput()
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return ScanResult{}, fmt.Errorf("ephemeral scan timed out after %s: %w", DefaultScanTimeout, ctx.Err())
+	}
 
 	data, readErr := os.ReadFile(outputPath)
 	if readErr == nil && len(bytes.TrimSpace(data)) > 0 {
@@ -99,6 +101,69 @@ func Scan(ctx context.Context, req ScanRequest) (ScanResult, error) {
 		return ScanResult{}, fmt.Errorf("read scanner output: %w", readErr)
 	}
 	return ScanResult{Findings: json.RawMessage("[]")}, nil
+}
+
+func analyzerArgs(rulesPath, directory, outputPath string, paths []string) []string {
+	args := []string{
+		"-r", rulesPath,
+		rulesWithConfigFlag,
+		"-b",
+		"-i", directory,
+		"-f", "json",
+		"--output", outputPath,
+		"--enable-static-analysis", "true",
+		"--enable-secrets", "false",
+	}
+	for _, path := range paths {
+		args = append(args, "-u", path)
+	}
+	return args
+}
+
+// resolveTargets returns the absolute scan directory and each path relative to
+// it. Empty directory means the current directory. A path that does not exist
+// or resolves outside the directory is rejected.
+func resolveTargets(directory string, paths []string) (string, []string, error) {
+	if strings.TrimSpace(directory) == "" {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return "", nil, fmt.Errorf("working directory: %w", err)
+		}
+		directory = cwd
+	}
+	root, err := filepath.Abs(filepath.Clean(directory))
+	if err != nil {
+		return "", nil, fmt.Errorf("directory: %w", err)
+	}
+	info, err := os.Stat(root)
+	if err != nil {
+		return "", nil, fmt.Errorf("directory: %w", err)
+	}
+	if !info.IsDir() {
+		return "", nil, fmt.Errorf("directory %s is not a directory", root)
+	}
+
+	var relative []string
+	for _, path := range paths {
+		path = strings.TrimSpace(path)
+		if path == "" {
+			continue
+		}
+		target := path
+		if !filepath.IsAbs(target) {
+			target = filepath.Join(root, target)
+		}
+		target = filepath.Clean(target)
+		rel, err := filepath.Rel(root, target)
+		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return "", nil, fmt.Errorf("path %s is outside directory %s", path, root)
+		}
+		if _, err := os.Stat(target); err != nil {
+			return "", nil, fmt.Errorf("path %s: %w", path, err)
+		}
+		relative = append(relative, rel)
+	}
+	return root, relative, nil
 }
 
 func truncate(b []byte) string {

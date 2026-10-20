@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	defaultRulesetName  = "variant-hunter"
+	defaultRulesetName  = "security-variants"
 	defaultShort        = "Variant of a local security fix"
 	defaultDescription  = "Custom SAST rule saved from a local variant search."
 	defaultCreationMsg  = "Saved from a variant search"
@@ -52,7 +52,7 @@ type Request struct {
 	Language string
 	// RuleName is the rule slug.
 	RuleName string
-	// RulesetName is the ruleset slug. Empty becomes variant-hunter.
+	// RulesetName is the ruleset slug. Empty becomes security-variants.
 	RulesetName string
 	// ShortDescription is plain text, at most 60 characters.
 	ShortDescription string
@@ -60,6 +60,9 @@ type Request struct {
 	Description string
 	// Tests are measured examples. Empty leaves the rule page without a sample.
 	Tests []Test
+	// Overwrite must be true to publish a new revision of a rule that already
+	// exists. The existing rule may belong to someone else.
+	Overwrite bool
 }
 
 // Result is what the API accepted.
@@ -69,7 +72,21 @@ type Result struct {
 	RevisionID     string `json:"revision_id"`
 	RulesetExisted bool   `json:"ruleset_existed"`
 	RuleExisted    bool   `json:"rule_existed"`
+	// Warning is set when the save succeeded but something is missing.
+	Warning string `json:"warning,omitempty"`
 }
+
+// RuleExistsError means the rule is already saved and Overwrite was false.
+type RuleExistsError struct {
+	RulesetName string
+	RuleName    string
+}
+
+func (e *RuleExistsError) Error() string {
+	return fmt.Sprintf("rule %q already exists in ruleset %q. Saving would publish a new revision over it. Ask the user, then retry with overwrite set to true (--overwrite in the CLI), or choose another rule name", e.RuleName, e.RulesetName)
+}
+
+const missingRevisionWarning = "The rule was saved, but Datadog did not return its revision id. Open the rule page to see the revision."
 
 // Client calls the public Static Analysis custom-rule API.
 type Client struct {
@@ -119,6 +136,14 @@ func (c *Client) Save(ctx context.Context, req Request) (Result, error) {
 	}
 	prepared.requestID = strconv.FormatInt(c.now().UnixNano(), 10)
 
+	exists, err := c.ruleExists(ctx, prepared)
+	if err != nil {
+		return Result{}, err
+	}
+	if exists && !req.Overwrite {
+		return Result{}, &RuleExistsError{RulesetName: prepared.rulesetName, RuleName: prepared.ruleName}
+	}
+
 	rulesetExisted, err := c.ensureRuleset(ctx, prepared)
 	if err != nil {
 		return Result{}, err
@@ -131,13 +156,39 @@ func (c *Client) Save(ctx context.Context, req Request) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	return Result{
+	result := Result{
 		RulesetName:    prepared.rulesetName,
 		RuleName:       prepared.ruleName,
 		RevisionID:     revisionID,
 		RulesetExisted: rulesetExisted,
 		RuleExisted:    ruleExisted,
-	}, nil
+	}
+	if revisionID == "" {
+		result.Warning = missingRevisionWarning
+	}
+	return result, nil
+}
+
+// ruleExists reports whether the rule is already saved. A missing ruleset
+// also returns 404. Any other status stops the save, because the overwrite
+// check cannot be trusted.
+func (c *Client) ruleExists(ctx context.Context, req preparedRequest) (bool, error) {
+	status, resp, err := c.do(ctx, http.MethodGet, rulePath(req), nil)
+	if err != nil {
+		return false, err
+	}
+	switch status {
+	case http.StatusOK:
+		return true, nil
+	case http.StatusNotFound:
+		return false, nil
+	default:
+		return false, fmt.Errorf("check existing rule returned status %d: %s", status, resp)
+	}
+}
+
+func rulePath(req preparedRequest) string {
+	return "/custom/rulesets/" + url.PathEscape(req.rulesetName) + "/rules/" + url.PathEscape(req.ruleName)
 }
 
 type preparedRequest struct {
@@ -294,8 +345,7 @@ func (c *Client) createRevision(ctx context.Context, req preparedRequest) (strin
 	if err != nil {
 		return "", err
 	}
-	path := "/custom/rulesets/" + url.PathEscape(req.rulesetName) + "/rules/" + url.PathEscape(req.ruleName) + "/revisions"
-	status, resp, err := c.put(ctx, path, body)
+	status, resp, err := c.put(ctx, rulePath(req)+"/revisions", body)
 	if err != nil {
 		return "", err
 	}
@@ -312,8 +362,7 @@ func (c *Client) createRevision(ctx context.Context, req preparedRequest) (strin
 // The id sent in the create request is not the one Datadog stores. An empty
 // result means the lookup failed after a successful save.
 func (c *Client) lastRevisionID(ctx context.Context, req preparedRequest) string {
-	path := "/custom/rulesets/" + url.PathEscape(req.rulesetName) + "/rules/" + url.PathEscape(req.ruleName)
-	status, resp, err := c.do(ctx, http.MethodGet, path, nil)
+	status, resp, err := c.do(ctx, http.MethodGet, rulePath(req), nil)
 	if err != nil || status != http.StatusOK {
 		return ""
 	}

@@ -15,6 +15,15 @@ Setup for this repository is below. The [Code Security MCP Server documentation]
 5. **`datadog_iac_scan`** - Infrastructure as code scanning
 6. **`datadog_generate_sbom`** - Generate Software Bill of Materials (SBOM)
 7. **`datadog_library_vulnerability_scan`** - Scan specific libraries by package URL
+8. **`datadog_ephemeral_sast_scan`** - Run one caller-supplied SAST rule locally without publishing it (no API keys)
+9. **`datadog_promote_sast_rule`** - Save an approved SAST rule as a Datadog custom rule (requires API keys)
+
+`datadog_ephemeral_sast_scan` needs a `datadog-static-analyzer` that supports
+`--rules-with-config`. It runs only the supplied rule, even when the repository
+has a Static Analysis configuration, but still honors that configuration's
+ignored paths, `only` paths, file size limit, and gitignore setting.
+`datadog_promote_sast_rule` refuses to save over an existing rule unless the
+caller passes `overwrite: true` after the user agrees.
 
 `datadog_code_security_scan` and `datadog_sast_scan` accept optional
 `min_sast_severity` (`LOW`, `MEDIUM`, `HIGH`, or `CRITICAL`). It affects SAST only
@@ -231,6 +240,11 @@ the tool:
 
 Optional: `DD_SITE` (your Datadog site, for example `datadoghq.com`).
 
+**Datadog employees:** instead of permanent keys, set
+`DD_AUTH_DOMAIN` (for example `app.datadoghq.com`) so the tool obtains
+short-lived keys from `dd-auth`. Keys already in the environment take
+precedence.
+
 ### Claude Configuration
 
 For Claude Code skills that do not appear or do not auto-trigger, see
@@ -316,6 +330,11 @@ Once configured, ask your AI assistant to scan your code:
 - "Run a full security scan (SAST + Secrets + SCA + IaC)"
 - "Find all security issues in this project"
 
+**Security Variants (after an uncommitted security fix):**
+
+- "I just fixed this missing authorization check. Is the same mistake anywhere else?"
+- "Save that rule as a custom rule"
+
 **Dependency Analysis:**
 
 - "Scan for vulnerable dependencies"
@@ -350,7 +369,18 @@ datadog-code-security-mcp generate-sbom .           # Generate SBOM
 datadog-code-security-mcp scan all ./src --json
 datadog-code-security-mcp scan sast ./app --json
 datadog-code-security-mcp generate-sbom . --json
+
+# Run one unpublished SAST rule (no API keys; JSON output)
+datadog-code-security-mcp ephemeral-scan --language GO --directory . \
+  --code-file rule.js --query-file query.scm
+
+# Save that rule as a custom rule in the security-variants ruleset
+datadog-code-security-mcp promote-sast-rule --user-confirmed \
+  --language GO --rule-name missing-guard \
+  --code-file rule.js --query-file query.scm
 ```
+
+`testdata/ephemeral/` has a working `rule.js` and `query.scm` pair.
 
 #### Manual Installation Instructions for Requirements (Optional)
 

@@ -41,7 +41,7 @@ func TestBuildRulesJSON(t *testing.T) {
 		t.Fatalf("unexpected document shape: %s", raw)
 	}
 	rule := doc[0].Rules[0]
-	if doc[0].Name != "variant-hunter" || rule.Name != "missing-guard" {
+	if doc[0].Name != "security-variants" || rule.Name != "missing-guard" {
 		t.Fatalf("names: ruleset %s rule %s", doc[0].Name, rule.Name)
 	}
 	if rule.Language != "TYPESCRIPT" || rule.RuleType != "TREE_SITTER_QUERY" {

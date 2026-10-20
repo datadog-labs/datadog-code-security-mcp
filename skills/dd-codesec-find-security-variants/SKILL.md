@@ -125,6 +125,10 @@ datadog-code-security-mcp ephemeral-scan --called-by-skill \
 
 `<LANGUAGE>` is the scanner enum for the code under the diff (`TYPESCRIPT`, `JAVASCRIPT`, …). Omit `--path` to scan the whole directory. Pass `--path` only for a subdirectory the diff actually touches.
 
+The scan runs only this rule, but it keeps the repository's Static Analysis config settings: ignored paths, `only` paths, file size limit, and gitignore. The scanner pass never reports code under a path that config ignores. No hit there does not mean no variant there. When the config ignores paths, say so in the pause below, and if they reply yes, the search in step 5 covers those paths too.
+
+If the scan fails because the analyzer does not support `--rules-with-config`, stop and follow the `dd-codesec-setup-toolchain` skill to upgrade `datadog-static-analyzer`. Then scan again.
+
 As soon as the scan returns, pause at the end of the turn with this message. It is not the final report. Drop the function the diff itself changed.
 
 ````markdown
@@ -177,7 +181,7 @@ Every likely variant has to be reported by the scanner, including one that only 
 
 - `<path>:<line>`: <why it is the same shape but not clearly the same class>
 
-**Save as a custom rule?** The rule `<rule slug>` would be saved in the ruleset `variant-hunter` and report the HIGH list. <each MEDIUM file> stays out. Every saved hit shows in the IDE as an error.
+**Save as a custom rule?** The rule `<rule slug>` would be saved in the ruleset `security-variants` and report the HIGH list. <each MEDIUM file> stays out. Every saved hit shows in the IDE as an error.
 
 Reply save, save with MEDIUM, or no. To use another rule name or ruleset, add it to your reply.
 ````
@@ -190,9 +194,9 @@ When they skipped the repository search, add one line after the count: these are
 
 The report is an end-of-turn pause. Its last line is the save question. The rule severity is ERROR, which is why every saved hit shows as an error.
 
-Choose the rule slug before you write the report: lowercase words joined by hyphens, naming the missing guard, such as `missing-require-admin`. The report shows that slug and the ruleset `variant-hunter`. A ruleset slug is 5 to 32 characters, lowercase letters, digits, and single hyphens, and it cannot start or end with a hyphen. Do not ask a second question only to collect a name. Do not call `datadog_promote_sast_rule` in this step.
+Choose the rule slug before you write the report: lowercase words joined by hyphens, naming the missing guard, such as `missing-require-admin`. The report shows that slug and the ruleset `security-variants`. A ruleset slug is 5 to 32 characters, lowercase letters, digits, and single hyphens, and it cannot start or end with a hyphen. Do not ask a second question only to collect a name. Do not call `datadog_promote_sast_rule` in this step.
 
-If they reply no, stop. If they name another rule or ruleset, use that name. Otherwise use the slug and `variant-hunter` the report showed.
+If they reply no, stop. If they name another rule or ruleset, use that name. Otherwise use the slug and `security-variants` the report showed.
 
 If they change the set, edit `$scratch/rule.js` so it reports only the operations they accepted. Keep the query. Scan again with `datadog_ephemeral_sast_scan` and `called_by_skill: true`. Then pause at the end of the turn with this message:
 

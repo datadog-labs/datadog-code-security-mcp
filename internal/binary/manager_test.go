@@ -87,6 +87,55 @@ func TestSecurityCLIUnavailableOnWindows(t *testing.T) {
 	}
 }
 
+func TestSupportsFlag(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("test uses executable shell scripts")
+	}
+
+	binDir := t.TempDir()
+	scripts := map[string]string{
+		"new":    "#!/bin/sh\ntest \"$1\" = \"--help\" || exit 1\nprintf '  -r, --rules FILE\\n      --rules-with-config\\n'\n",
+		"old":    "#!/bin/sh\ntest \"$1\" = \"--help\" || exit 1\nprintf '  -r, --rules FILE\\n'\n",
+		"broken": "#!/bin/sh\nexit 2\n",
+	}
+	for name, script := range scripts {
+		if err := os.WriteFile(filepath.Join(binDir, name), []byte(script), 0o755); err != nil {
+			t.Fatalf("write fake %s: %v", name, err)
+		}
+	}
+
+	manager := NewBinaryManager()
+	tests := []struct {
+		name    string
+		want    bool
+		wantErr bool
+	}{
+		{name: "new", want: true},
+		{name: "old", want: false},
+		{name: "broken", wantErr: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := manager.SupportsFlag(context.Background(), filepath.Join(binDir, test.name), "--rules-with-config")
+			if (err != nil) != test.wantErr {
+				t.Fatalf("SupportsFlag() error = %v, wantErr %v", err, test.wantErr)
+			}
+			if got != test.want {
+				t.Fatalf("SupportsFlag() = %v, want %v", got, test.want)
+			}
+		})
+	}
+}
+
+func TestUpgradeRequiredErrorIncludesInstallCommands(t *testing.T) {
+	msg := NewBinaryManager().UpgradeRequiredError("--rules-with-config").Error()
+	for _, want := range []string{"datadog-static-analyzer", "--rules-with-config", "Upgrade"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("upgrade error missing %q:\n%s", want, msg)
+		}
+	}
+}
+
 func TestGetVersionUsesBinaryVersionArgs(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("test uses executable shell scripts")

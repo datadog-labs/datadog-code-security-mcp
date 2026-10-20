@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -32,6 +33,10 @@ func TestSaveCreatesRulesetRuleAndRevision(t *testing.T) {
 	var paths []string
 	var revisionBody map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
 		if r.Method != http.MethodPut {
 			t.Errorf("method %s", r.Method)
 		}
@@ -59,16 +64,19 @@ func TestSaveCreatesRulesetRuleAndRevision(t *testing.T) {
 	if result.RulesetExisted || result.RuleExisted {
 		t.Fatalf("new rule reported as existing: %+v", result)
 	}
-	if result.RulesetName != "variant-hunter" || result.RuleName != "missing-admin" {
+	if result.RulesetName != "security-variants" || result.RuleName != "missing-admin" {
 		t.Fatalf("names: %+v", result)
 	}
 	if result.RevisionID != "2067" {
 		t.Fatalf("revision id %q, want the server id 2067", result.RevisionID)
 	}
+	if result.Warning != "" {
+		t.Fatalf("unexpected warning %q", result.Warning)
+	}
 	want := []string{
 		"/custom/rulesets",
-		"/custom/rulesets/variant-hunter/rules",
-		"/custom/rulesets/variant-hunter/rules/missing-admin/revisions",
+		"/custom/rulesets/security-variants/rules",
+		"/custom/rulesets/security-variants/rules/missing-admin/revisions",
 	}
 	if strings.Join(paths, ",") != strings.Join(want, ",") {
 		t.Fatalf("paths %v", paths)
@@ -86,9 +94,61 @@ func TestSaveCreatesRulesetRuleAndRevision(t *testing.T) {
 	}
 }
 
+func TestSaveRefusesToOverwriteAnExistingRuleWithoutOverwrite(t *testing.T) {
+	var puts int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			_, _ = io.WriteString(w, `{"data":{"id":"missing-admin"}}`)
+			return
+		}
+		puts++
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	client := newClientWithBaseURL("api", "app", server.URL)
+	_, err := client.Save(context.Background(), sampleRequest(true))
+	var exists *RuleExistsError
+	if !errors.As(err, &exists) {
+		t.Fatalf("error = %v, want RuleExistsError", err)
+	}
+	if exists.RuleName != "missing-admin" || exists.RulesetName != "security-variants" {
+		t.Fatalf("error names %+v", exists)
+	}
+	if puts != 0 {
+		t.Fatalf("%d writes before the overwrite was confirmed", puts)
+	}
+}
+
+func TestSaveStopsWhenTheExistingRuleCheckFails(t *testing.T) {
+	var puts int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		puts++
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	client := newClientWithBaseURL("api", "app", server.URL)
+	_, err := client.Save(context.Background(), sampleRequest(true))
+	if err == nil || !strings.Contains(err.Error(), "403") {
+		t.Fatalf("error = %v, want the 403 from the existing rule check", err)
+	}
+	if puts != 0 {
+		t.Fatalf("%d writes after a failed existing rule check", puts)
+	}
+}
+
 func TestSaveContinuesWhenRulesetAndRuleAlreadyExist(t *testing.T) {
 	var revisionCalls int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			_, _ = io.WriteString(w, `{"data":{"id":"missing-admin"}}`)
+			return
+		}
 		if r.Method != http.MethodPut {
 			t.Errorf("unexpected method %s", r.Method)
 		}
@@ -101,8 +161,10 @@ func TestSaveContinuesWhenRulesetAndRuleAlreadyExist(t *testing.T) {
 	}))
 	defer server.Close()
 
+	req := sampleRequest(true)
+	req.Overwrite = true
 	client := newClientWithBaseURL("api", "app", server.URL)
-	result, err := client.Save(context.Background(), sampleRequest(true))
+	result, err := client.Save(context.Background(), req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,6 +181,10 @@ func TestSaveReadsTheRevisionIDFromTheRuleWhenTheCreateResponseHasNone(t *testin
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
 			gets = append(gets, r.URL.Path)
+			if len(gets) == 1 {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
 			_, _ = io.WriteString(w, `{"data":{"id":"missing-admin","attributes":{"last_revision":{"id":"2069"}}}}`)
 			return
 		}
@@ -134,14 +200,21 @@ func TestSaveReadsTheRevisionIDFromTheRuleWhenTheCreateResponseHasNone(t *testin
 	if result.RevisionID != "2069" {
 		t.Fatalf("revision id %q, want 2069 from the rule", result.RevisionID)
 	}
-	if strings.Join(gets, ",") != "/custom/rulesets/variant-hunter/rules/missing-admin" {
-		t.Fatalf("gets %v", gets)
+	rule := "/custom/rulesets/security-variants/rules/missing-admin"
+	if strings.Join(gets, ",") != rule+","+rule {
+		t.Fatalf("gets %v, want the existing rule check and the revision lookup", gets)
 	}
 }
 
 func TestSaveSucceedsWithAnEmptyRevisionIDWhenTheLookupFails(t *testing.T) {
+	var gets int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
+			gets++
+			if gets == 1 {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
@@ -156,6 +229,9 @@ func TestSaveSucceedsWithAnEmptyRevisionIDWhenTheLookupFails(t *testing.T) {
 	}
 	if result.RevisionID != "" {
 		t.Fatalf("revision id %q, want empty rather than the request id", result.RevisionID)
+	}
+	if result.Warning != missingRevisionWarning {
+		t.Fatalf("warning %q, want the missing revision warning", result.Warning)
 	}
 }
 
@@ -172,6 +248,10 @@ func TestSaveKeepsTheRulesetDescriptionGeneric(t *testing.T) {
 	var rulesetBody map[string]any
 	var revisionBody map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
 		if r.Method != http.MethodPut {
 			t.Errorf("unexpected method %s", r.Method)
 		}
@@ -246,6 +326,10 @@ func TestSaveRejectsABadSlugBeforeCalling(t *testing.T) {
 func TestSaveStoresMeasuredTests(t *testing.T) {
 	var revisionBody map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
 		if strings.HasSuffix(r.URL.Path, "/revisions") {
 			raw, _ := io.ReadAll(r.Body)
 			if err := json.Unmarshal(raw, &revisionBody); err != nil {
@@ -309,6 +393,6 @@ func sampleRequest(confirmed bool) Request {
 		TreeSitterQuery: "(identifier) @name",
 		Language:        "TYPESCRIPT",
 		RuleName:        "missing-admin",
-		RulesetName:     "variant-hunter",
+		RulesetName:     "security-variants",
 	}
 }
