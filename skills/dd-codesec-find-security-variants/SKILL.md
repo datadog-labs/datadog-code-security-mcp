@@ -130,7 +130,7 @@ The scan runs only this rule, but it keeps the repository's Static Analysis conf
 
 If the scan fails because the analyzer does not support `--rules-with-config`, stop and follow the `dd-codesec-setup-toolchain` skill to upgrade `datadog-static-analyzer` to 0.9.10 or later. Then scan again.
 
-If the scan fails with "the rule raised an exception", the rule threw on the listed files, so the findings are incomplete. Fix `$scratch/rule.js`, for example a missing capture or a property read on `undefined`, and scan again. An empty result can also mean the rule has a syntax error or timed out, so reread the rule before you report no variants.
+If the scan fails with "the rule failed", the rule threw, did not compile, or timed out on the listed files, so the findings are incomplete. Fix `$scratch/rule.js`, for example a syntax error, a missing capture, or a property read on `undefined`, and scan again.
 
 As soon as the scan returns, pause at the end of the turn with this message. It is not the final report. Drop the function the diff itself changed.
 

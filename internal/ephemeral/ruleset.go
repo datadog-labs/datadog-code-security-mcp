@@ -65,15 +65,7 @@ func BuildRulesJSON(in Input) ([]byte, error) {
 		return nil, fmt.Errorf("unsupported language %q", language)
 	}
 
-	ruleName := strings.TrimSpace(in.RuleName)
-	if ruleName == "" {
-		ruleName = "ephemeral"
-	}
-	rulesetName := strings.TrimSpace(in.RulesetName)
-	if rulesetName == "" {
-		rulesetName = "security-variants"
-	}
-
+	rulesetName, ruleName := ruleNames(in)
 	code := base64.StdEncoding.EncodeToString([]byte(in.RuleCode))
 	query := base64.StdEncoding.EncodeToString([]byte(in.TreeSitterQuery))
 	sum := sha256.Sum256([]byte(code))
@@ -94,6 +86,24 @@ func BuildRulesJSON(in Input) ([]byte, error) {
 		}},
 	}}
 	return json.MarshalIndent(doc, "", "  ")
+}
+
+func ruleNames(in Input) (rulesetName, ruleName string) {
+	rulesetName = strings.TrimSpace(in.RulesetName)
+	if rulesetName == "" {
+		rulesetName = "security-variants"
+	}
+	ruleName = strings.TrimSpace(in.RuleName)
+	if ruleName == "" {
+		ruleName = "ephemeral"
+	}
+	return rulesetName, ruleName
+}
+
+// ruleID is the name the analyzer reports for the rule: ruleset/rule.
+func ruleID(in Input) string {
+	rulesetName, ruleName := ruleNames(in)
+	return rulesetName + "/" + ruleName
 }
 
 func knownLanguage(language string) bool {

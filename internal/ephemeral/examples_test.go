@@ -49,16 +49,16 @@ func TestCheckExamplesRejectsAFindingInTheCompliantExample(t *testing.T) {
 	}
 }
 
-func TestCheckExamplesReportsAThrowingRuleAsNotSaved(t *testing.T) {
-	installFakeAnalyzer(t, "--rules-with-config",
-		`[{"filename":"example-2/noncompliant.go","violations":[{"message":"`+exceptionMarker+`TypeError: boom"}]}]`, "0")
+func TestCheckExamplesReportsAFailingRuleAsNotSaved(t *testing.T) {
+	installFakeAnalyzer(t, "--rules-with-config", `[]`, "0")
+	t.Setenv("DEBUG_LINES", "rule:file security-variants/ephemeral:example-2/noncompliant.go execution error, message: Uncaught TypeError: boom")
 
 	err := CheckExamples(context.Background(), validInput(), sampleExamples())
-	var exception *RuleExceptionError
-	if !errors.As(err, &exception) {
-		t.Fatalf("error = %v, want RuleExceptionError", err)
+	var failure *RuleFailureError
+	if !errors.As(err, &failure) {
+		t.Fatalf("error = %v, want RuleFailureError", err)
 	}
-	if !strings.HasPrefix(err.Error(), "the rule was not saved: ") || exception.Examples[0] != "noncompliant.go: TypeError: boom" {
+	if !strings.HasPrefix(err.Error(), "the rule was not saved: ") || failure.Examples[0] != "noncompliant.go: TypeError: boom" {
 		t.Errorf("error = %v", err)
 	}
 }

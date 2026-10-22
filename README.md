@@ -380,7 +380,9 @@ datadog-code-security-mcp promote-sast-rule --user-confirmed \
   --code-file rule.js --query-file query.scm --tests-file tests.json
 ```
 
-`--tests-file` is required. It holds exactly two examples: the fixed code with `annotation_count` 0, and the code before the fix with a positive `annotation_count`. The rule runs on both before anything is uploaded, and nothing is saved unless each count matches. That also stops a rule with a syntax error, or one that times out, since it reports 0 findings.
+`--tests-file` is required. It holds exactly two examples: the fixed code with `annotation_count` 0, and the code before the fix with a positive `annotation_count`. The rule runs on both before anything is uploaded, and nothing is saved unless each count matches and the rule ran without errors.
+
+Both commands report a rule that throws, does not compile, or times out as an error, instead of an empty result. They run the analyzer with `--debug yes` to read those failures.
 
 `testdata/ephemeral/` has a working `rule.js`, `query.scm`, and `tests.json`.
 

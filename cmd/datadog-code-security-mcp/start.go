@@ -412,7 +412,7 @@ Parameters:
 • rule_name (string, optional) - rule name inside the ephemeral ruleset.
 • paths (array, optional) - subdirectories to scan. Omit to scan the whole directory.
 
-Output: the scanner's JSON findings.`,
+Output: the scanner's JSON findings. When the rule throws, does not compile, or times out on any file, the tool returns an error that lists those files instead of incomplete findings.`,
 			InputSchema: mcp.ToolInputSchema{
 				Type: "object",
 				Properties: map[string]any{
@@ -468,7 +468,7 @@ Parameters:
 • ruleset_name (string, optional) - lowercase slug. Defaults to security-variants.
 • short_description (string, optional) - one line stored on the rule, at most 60 characters. Names the guard and the operation. The ruleset keeps its own generic label.
 • description (string, optional) - plain text stored on the rule. State the guard, where it must run, and every operation the rule flags. The ruleset description stays generic and is not updated.
-• tests (array, required) - exactly two examples from the fix. The function after the fix has annotation_count 0. The same function before the fix has a positive annotation_count, usually 1. The tool runs the rule on them first and saves nothing when a count differs or the rule raises an exception.
+• tests (array, required) - exactly two examples from the fix. The function after the fix has annotation_count 0. The same function before the fix has a positive annotation_count, usually 1. The tool runs the rule on them first and saves nothing when a count differs or the rule fails.
 
 Output: the ruleset name, rule name, revision id, and a warning when the revision id is missing.`,
 			InputSchema: mcp.ToolInputSchema{

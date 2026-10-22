@@ -11,13 +11,17 @@ import (
 )
 
 // fakeAnalyzerScript stands in for datadog-static-analyzer. --help prints the
-// configured usage. A scan records its arguments and writes FINDINGS to --output.
+// configured usage. A scan records its arguments, prints DEBUG_LINES to stderr,
+// and writes FINDINGS to --output.
 const fakeAnalyzerScript = `#!/bin/sh
 if [ "$1" = "--help" ]; then
   printf '%s\n' "$HELP_TEXT"
   exit 0
 fi
 printf '%s\n' "$@" > "$ARGS_FILE"
+if [ -n "$DEBUG_LINES" ]; then
+  printf '%s\n' "$DEBUG_LINES" >&2
+fi
 while [ $# -gt 0 ]; do
   if [ "$1" = "--output" ]; then
     printf '%s' "$FINDINGS" > "$2"
@@ -93,6 +97,9 @@ func TestScanPassesRulesWithConfig(t *testing.T) {
 	}
 	if !slices.Contains(args, "-b") {
 		t.Errorf("missing -b: %v", args)
+	}
+	if index := slices.Index(args, "--debug"); index < 0 || index+1 >= len(args) || args[index+1] != "yes" {
+		t.Errorf("missing --debug yes: %v", args)
 	}
 	var subdirs []string
 	for i, arg := range args {

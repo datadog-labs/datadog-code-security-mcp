@@ -93,12 +93,12 @@ func TestErrorInfoFromErrorDropsRuleControlledNumbers(t *testing.T) {
 		wantMessage string
 	}{
 		{
-			raw:         "the rule raised an exception in 1 file(s), so the results are incomplete. Fix the rule and scan again:\nsrc/a.go: Error: exit status 4111111111111111",
-			wantMessage: "rule raised an exception",
+			raw:         "the rule failed in 1 file(s), so the results are incomplete. Fix the rule and scan again:\nsrc/a.go: Error: exit status 4111111111111111",
+			wantMessage: "rule failed",
 		},
 		{
-			raw:         "the rule was not saved: the rule raised an exception in 1 file(s), so the results are incomplete. Fix the rule and scan again:\nnoncompliant.go: Error: exit status 4111111111111111",
-			wantMessage: "rule raised an exception",
+			raw:         "the rule was not saved: the rule failed in 1 file(s), so the results are incomplete. Fix the rule and scan again:\nnoncompliant.go: Error: exit status 4111111111111111",
+			wantMessage: "rule failed",
 		},
 		{
 			raw:         "the rule does not match its examples, so it was not saved:\nexit status 4111111111111111.go: expected 1, got 0",
@@ -139,7 +139,7 @@ func TestCategorizeErrorKnownKinds(t *testing.T) {
 		{"path ../x is outside directory /repo", ErrKindInvalidArguments},
 		{`rule "missing-admin" already exists in ruleset "security-variants". Saving would publish a new revision over it.`, ErrKindInvalidArguments},
 		{"scanner failed: exit status 3\nboom", ErrKindScanError},
-		{"the rule raised an exception in 1 file(s), so the results are incomplete. Fix the rule and scan again:\nsrc/a.go: Error: DD_API_KEY is required", ErrKindScanError},
+		{"the rule failed in 1 file(s), so the results are incomplete. Fix the rule and scan again:\nsrc/a.go: Error: DD_API_KEY is required", ErrKindScanError},
 		{"the rule does not match its examples, so it was not saved:\nnoncompliant.go: expected 1, got 0", ErrKindScanError},
 	}
 	for _, tc := range cases {

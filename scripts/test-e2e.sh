@@ -738,10 +738,11 @@ else
   TESTS_WARNED=$((TESTS_WARNED + 1))
 fi
 
-# A rule that matches and then throws must fail the scan, not look clean.
+# A rule that matches and then fails must fail the scan, not look clean. The
+# analyzer drops those results, so the scan reads its --debug diagnostics.
 # rule-this.js throws only because the analyzer calls it without a receiver.
 # rule-init-throws.js throws in its top-level code, before visit runs.
-for THROWING_RULE in rule-throws.js rule-this.js rule-init-throws.js; do
+for THROWING_RULE in rule-throws.js rule-this.js rule-init-throws.js rule-syntax-error.js rule-timeout.js; do
   THROWS_EXIT_CODE=0
   env -u DD_API_KEY -u DD_APP_KEY -u DD_AUTH_DOMAIN \
     ./bin/datadog-code-security-mcp ephemeral-scan \
@@ -751,7 +752,7 @@ for THROWING_RULE in rule-throws.js rule-this.js rule-init-throws.js; do
     --query-file "${EPHEMERAL_FIXTURE}/query.scm" \
     > "${TEST_OUTPUT_DIR}/ephemeral-throws-output.json" 2> "${TEST_OUTPUT_DIR}/ephemeral-throws-error.txt" || THROWS_EXIT_CODE=$?
 
-  if [[ $THROWS_EXIT_CODE -ne 0 ]] && grep -q "the rule raised an exception" "${TEST_OUTPUT_DIR}/ephemeral-throws-error.txt"; then
+  if [[ $THROWS_EXIT_CODE -ne 0 ]] && grep -q "the rule failed in 1 file(s)" "${TEST_OUTPUT_DIR}/ephemeral-throws-error.txt"; then
     echo -e "${GREEN}✓ Ephemeral scan reported ${THROWING_RULE} as an error${NC}"
     TESTS_PASSED=$((TESTS_PASSED + 1))
   else

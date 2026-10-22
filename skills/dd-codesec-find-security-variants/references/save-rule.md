@@ -32,10 +32,10 @@ Also write one line of at most 60 characters that names the guard and the operat
 
 Call `datadog_promote_sast_rule` with `user_confirmed: true`, the exact `rule_code` and `tree_sitter_query` from `$scratch`, `language`, `rule_name` set to the slug the report showed or the rule name they gave, `ruleset_name` set to the ruleset they named or `security-variants`, `short_description`, and `description`. Pass `called_by_skill: true`. Also pass `tests`: the fixed function with `annotation_count` 0, and the same function before the fix with `annotation_count` 1. Each item is `filename`, `code` (the file text, not base64), and `annotation_count`. The tool uploads that source and those two examples. It refuses when `user_confirmed` is not true.
 
-Before it saves, the tool runs the rule on both examples. When a count differs, or the rule raises an exception, it saves nothing and says so:
+Before it saves, the tool runs the rule on both examples. When a count differs, or the rule fails, it saves nothing and says so:
 
 - `noncompliant.<ext>: expected 1, got N` with N of 2 or more means the function before the fix has N flagged operations. Call the tool again with that example's `annotation_count` set to N.
-- Any other mismatch, `got 0` on the function before the fix, a finding in the fixed function, or a rule exception means the rule is wrong. A rule with a syntax error, or one that times out, also gets 0. Do not change the counts to make it pass. Fix the rule, scan the repository again, and show the user the new rule before you save it.
+- Any other mismatch, `got 0` on the function before the fix, a finding in the fixed function, or "the rule failed" means the rule is wrong. Do not change the counts to make it pass. Fix the rule, scan the repository again, and show the user the new rule before you save it.
 
 After the upload, name the rule, the ruleset, and the `revision_id` from the tool reply. It is the revision number the rule page shows. When it is empty, the reply has a `warning`. Show that warning instead of the number.
 

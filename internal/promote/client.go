@@ -261,8 +261,7 @@ func prepare(req Request) (preparedRequest, error) {
 
 // ValidateTests requires the two examples the pre-save check runs: one with
 // annotation_count 0 and one with a positive count. Without a positive count,
-// a rule that never reports, for example after a syntax error or a timeout,
-// would pass that check.
+// a rule that never reports would pass that check.
 func ValidateTests(tests []Test) error {
 	zero, positive := 0, 0
 	for _, test := range tests {

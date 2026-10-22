@@ -25,8 +25,7 @@ type ExampleMismatchError struct {
 }
 
 func (e *ExampleMismatchError) Error() string {
-	return "the rule does not match its examples, so it was not saved:\n" + strings.Join(e.Mismatches, "\n") +
-		"\nA rule with a syntax error, or one that times out, also reports 0 findings."
+	return "the rule does not match its examples, so it was not saved:\n" + strings.Join(e.Mismatches, "\n")
 }
 
 // CheckExamples scans each example with the rule and returns an
@@ -59,14 +58,14 @@ func CheckExamples(ctx context.Context, in Input, examples []Example) error {
 	}
 
 	result, err := Scan(ctx, ScanRequest{Input: in, Directory: dir})
-	var exception *RuleExceptionError
-	if errors.As(err, &exception) {
-		for i, entry := range exception.Examples {
-			if _, rest, ok := strings.Cut(entry, "/"); ok {
-				exception.Examples[i] = rest
+	var failure *RuleFailureError
+	if errors.As(err, &failure) {
+		for i, entry := range failure.Examples {
+			if cut := strings.IndexAny(entry, `/\`); cut >= 0 {
+				failure.Examples[i] = entry[cut+1:]
 			}
 		}
-		return fmt.Errorf("the rule was not saved: %w", exception)
+		return fmt.Errorf("the rule was not saved: %w", failure)
 	}
 	if err != nil {
 		return err

@@ -45,12 +45,7 @@ type ScanResult struct {
 // with -r, --rules-with-config, and -b. It does not fetch Datadog rules and
 // does not require API keys.
 func Scan(ctx context.Context, req ScanRequest) (ScanResult, error) {
-	if _, err := BuildRulesJSON(req.Input); err != nil {
-		return ScanResult{}, err
-	}
-	guarded := req.Input
-	guarded.RuleCode = guardRuleCode(req.RuleCode)
-	rules, err := BuildRulesJSON(guarded)
+	rules, err := BuildRulesJSON(req.Input)
 	if err != nil {
 		return ScanResult{}, err
 	}
@@ -91,23 +86,28 @@ func Scan(ctx context.Context, req ScanRequest) (ScanResult, error) {
 	// no-dd-sa:go-security/command-injection - analyzer comes from exec.LookPath and every path argument is resolved above
 	cmd := exec.CommandContext(ctx, analyzer, analyzerArgs(rulesPath, directory, outputPath, paths)...)
 	cmd.Dir = directory
-	output, runErr := cmd.CombinedOutput()
+	log := newAnalyzerLog(ruleID(req.Input))
+	cmd.Stdout = log
+	cmd.Stderr = log
+	runErr := cmd.Run()
+	log.flush()
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 		return ScanResult{}, fmt.Errorf("ephemeral scan timed out after %s: %w", DefaultScanTimeout, ctx.Err())
 	}
 
 	data, readErr := os.ReadFile(outputPath)
-	if readErr == nil && len(bytes.TrimSpace(data)) > 0 {
-		if !json.Valid(data) {
-			return ScanResult{}, fmt.Errorf("scanner wrote invalid JSON: %s", truncate(output))
-		}
-		if err := ruleExceptions(data); err != nil {
-			return ScanResult{}, err
-		}
+	hasFindings := readErr == nil && len(bytes.TrimSpace(data)) > 0
+	if hasFindings && !json.Valid(data) {
+		return ScanResult{}, fmt.Errorf("scanner wrote invalid JSON: %s", log)
+	}
+	if err := log.failure(); err != nil {
+		return ScanResult{}, err
+	}
+	if hasFindings {
 		return ScanResult{Findings: json.RawMessage(data)}, nil
 	}
 	if runErr != nil {
-		return ScanResult{}, fmt.Errorf("scanner failed: %w\n%s", runErr, truncate(output))
+		return ScanResult{}, fmt.Errorf("scanner failed: %w\n%s", runErr, log)
 	}
 	if readErr != nil {
 		return ScanResult{}, fmt.Errorf("read scanner output: %w", readErr)
@@ -126,6 +126,7 @@ func analyzerArgs(rulesPath, directory, outputPath string, paths []string) []str
 		"--enable-static-analysis", "true",
 		"--enable-secrets", "false",
 	}
+	args = append(args, debugFlag...)
 	for _, path := range paths {
 		args = append(args, "-u", path)
 	}
@@ -194,12 +195,4 @@ func within(root, target string) (string, bool) {
 		return "", false
 	}
 	return rel, true
-}
-
-func truncate(b []byte) string {
-	const max = 2000
-	if len(b) <= max {
-		return string(b)
-	}
-	return string(b[:max]) + "…"
 }
