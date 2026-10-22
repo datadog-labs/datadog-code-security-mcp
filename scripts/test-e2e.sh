@@ -739,23 +739,26 @@ else
 fi
 
 # A rule that matches and then throws must fail the scan, not look clean.
-THROWS_EXIT_CODE=0
-env -u DD_API_KEY -u DD_APP_KEY -u DD_AUTH_DOMAIN \
-  ./bin/datadog-code-security-mcp ephemeral-scan \
-  --language GO \
-  --directory "${EPHEMERAL_FIXTURE}" \
-  --code-file "${EPHEMERAL_FIXTURE}/rule-throws.js" \
-  --query-file "${EPHEMERAL_FIXTURE}/query.scm" \
-  > "${TEST_OUTPUT_DIR}/ephemeral-throws-output.json" 2> "${TEST_OUTPUT_DIR}/ephemeral-throws-error.txt" || THROWS_EXIT_CODE=$?
+# rule-this.js throws only because the analyzer calls it without a receiver.
+for THROWING_RULE in rule-throws.js rule-this.js; do
+  THROWS_EXIT_CODE=0
+  env -u DD_API_KEY -u DD_APP_KEY -u DD_AUTH_DOMAIN \
+    ./bin/datadog-code-security-mcp ephemeral-scan \
+    --language GO \
+    --directory "${EPHEMERAL_FIXTURE}" \
+    --code-file "${EPHEMERAL_FIXTURE}/${THROWING_RULE}" \
+    --query-file "${EPHEMERAL_FIXTURE}/query.scm" \
+    > "${TEST_OUTPUT_DIR}/ephemeral-throws-output.json" 2> "${TEST_OUTPUT_DIR}/ephemeral-throws-error.txt" || THROWS_EXIT_CODE=$?
 
-if [[ $THROWS_EXIT_CODE -ne 0 ]] && grep -q "the rule raised an exception" "${TEST_OUTPUT_DIR}/ephemeral-throws-error.txt"; then
-  echo -e "${GREEN}✓ Ephemeral scan reported the throwing rule as an error${NC}"
-  TESTS_PASSED=$((TESTS_PASSED + 1))
-else
-  echo -e "${RED}❌ Ephemeral scan did not report the throwing rule (exit ${THROWS_EXIT_CODE})${NC}"
-  cat "${TEST_OUTPUT_DIR}/ephemeral-throws-output.json" "${TEST_OUTPUT_DIR}/ephemeral-throws-error.txt"
-  TESTS_FAILED=$((TESTS_FAILED + 1))
-fi
+  if [[ $THROWS_EXIT_CODE -ne 0 ]] && grep -q "the rule raised an exception" "${TEST_OUTPUT_DIR}/ephemeral-throws-error.txt"; then
+    echo -e "${GREEN}✓ Ephemeral scan reported ${THROWING_RULE} as an error${NC}"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+  else
+    echo -e "${RED}❌ Ephemeral scan did not report ${THROWING_RULE} (exit ${THROWS_EXIT_CODE})${NC}"
+    cat "${TEST_OUTPUT_DIR}/ephemeral-throws-output.json" "${TEST_OUTPUT_DIR}/ephemeral-throws-error.txt"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+  fi
+done
 echo ""
 
 # =============================================================================
