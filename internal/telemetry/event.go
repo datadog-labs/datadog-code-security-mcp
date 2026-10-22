@@ -5,11 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"regexp"
+	"os/exec"
 	"strings"
 
 	"github.com/datadog-labs/datadog-code-security-mcp/internal/constants"
 	"github.com/datadog-labs/datadog-code-security-mcp/internal/ephemeral"
+	"github.com/datadog-labs/datadog-code-security-mcp/internal/promote"
 )
 
 // Status represents the severity level of a telemetry log event.
@@ -80,14 +81,11 @@ var kindDescriptions = map[string]string{
 // errorRule maps required substrings in the raw error text to a safe
 // classification. A rule matches when every substring in contains is present.
 // message, when set, overrides the per-kind default with a curated constant
-// safe to emit as error.message. verbatim keeps that message as is: the raw
-// error carries rule-controlled text, so an "exit status N" in it is not a
-// process exit code.
+// safe to emit as error.message.
 type errorRule struct {
 	kind     string
 	contains []string
 	message  string
-	verbatim bool
 }
 
 func (r errorRule) matches(msg string) bool {
@@ -123,8 +121,8 @@ var errorRules = []errorRule{
 	// Tier 1: owned/known anchored signals.
 	// These two carry the rule's own JavaScript error text, which may contain
 	// any phrase below, so they match first.
-	{kind: ErrKindScanError, contains: []string{"the rule failed in"}, message: "rule failed", verbatim: true},
-	{kind: ErrKindScanError, contains: []string{"the rule does not match its examples"}, message: "rule does not match its examples", verbatim: true},
+	{kind: ErrKindScanError, contains: []string{"the rule failed in"}, message: "rule failed"},
+	{kind: ErrKindScanError, contains: []string{"the rule does not match its examples"}, message: "rule does not match its examples"},
 	{kind: ErrKindGitError, contains: []string{"remote not found"}, message: "remote not found"},
 	{kind: ErrKindGitError, contains: []string{"Unable to parse git ignores"}, message: "unable to parse .git"},
 
@@ -177,8 +175,6 @@ var errorRules = []errorRule{
 	{kind: ErrKindScanError, contains: []string{"failed to run", "--help"}, message: "scanner probe failed"},
 }
 
-var exitStatusRe = regexp.MustCompile(`exit status (\d+)`)
-
 // errorClassification is the privacy-preserving projection of an error:
 // a categorized kind and, for known errors, a curated safe message.
 type errorClassification struct {
@@ -196,15 +192,7 @@ func classifyError(err error) errorClassification {
 	if message == "" {
 		message = kindDescriptions[rule.kind]
 	}
-	if rule.verbatim {
-		return errorClassification{kind: rule.kind, message: message}
-	}
-	raw := err.Error()
-	var scannerErr *ephemeral.ScannerError
-	if errors.As(err, &scannerErr) {
-		raw = scannerErr.Err.Error()
-	}
-	return errorClassification{kind: rule.kind, message: decorateMessage(message, raw)}
+	return errorClassification{kind: rule.kind, message: decorateMessage(message, err)}
 }
 
 // matchErrorRule resolves the error kind and any rule-specific message override.
@@ -223,6 +211,10 @@ func matchErrorRule(err error) errorRule {
 	if errors.As(err, &scannerErr) {
 		return errorRule{kind: ErrKindScanError, message: "ephemeral scanner failed"}
 	}
+	var nameErr *promote.InvalidNameError
+	if errors.As(err, &nameErr) {
+		return errorRule{kind: ErrKindInvalidArguments, message: "invalid rule or ruleset name"}
+	}
 	// A wrapped os/fs "not found" (e.g. a failed os.Stat on a missing scan
 	// target) is categorized by chain, not phrasing, so a new human-readable
 	// message can never silently regress it into Unknown.
@@ -239,15 +231,16 @@ func matchErrorRule(err error) errorRule {
 	return errorRule{kind: ErrKindUnknown}
 }
 
-// decorateMessage appends the process exit code to a curated message when the
-// raw error carries one. It only ever combines constants we control with a
-// numeric exit code, so no raw error text leaks into telemetry.
-func decorateMessage(message, raw string) string {
+// decorateMessage appends the process exit code to a curated message when err
+// wraps a process exit. The code comes from the *exec.ExitError, never from the
+// error text, which can quote paths, rule names, or rule source.
+func decorateMessage(message string, err error) string {
 	if message == "" {
 		return ""
 	}
-	if m := exitStatusRe.FindStringSubmatch(raw); m != nil {
-		return fmt.Sprintf("%s (exit status %s)", message, m[1])
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) && exitErr.ExitCode() >= 0 {
+		return fmt.Sprintf("%s (exit status %d)", message, exitErr.ExitCode())
 	}
 	return message
 }

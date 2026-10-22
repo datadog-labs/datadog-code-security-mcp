@@ -219,11 +219,11 @@ func prepare(req Request) (preparedRequest, error) {
 		rulesetName = defaultRulesetName
 	}
 	ruleName := strings.TrimSpace(req.RuleName)
-	if err := validateSlug(rulesetName); err != nil {
-		return preparedRequest{}, fmt.Errorf("ruleset name: %w", err)
+	if reason := validateSlug(rulesetName); reason != "" {
+		return preparedRequest{}, &InvalidNameError{Field: "ruleset name", Name: rulesetName, Reason: reason}
 	}
-	if err := validateSlug(ruleName); err != nil {
-		return preparedRequest{}, fmt.Errorf("rule name: %w", err)
+	if reason := validateSlug(ruleName); reason != "" {
+		return preparedRequest{}, &InvalidNameError{Field: "rule name", Name: ruleName, Reason: reason}
 	}
 	if _, err := ephemeral.BuildRulesJSON(ephemeral.Input{
 		RuleCode:        req.RuleCode,
@@ -496,18 +496,30 @@ func rawID(raw json.RawMessage) string {
 	return ""
 }
 
-func validateSlug(name string) error {
+// InvalidNameError means a rule or ruleset name is not a valid slug.
+type InvalidNameError struct {
+	Field  string
+	Name   string
+	Reason string
+}
+
+func (e *InvalidNameError) Error() string {
+	return fmt.Sprintf("%s: %q %s", e.Field, e.Name, e.Reason)
+}
+
+// validateSlug returns why name is not a valid slug, or "" when it is.
+func validateSlug(name string) string {
 	if len(name) < minSlugLength || len(name) > maxSlugLength {
-		return fmt.Errorf("%q must be %d to %d characters", name, minSlugLength, maxSlugLength)
+		return fmt.Sprintf("must be %d to %d characters", minSlugLength, maxSlugLength)
 	}
 	if name[0] == '-' || name[len(name)-1] == '-' {
-		return fmt.Errorf("%q cannot start or end with a hyphen", name)
+		return "cannot start or end with a hyphen"
 	}
 	previousDash := false
 	for _, r := range name {
 		if r == '-' {
 			if previousDash {
-				return fmt.Errorf("%q cannot contain a double hyphen", name)
+				return "cannot contain a double hyphen"
 			}
 			previousDash = true
 			continue
@@ -516,10 +528,10 @@ func validateSlug(name string) error {
 		switch {
 		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
 		case r >= 'A' && r <= 'Z':
-			return fmt.Errorf("%q must be lowercase", name)
+			return "must be lowercase"
 		default:
-			return fmt.Errorf("%q contains %q; use only a-z, 0-9, and hyphens", name, string(r))
+			return fmt.Sprintf("contains %q; use only a-z, 0-9, and hyphens", string(r))
 		}
 	}
-	return nil
+	return ""
 }

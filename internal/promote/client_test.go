@@ -363,8 +363,8 @@ func TestValidateSlugAcceptsOnlyASCII(t *testing.T) {
 		"Missing-admin": false,
 		"rule_admin":    false,
 	} {
-		if err := validateSlug(name); (err == nil) != ok {
-			t.Errorf("validateSlug(%q) = %v, want ok=%v", name, err, ok)
+		if reason := validateSlug(name); (reason == "") != ok {
+			t.Errorf("validateSlug(%q) = %q, want ok=%v", name, reason, ok)
 		}
 	}
 }

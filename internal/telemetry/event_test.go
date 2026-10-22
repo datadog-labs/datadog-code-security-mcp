@@ -2,14 +2,17 @@ package telemetry
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/datadog-labs/datadog-code-security-mcp/internal/ephemeral"
+	"github.com/datadog-labs/datadog-code-security-mcp/internal/promote"
 )
 
 func TestErrorInfoFromErrorHasCuratedMessage(t *testing.T) {
@@ -51,26 +54,26 @@ func TestClassifyErrorAlwaysHasMessage(t *testing.T) {
 func TestErrorInfoFromErrorKnownGitErrors(t *testing.T) {
 	cases := []struct {
 		name        string
-		raw         string
+		err         error
 		wantKind    string
 		wantMessage string
 	}{
 		{
 			name:        "iac remote not found",
-			raw:         "iac scanner execution failed: exit status 126 Output: Program failed: error retrieving repository commit information: error retrieving remote `origin`: remote not found",
+			err:         fmt.Errorf("iac scanner execution failed: %w\nOutput: Program failed: error retrieving repository commit information: error retrieving remote `origin`: remote not found", exitError(t, 126)),
 			wantKind:    ErrKindGitError,
 			wantMessage: "remote not found (exit status 126)",
 		},
 		{
 			name:        "sbom unable to parse git ignores",
-			raw:         `SBOM generation failed: SBOM generation error for path ".": scanner execution failed: exit status 127 stderr: Unable to parse git ignores: open /Users/alice/repo/.git/info/exclude: not a directory stdout:`,
+			err:         fmt.Errorf(`SBOM generation failed: SBOM generation error for path ".": scanner execution failed: %w stderr: Unable to parse git ignores: open /Users/alice/repo/.git/info/exclude: not a directory stdout:`, exitError(t, 127)),
 			wantKind:    ErrKindGitError,
 			wantMessage: "unable to parse .git (exit status 127)",
 		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			info := ErrorInfoFromError(fmt.Errorf("%s", tc.raw))
+			info := ErrorInfoFromError(tc.err)
 			if info == nil {
 				t.Fatal("expected non-nil ErrorInfo")
 			}
@@ -201,8 +204,8 @@ func TestCategorizeErrorWrappedNotExist(t *testing.T) {
 func TestErrorInfoFromErrorRulesAPIReadFailure(t *testing.T) {
 	// datadog-static-analyzer emits this when it cannot fetch rules from the
 	// Datadog API — almost always caused by a rejected or missing API key.
-	raw := "sast: detection failed: scanner execution failed: exit status 1\nstderr: Error: error when reading rules from API"
-	info := ErrorInfoFromError(fmt.Errorf("%s", raw))
+	err := fmt.Errorf("sast: detection failed: scanner execution failed: %w\nstderr: Error: error when reading rules from API", exitError(t, 1))
+	info := ErrorInfoFromError(err)
 	if info == nil {
 		t.Fatal("expected non-nil ErrorInfo")
 	}
@@ -216,9 +219,8 @@ func TestErrorInfoFromErrorRulesAPIReadFailure(t *testing.T) {
 }
 
 func TestClassifyErrorIgnoresTheEphemeralScannerLog(t *testing.T) {
-	exitErr := exec.Command("sh", "-c", "exit 3").Run()
 	err := fmt.Errorf("the rule was not saved: %w", &ephemeral.ScannerError{
-		Err: exitErr,
+		Err: exitError(t, 3),
 		Log: "query: the rule failed in executable file not found exit status 9",
 	})
 
@@ -226,4 +228,48 @@ func TestClassifyErrorIgnoresTheEphemeralScannerLog(t *testing.T) {
 	if got.kind != ErrKindScanError || got.message != "ephemeral scanner failed (exit status 3)" {
 		t.Errorf("classifyError = %+v", got)
 	}
+}
+
+func TestClassifyErrorTakesTheExitCodeOnlyFromAProcess(t *testing.T) {
+	const digits = "exit status 4111111111111111"
+	_, pathErr := ephemeral.Scan(context.Background(), ephemeral.ScanRequest{
+		Input:     ephemeral.Input{RuleCode: "function visit() {}", TreeSitterQuery: "(identifier) @id", Language: "GO"},
+		Directory: t.TempDir(),
+		Paths:     []string{"../" + digits},
+	})
+	ruleErr := promote.Validate(promote.Request{
+		UserConfirmed: true, RuleCode: "function visit() {}", TreeSitterQuery: "(identifier) @id", Language: "GO",
+		RuleName: digits, ShortDescription: "short", Description: "long",
+	})
+	cases := map[string]struct {
+		err         error
+		wantMessage string
+	}{
+		"rejected path":      {pathErr, "path outside scan directory"},
+		"rejected rule name": {ruleErr, "invalid rule or ruleset name"},
+		"process exit":       {fmt.Errorf("scanner execution failed: %w", exitError(t, 2)), kindDescriptions[ErrKindScanError] + " (exit status 2)"},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			if tc.err == nil || !strings.Contains(tc.err.Error(), digits) && name != "process exit" {
+				t.Fatalf("error = %v, want one that quotes %q", tc.err, digits)
+			}
+			if got := classifyError(tc.err).message; got != tc.wantMessage {
+				t.Errorf("message = %q, want %q", got, tc.wantMessage)
+			}
+		})
+	}
+}
+
+// exitError runs the test binary as a helper that exits with code.
+func exitError(t *testing.T, code int) error {
+	t.Helper()
+	cmd := configHelperCommand(t, t.TempDir(), "exit")
+	cmd.Env = append(cmd.Env, "TELEMETRY_EXIT_CODE="+strconv.Itoa(code))
+	err := cmd.Run()
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) || exitErr.ExitCode() != code {
+		t.Fatalf("helper exit = %v, want exit status %d", err, code)
+	}
+	return err
 }

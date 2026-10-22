@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -542,6 +543,9 @@ func TestConfigHelperProcess(t *testing.T) {
 			t.Fatalf("load errors: %v", result.errors)
 		}
 		_, _ = fmt.Fprintln(os.Stdout, result.config.InstallID)
+	case "exit":
+		code, _ := strconv.Atoi(os.Getenv("TELEMETRY_EXIT_CODE"))
+		os.Exit(code)
 	default:
 		t.Fatalf("unknown helper action %q", os.Getenv("TELEMETRY_CONFIG_ACTION"))
 	}
