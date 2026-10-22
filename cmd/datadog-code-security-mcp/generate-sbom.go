@@ -92,12 +92,13 @@ func runGenerateSBOM(path string, workingDir string, outputJSON bool) error {
 		}
 		// Generate can report a failure via result.Error while returning a nil
 		// Go error (e.g. missing binary, exec/parse failure). Record it as a
-		// telemetry failure so these runs aren't counted as successful. The raw
-		// text is only used by the telemetry layer to pick a categorized kind;
-		// it never reaches the wire. Output/exit behavior is unchanged — the
-		// human/JSON renderers still surface result.Error to the user.
+		// telemetry failure so these runs aren't counted as successful. The
+		// cause, when set, keeps the process exit on the chain. The raw text
+		// is only used to pick a categorized kind and never reaches the wire.
+		// Output/exit behavior is unchanged — the human/JSON renderers still
+		// surface result.Error to the user.
 		if err == nil && result.Error != nil {
-			event.Failure = errors.New(result.Error.Error)
+			event.Failure = scanErrorForTelemetry(result.Error)
 		}
 	}
 	if err != nil {
@@ -108,6 +109,20 @@ func runGenerateSBOM(path string, workingDir string, outputJSON bool) error {
 		return outputSBOMResultsJSON(result)
 	}
 	return outputSBOMResultsHuman(result)
+}
+
+// scanErrorForTelemetry is the error recorded when Generate reports failure
+// through result.Error and a nil Go error. Cause is the process error, so
+// telemetry can read its exit code. Without a cause, the message string is
+// still enough to categorize the failure.
+func scanErrorForTelemetry(scanErr *types.ScanError) error {
+	if scanErr == nil {
+		return nil
+	}
+	if scanErr.Cause != nil {
+		return scanErr.Cause
+	}
+	return errors.New(scanErr.Error)
 }
 
 func outputSBOMResultsJSON(result *types.SBOMResult) error {

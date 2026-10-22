@@ -824,6 +824,22 @@ func TestRunDirectScan_InvalidScanTypeUsesSentinel(t *testing.T) {
 	}
 }
 
+func TestScanErrorForTelemetryKeepsTheCause(t *testing.T) {
+	cause := errors.New("scanner execution failed: exit status 7")
+	got := scanErrorForTelemetry(&types.ScanError{Error: cause.Error(), Cause: cause})
+	if !errors.Is(got, cause) {
+		t.Fatalf("telemetry error = %v, want the original cause", got)
+	}
+
+	fallback := scanErrorForTelemetry(&types.ScanError{Error: "datadog-sbom-generator not found in PATH"})
+	if fallback == nil || fallback.Error() != "datadog-sbom-generator not found in PATH" || errors.Unwrap(fallback) != nil {
+		t.Fatalf("message-only error = %v", fallback)
+	}
+	if scanErrorForTelemetry(nil) != nil {
+		t.Fatal("nil scan error must stay nil")
+	}
+}
+
 // TestRunGenerateSBOM_ResultErrorRecordedAsFailure is the regression guard for
 // the bug where generator.Generate reporting a failure via result.Error (while
 // returning a nil Go error, e.g. missing binary or exec/parse failure) was
