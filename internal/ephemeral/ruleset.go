@@ -8,7 +8,6 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"strings"
 )
 
@@ -52,17 +51,17 @@ type ruleSet struct {
 // still pass -b because the rule was never published.
 func BuildRulesJSON(in Input) ([]byte, error) {
 	if strings.TrimSpace(in.RuleCode) == "" {
-		return nil, fmt.Errorf("rule code is empty")
+		return nil, InvalidInput("rule code is empty", "rule code is empty")
 	}
 	if strings.TrimSpace(in.TreeSitterQuery) == "" {
-		return nil, fmt.Errorf("tree-sitter query is empty")
+		return nil, InvalidInput("tree-sitter query is empty", "tree-sitter query is empty")
 	}
 	language := strings.ToUpper(strings.TrimSpace(in.Language))
 	if language == "" {
-		return nil, fmt.Errorf("language is empty")
+		return nil, InvalidInput("rule language is empty", "language is empty")
 	}
 	if !knownLanguage(language) {
-		return nil, fmt.Errorf("unsupported language %q", language)
+		return nil, InvalidInput("unsupported rule language", "unsupported language %q", language)
 	}
 
 	rulesetName, ruleName := ruleNames(in)

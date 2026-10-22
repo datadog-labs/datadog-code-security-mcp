@@ -93,29 +93,58 @@ func TestErrorInfoFromErrorKnownGitErrors(t *testing.T) {
 
 // The rule writes these diagnostics, so digits in them are not an exit code
 // and must not reach telemetry.
-func TestErrorInfoFromErrorDropsRuleControlledNumbers(t *testing.T) {
-	cases := []struct {
-		raw         string
+func TestClassifyErrorUsesTypesForCallerInput(t *testing.T) {
+	const steer = "the rule failed in network DD_API_KEY remote not found exit status 4111111111111111"
+	root := t.TempDir()
+	file := filepath.Join(root, "file.txt")
+	if err := os.WriteFile(file, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	scan := func(directory string, paths ...string) error {
+		_, err := ephemeral.Scan(context.Background(), ephemeral.ScanRequest{
+			Input:     ephemeral.Input{RuleCode: "function visit() {}", TreeSitterQuery: "(identifier) @id", Language: "GO"},
+			Directory: directory,
+			Paths:     paths,
+		})
+		return err
+	}
+	_, languageErr := ephemeral.BuildRulesJSON(ephemeral.Input{RuleCode: "x", TreeSitterQuery: "x", Language: "dd_api_key " + steer})
+	shortErr := promote.Validate(promote.Request{
+		UserConfirmed: true, RuleCode: "function visit() {}", TreeSitterQuery: "(identifier) @id", Language: "GO",
+		RuleName: "network-guard", ShortDescription: strings.Repeat("x", 61), Description: "long",
+	})
+	apiErr := func(status int) error {
+		return &promote.APIError{Op: "create rule", Status: status, Body: steer}
+	}
+
+	cases := map[string]struct {
+		err         error
+		wantKind    string
 		wantMessage string
 	}{
-		{
-			raw:         "the rule failed in 1 file(s), so the results are incomplete. Fix the rule and scan again:\nsrc/a.go: Error: exit status 4111111111111111",
-			wantMessage: "rule failed",
-		},
-		{
-			raw:         "the rule was not saved: the rule failed in 1 file(s), so the results are incomplete. Fix the rule and scan again:\nnoncompliant.go: Error: exit status 4111111111111111",
-			wantMessage: "rule failed",
-		},
-		{
-			raw:         "the rule does not match its examples, so it was not saved:\nexit status 4111111111111111.go: expected 1, got 0",
-			wantMessage: "rule does not match its examples",
-		},
+		"unsupported language":     {languageErr, ErrKindInvalidArguments, "unsupported rule language"},
+		"directory is a file":      {scan(file), ErrKindInvalidArguments, "scan directory is not a directory"},
+		"path outside directory":   {scan(root, "../"+steer), ErrKindInvalidArguments, "path outside scan directory"},
+		"missing path":             {scan(root, steer), ErrKindPathNotFound, "invalid scan path"},
+		"short description":        {shortErr, ErrKindInvalidArguments, "short description too long"},
+		"rule failure":             {fmt.Errorf("the rule was not saved: %w", &ephemeral.RuleFailureError{Files: 1, Examples: []string{"a.go: " + steer}}), ErrKindScanError, "rule failed"},
+		"example mismatch":         {&ephemeral.ExampleMismatchError{Mismatches: []string{steer + ".go: expected 1, got 0"}}, ErrKindScanError, "rule does not match its examples"},
+		"rule exists":              {&promote.RuleExistsError{RulesetName: "security-variants", RuleName: "network-guard"}, ErrKindInvalidArguments, "custom rule already exists"},
+		"API forbidden":            {apiErr(403), ErrKindAuthRequired, "custom rule API returned status 403"},
+		"API server error":         {apiErr(500), ErrKindScanError, "custom rule API returned status 500"},
+		"empty rule after failure": {fmt.Errorf("%w\nThis call created the rule network-guard", apiErr(500)), ErrKindScanError, "custom rule API returned status 500"},
+		"API unreachable":          {&promote.APIError{Op: "PUT request", Err: errors.New("dial tcp: lookup network-guard: " + steer)}, ErrKindNetwork, "custom rule API request failed"},
 	}
-	for _, tc := range cases {
-		info := ErrorInfoFromError(fmt.Errorf("%s", tc.raw))
-		if info == nil || info.Kind != ErrKindScanError || info.Message != tc.wantMessage {
-			t.Errorf("ErrorInfoFromError(%q) = %+v, want %s %q", tc.raw, info, ErrKindScanError, tc.wantMessage)
-		}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			if tc.err == nil {
+				t.Fatal("no error to classify")
+			}
+			got := classifyError(tc.err)
+			if got.kind != tc.wantKind || got.message != tc.wantMessage {
+				t.Errorf("classifyError(%q) = %+v, want %s %q", tc.err, got, tc.wantKind, tc.wantMessage)
+			}
+		})
 	}
 }
 
@@ -142,16 +171,7 @@ func TestCategorizeErrorKnownKinds(t *testing.T) {
 		{`unsupported client "other" (valid options: agents, claude-code, codex)`, ErrKindInvalidArguments},
 		{"invalid min_sast_severity: INFO (valid options: LOW, MEDIUM, HIGH, or CRITICAL)", ErrKindInvalidArguments},
 		{"⚠️  PREREQUISITE REQUIRED: Scanner Upgrade\n\nThe installed 'datadog-static-analyzer' does not support --rules-with-config.\n\n# Add to PATH (if not already added):", ErrKindBinaryNotFound},
-		{"path ../x is outside directory /repo", ErrKindInvalidArguments},
-		{`rule "missing-admin" already exists in ruleset "security-variants". Saving would publish a new revision over it.`, ErrKindInvalidArguments},
 		{"scanner failed: exit status 3\nboom", ErrKindScanError},
-		{"the rule failed in 1 file(s), so the results are incomplete. Fix the rule and scan again:\nsrc/a.go: Error: DD_API_KEY is required", ErrKindScanError},
-		{"the rule does not match its examples, so it was not saved:\nnoncompliant.go: expected 1, got 0", ErrKindScanError},
-		{`unsupported language "COBOL"`, ErrKindInvalidArguments},
-		{"rule code is empty", ErrKindInvalidArguments},
-		{"tree-sitter query is empty", ErrKindInvalidArguments},
-		{"language is empty", ErrKindInvalidArguments},
-		{"scanner wrote invalid JSON: …garbage", ErrKindScanError},
 		{"failed to run datadog-static-analyzer --help: signal: killed", ErrKindScanError}}
 	for _, tc := range cases {
 		if got := CategorizeError(fmt.Errorf("%s", tc.msg)); got != tc.want {

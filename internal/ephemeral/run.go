@@ -111,7 +111,7 @@ func scan(ctx context.Context, req ScanRequest, trackScanned bool) (ScanResult, 
 	data, readErr := os.ReadFile(outputPath)
 	hasFindings := readErr == nil && len(bytes.TrimSpace(data)) > 0
 	if hasFindings && !json.Valid(data) {
-		return ScanResult{}, nil, fmt.Errorf("scanner wrote invalid JSON: %s", log)
+		return ScanResult{}, nil, &ScannerError{Err: errors.New("scanner wrote invalid JSON"), Log: log.String()}
 	}
 	if err := log.failure(); err != nil {
 		return ScanResult{}, nil, err
@@ -123,7 +123,7 @@ func scan(ctx context.Context, req ScanRequest, trackScanned bool) (ScanResult, 
 		return ScanResult{}, nil, &ScannerError{Err: runErr, Log: log.String()}
 	}
 	if readErr != nil {
-		return ScanResult{}, nil, fmt.Errorf("read scanner output: %w", readErr)
+		return ScanResult{}, nil, &ScannerError{Err: fmt.Errorf("read scanner output: %w", readErr), Log: log.String()}
 	}
 	return ScanResult{Findings: json.RawMessage("[]")}, log.scanned, nil
 }
@@ -172,18 +172,18 @@ func resolveTargets(directory string, paths []string) (string, []string, error) 
 	}
 	root, err := filepath.Abs(filepath.Clean(directory))
 	if err != nil {
-		return "", nil, fmt.Errorf("directory: %w", err)
+		return "", nil, InvalidInput("invalid scan directory", "directory: %w", err)
 	}
 	info, err := os.Stat(root)
 	if err != nil {
-		return "", nil, fmt.Errorf("directory: %w", err)
+		return "", nil, InvalidInput("invalid scan directory", "directory: %w", err)
 	}
 	if !info.IsDir() {
-		return "", nil, fmt.Errorf("directory %s is not a directory", root)
+		return "", nil, InvalidInput("scan directory is not a directory", "directory %s is not a directory", root)
 	}
 	resolvedRoot, err := filepath.EvalSymlinks(root)
 	if err != nil {
-		return "", nil, fmt.Errorf("directory: %w", err)
+		return "", nil, InvalidInput("invalid scan directory", "directory: %w", err)
 	}
 
 	var relative []string
@@ -203,13 +203,13 @@ func resolveTargets(directory string, paths []string) (string, []string, error) 
 		resolved, err := filepath.EvalSymlinks(target)
 		if err != nil {
 			if _, ok := within(root, target); !ok {
-				return "", nil, fmt.Errorf("path %s is outside directory %s", path, root)
+				return "", nil, InvalidInput("path outside scan directory", "path %s is outside directory %s", path, root)
 			}
-			return "", nil, fmt.Errorf("path %s: %w", path, err)
+			return "", nil, InvalidInput("invalid scan path", "path %s: %w", path, err)
 		}
 		rel, ok := within(resolvedRoot, resolved)
 		if !ok {
-			return "", nil, fmt.Errorf("path %s is outside directory %s", path, root)
+			return "", nil, InvalidInput("path outside scan directory", "path %s is outside directory %s", path, root)
 		}
 		relative = append(relative, rel)
 	}

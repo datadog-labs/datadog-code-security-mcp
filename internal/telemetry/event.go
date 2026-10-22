@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"net/http"
 	"os/exec"
 	"strings"
 
@@ -119,10 +120,6 @@ func (r errorRule) matches(msg string) bool {
 // rule now falls through to ErrKindUnknown rather than being guessed.
 var errorRules = []errorRule{
 	// Tier 1: owned/known anchored signals.
-	// These two carry the rule's own JavaScript error text, which may contain
-	// any phrase below, so they match first.
-	{kind: ErrKindScanError, contains: []string{"the rule failed in"}, message: "rule failed"},
-	{kind: ErrKindScanError, contains: []string{"the rule does not match its examples"}, message: "rule does not match its examples"},
 	{kind: ErrKindGitError, contains: []string{"remote not found"}, message: "remote not found"},
 	{kind: ErrKindGitError, contains: []string{"Unable to parse git ignores"}, message: "unable to parse .git"},
 
@@ -158,12 +155,6 @@ var errorRules = []errorRule{
 	{kind: ErrKindInvalidArguments, contains: []string{constants.ErrInvalidArguments}},
 	{kind: ErrKindInvalidArguments, contains: []string{"unsupported client \""}},
 	{kind: ErrKindInvalidArguments, contains: []string{"invalid min_sast_severity"}, message: "invalid min_sast_severity"},
-	{kind: ErrKindInvalidArguments, contains: []string{"is outside directory"}, message: "path outside scan directory"},
-	{kind: ErrKindInvalidArguments, contains: []string{"already exists in ruleset"}, message: "custom rule already exists"},
-	{kind: ErrKindInvalidArguments, contains: []string{"unsupported language"}, message: "unsupported rule language"},
-	{kind: ErrKindInvalidArguments, contains: []string{"rule code is empty"}, message: "rule code is empty"},
-	{kind: ErrKindInvalidArguments, contains: []string{"tree-sitter query is empty"}, message: "tree-sitter query is empty"},
-	{kind: ErrKindInvalidArguments, contains: []string{"language is empty"}, message: "rule language is empty"},
 	{kind: ErrKindInvalidArguments, contains: []string{"is required"}},
 	{kind: ErrKindInvalidArguments, contains: []string{"must be"}},
 
@@ -171,7 +162,6 @@ var errorRules = []errorRule{
 	{kind: ErrKindScanError, contains: []string{"scanner execution failed"}},
 	{kind: ErrKindScanError, contains: []string{"detection failed"}},
 	{kind: ErrKindScanError, contains: []string{"scanner failed:"}},
-	{kind: ErrKindScanError, contains: []string{"scanner wrote invalid JSON"}, message: "scanner wrote invalid JSON"},
 	{kind: ErrKindScanError, contains: []string{"failed to run", "--help"}, message: "scanner probe failed"},
 }
 
@@ -205,15 +195,8 @@ func matchErrorRule(err error) errorRule {
 	if errors.As(err, &netErr) && netErr.Timeout() {
 		return errorRule{kind: ErrKindTimeout}
 	}
-	// The analyzer log in this error can quote the caller's rule or query, so
-	// its text must not pick the rule below.
-	var scannerErr *ephemeral.ScannerError
-	if errors.As(err, &scannerErr) {
-		return errorRule{kind: ErrKindScanError, message: "ephemeral scanner failed"}
-	}
-	var nameErr *promote.InvalidNameError
-	if errors.As(err, &nameErr) {
-		return errorRule{kind: ErrKindInvalidArguments, message: "invalid rule or ruleset name"}
+	if rule, ok := matchCallerInputError(err); ok {
+		return rule
 	}
 	// A wrapped os/fs "not found" (e.g. a failed os.Stat on a missing scan
 	// target) is categorized by chain, not phrasing, so a new human-readable
@@ -229,6 +212,48 @@ func matchErrorRule(err error) errorRule {
 		}
 	}
 	return errorRule{kind: ErrKindUnknown}
+}
+
+// matchCallerInputError classifies the ephemeral and custom rule errors by
+// type. Their text can quote caller input (paths, rule names, rule source, or
+// API responses), so it must not pick a substring rule.
+func matchCallerInputError(err error) (errorRule, bool) {
+	var (
+		scannerErr  *ephemeral.ScannerError
+		failureErr  *ephemeral.RuleFailureError
+		mismatchErr *ephemeral.ExampleMismatchError
+		inputErr    *ephemeral.InputError
+		nameErr     *promote.InvalidNameError
+		existsErr   *promote.RuleExistsError
+		apiErr      *promote.APIError
+	)
+	switch {
+	case errors.As(err, &failureErr):
+		return errorRule{kind: ErrKindScanError, message: "rule failed"}, true
+	case errors.As(err, &mismatchErr):
+		return errorRule{kind: ErrKindScanError, message: "rule does not match its examples"}, true
+	case errors.As(err, &scannerErr):
+		return errorRule{kind: ErrKindScanError, message: "ephemeral scanner failed"}, true
+	case errors.As(err, &nameErr):
+		return errorRule{kind: ErrKindInvalidArguments, message: "invalid rule or ruleset name"}, true
+	case errors.As(err, &inputErr):
+		if errors.Is(err, fs.ErrNotExist) {
+			return errorRule{kind: ErrKindPathNotFound, message: inputErr.Reason}, true
+		}
+		return errorRule{kind: ErrKindInvalidArguments, message: inputErr.Reason}, true
+	case errors.As(err, &existsErr):
+		return errorRule{kind: ErrKindInvalidArguments, message: "custom rule already exists"}, true
+	case errors.As(err, &apiErr):
+		switch apiErr.Status {
+		case 0:
+			return errorRule{kind: ErrKindNetwork, message: "custom rule API request failed"}, true
+		case http.StatusUnauthorized, http.StatusForbidden:
+			return errorRule{kind: ErrKindAuthRequired, message: fmt.Sprintf("custom rule API returned status %d", apiErr.Status)}, true
+		default:
+			return errorRule{kind: ErrKindScanError, message: fmt.Sprintf("custom rule API returned status %d", apiErr.Status)}, true
+		}
+	}
+	return errorRule{}, false
 }
 
 // decorateMessage appends the process exit code to a curated message when err

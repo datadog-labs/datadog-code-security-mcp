@@ -8,7 +8,6 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -86,6 +85,38 @@ type RuleExistsError struct {
 
 func (e *RuleExistsError) Error() string {
 	return fmt.Sprintf("rule %q already exists in ruleset %q. Saving would publish a new revision over it. Ask the user, then retry with overwrite set to true (--overwrite in the CLI), or choose another rule name", e.RuleName, e.RulesetName)
+}
+
+// APIError means a custom rule API call failed. Status is 0 when no response
+// arrived. Body is the start of the response, which can echo the request.
+type APIError struct {
+	Op     string
+	Status int
+	Body   string
+	Err    error
+}
+
+func (e *APIError) Error() string {
+	if e.Status == 0 {
+		return fmt.Sprintf("%s failed: %v", e.Op, e.Err)
+	}
+	return fmt.Sprintf("%s returned status %d: %s", e.Op, e.Status, e.Body)
+}
+
+func (e *APIError) Unwrap() error { return e.Err }
+
+// maxErrorBody bounds the response text an APIError keeps.
+const maxErrorBody = 1000
+
+func apiStatusError(op string, status int, body string) error {
+	if len(body) > maxErrorBody {
+		cut := maxErrorBody
+		for cut > 0 && !utf8.RuneStart(body[cut]) {
+			cut--
+		}
+		body = body[:cut] + "…"
+	}
+	return &APIError{Op: op, Status: status, Body: body}
 }
 
 const missingRevisionWarning = "The rule was saved, but Datadog did not return its revision id. Open the rule page to see the revision."
@@ -193,7 +224,7 @@ func (c *Client) ruleExists(ctx context.Context, req preparedRequest) (bool, err
 	case http.StatusNotFound:
 		return false, nil
 	default:
-		return false, fmt.Errorf("check existing rule returned status %d: %s", status, resp)
+		return false, apiStatusError("check existing rule", status, resp)
 	}
 }
 
@@ -240,7 +271,7 @@ func prepare(req Request) (preparedRequest, error) {
 		short = defaultShort
 	}
 	if utf8.RuneCountInString(short) > maxShortDescription {
-		return preparedRequest{}, fmt.Errorf("short description is longer than %d characters", maxShortDescription)
+		return preparedRequest{}, ephemeral.InvalidInput("short description too long", "short description is longer than %d characters", maxShortDescription)
 	}
 	description := strings.TrimSpace(req.Description)
 	if description == "" {
@@ -263,7 +294,7 @@ func prepare(req Request) (preparedRequest, error) {
 	}, nil
 }
 
-var errNotConfirmed = errors.New("user_confirmed must be true before saving a custom rule")
+var errNotConfirmed = ephemeral.InvalidInput("user_confirmed is not true", "user_confirmed must be true before saving a custom rule")
 
 // Validate checks everything Save checks before it calls the API, except the
 // credentials: confirmation, names, descriptions, and tests.
@@ -289,7 +320,7 @@ func ValidateTests(tests []Test) error {
 		}
 	}
 	if len(tests) != maxTests || zero != 1 || positive != 1 {
-		return fmt.Errorf("tests must be exactly %d examples: the fixed code with annotation_count 0, and the code before the fix with a positive annotation_count", maxTests)
+		return ephemeral.InvalidInput("examples must be one clean and one flagged", "tests must be exactly %d examples: the fixed code with annotation_count 0, and the code before the fix with a positive annotation_count", maxTests)
 	}
 	return nil
 }
@@ -303,14 +334,14 @@ func encodeTests(tests []Test) ([]any, error) {
 		filename := test.Filename
 		if strings.TrimSpace(filename) != filename || filename == "" || filename == "." || filename == ".." ||
 			strings.ContainsAny(filename, `/\`) {
-			return nil, fmt.Errorf("test filename must be a file name without directories or surrounding spaces")
+			return nil, ephemeral.InvalidInput("invalid example filename", "test filename must be a file name without directories or surrounding spaces")
 		}
 		code := test.Code
 		if strings.TrimSpace(code) == "" {
-			return nil, fmt.Errorf("test code is empty")
+			return nil, ephemeral.InvalidInput("example code is empty", "test code is empty")
 		}
 		if test.AnnotationCount < 0 {
-			return nil, fmt.Errorf("annotation_count must be >= 0")
+			return nil, ephemeral.InvalidInput("negative annotation_count", "annotation_count must be >= 0")
 		}
 		encoded = append(encoded, map[string]any{
 			"filename":         filename,
@@ -341,7 +372,7 @@ func (c *Client) ensureRuleset(ctx context.Context, req preparedRequest) (bool, 
 		return true, nil
 	}
 	if status != http.StatusOK {
-		return false, fmt.Errorf("create ruleset returned status %d: %s", status, resp)
+		return false, apiStatusError("create ruleset", status, resp)
 	}
 	return false, nil
 }
@@ -362,7 +393,7 @@ func (c *Client) ensureRule(ctx context.Context, req preparedRequest) (bool, err
 		return true, nil
 	}
 	if status != http.StatusOK {
-		return false, fmt.Errorf("create rule returned status %d: %s", status, resp)
+		return false, apiStatusError("create rule", status, resp)
 	}
 	return false, nil
 }
@@ -392,7 +423,7 @@ func (c *Client) createRevision(ctx context.Context, req preparedRequest) (strin
 		return "", err
 	}
 	if status != http.StatusOK {
-		return "", fmt.Errorf("create rule revision returned status %d: %s", status, resp)
+		return "", apiStatusError("create rule revision", status, resp)
 	}
 	if id := jsonAPIID(resp); id != "" {
 		return id, nil
@@ -443,12 +474,12 @@ func (c *Client) do(ctx context.Context, method, path string, body []byte) (int,
 
 	resp, err := c.http.Do(httpReq)
 	if err != nil {
-		return 0, "", fmt.Errorf("request failed: %w", err)
+		return 0, "", &APIError{Op: method + " request", Err: err}
 	}
 	defer func() { _ = resp.Body.Close() }()
 	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
-		return resp.StatusCode, "", fmt.Errorf("read response: %w", err)
+		return resp.StatusCode, "", &APIError{Op: "read response", Err: err}
 	}
 	return resp.StatusCode, strings.TrimSpace(string(respBody)), nil
 }

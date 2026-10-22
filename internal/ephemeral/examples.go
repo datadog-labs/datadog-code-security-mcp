@@ -44,7 +44,7 @@ func CheckExamples(ctx context.Context, in Input, examples []Example) error {
 	for i, example := range examples {
 		name := filepath.Base(example.Filename)
 		if name != example.Filename || name != strings.TrimSpace(name) || name == "." || name == ".." {
-			return fmt.Errorf("example filename %q must be a file name without directories or surrounding spaces", example.Filename)
+			return InvalidInput("invalid example filename", "example filename %q must be a file name without directories or surrounding spaces", example.Filename)
 		}
 		// Each example gets its own directory, so two examples may share a name.
 		sub := fmt.Sprintf("example-%d", i+1)
