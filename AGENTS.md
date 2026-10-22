@@ -42,6 +42,8 @@ cmd/datadog-code-security-mcp/  # CLI entry point (Cobra)
   ├── scan.go         # Direct scan command
   ├── start.go        # MCP server (STDIO transport)
   ├── generate-sbom.go # SBOM generation command
+  ├── ephemeral.go    # ephemeral-scan: run one unpublished SAST rule
+  ├── promote.go      # promote-sast-rule: save an approved rule as a custom rule
   └── version.go      # Version info
 
 internal/
@@ -63,6 +65,13 @@ internal/
   ├── sbom/           # SBOM generation
   │   ├── generator.go      # Wraps datadog-sbom-generator
   │   └── generator_test.go
+  ├── ephemeral/      # Local run of one caller-supplied SAST rule
+  │   ├── ruleset.go  # Builds the ruleset JSON the analyzer reads with -r
+  │   ├── run.go      # Runs the analyzer with --rules-with-config and validates paths
+  │   ├── failures.go # Reads rule failures from the analyzer's --debug output
+  │   └── examples.go # Checks a rule against its examples before it is saved
+  ├── promote/        # Custom rule API client (ruleset, rule, revision)
+  │   └── client.go
   ├── binary/         # Binary discovery & execution
   │   ├── manager.go      # Binary naming conventions, PATH lookup
   │   ├── executor.go     # Command execution with timeout
@@ -75,7 +84,8 @@ skills/                       # Skills embedded into release binaries
   ├── embed.go                # go:embed dd-codesec-* trees
   ├── dd-codesec-scan-and-fix/
   ├── dd-codesec-verify-findings/
-  └── dd-codesec-setup-toolchain/
+  ├── dd-codesec-setup-toolchain/
+  └── dd-codesec-find-security-variants/
 ```
 
 ## Skills
@@ -275,7 +285,8 @@ export DD_SITE=datadoghq.com
 7. ✅ **SBOM generation** - Generates and validates a component inventory
 8. ✅ **Setup command** - Verifies dry-run, installation, and `--remove-skills` in an isolated home
 9. ✅ **IaC scanner** - Detects infrastructure misconfigurations
-10. ✅ **Claude Desktop** - Configures local build (full mode only)
+10. ✅ **Ephemeral SAST rule** - Runs `testdata/ephemeral/` without API keys; only that rule reports, and the config's ignored paths stay ignored (requires datadog-static-analyzer 0.9.10 or later)
+11. ✅ **Claude Desktop** - Configures local build (full mode only)
 
 **Option 2: Manual Step-by-Step Testing**
 
@@ -565,7 +576,7 @@ func runCommand(userInput string) error {
 
 **Before pushing code:**
 1. ✅ Run `./scripts/test-e2e.sh --ci` locally
-2. ✅ Verify all 9 CI test steps pass
+2. ✅ Verify all 10 CI test steps pass
 3. ✅ Check test outputs in `/tmp/*-output.json`
 4. ✅ Test with Claude Desktop (`--full` mode) for MCP changes
 5. ✅ Review any warnings in test output

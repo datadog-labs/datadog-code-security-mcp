@@ -16,6 +16,10 @@ var semverRE = regexp.MustCompile(`\d+\.\d+\.\d+`)
 // VersionProbeTimeout bounds each scanner version subprocess.
 const VersionProbeTimeout = 2 * time.Second
 
+// FlagProbeTimeout bounds the --help subprocess run by SupportsFlag. A scan
+// fails when the probe times out, so it allows for a slow first launch.
+const FlagProbeTimeout = 10 * time.Second
+
 // Binary supported OS/architecture combination
 type Platform struct {
 	OS   string // "linux", "darwin", "windows"
@@ -266,6 +270,41 @@ func (bm *BinaryManager) GetVersion(ctx context.Context) string {
 		return m
 	}
 	return "unknown"
+}
+
+// SupportsFlag reports whether the binary at binaryPath lists flag in its
+// --help output. Feature detection is used instead of a version floor because
+// development builds report the version of the last release.
+func (bm *BinaryManager) SupportsFlag(ctx context.Context, binaryPath, flag string) (bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, FlagProbeTimeout)
+	defer cancel()
+	// no-dd-sa:go-security/command-injection - binaryPath comes from exec.LookPath in GetBinaryPath(), not user input
+	out, err := exec.CommandContext(ctx, binaryPath, "--help").Output()
+	if err != nil {
+		return false, fmt.Errorf("failed to run %s --help: %w", bm.config.BinaryName, err)
+	}
+	return strings.Contains(string(out), flag), nil
+}
+
+// UpgradeRequiredError reports that the installed binary lacks a capability
+// and repeats the install commands, which also upgrade an existing install.
+func (bm *BinaryManager) UpgradeRequiredError(capability string) error {
+	separator := strings.Repeat("━", 70)
+	return fmt.Errorf(
+		"⚠️  PREREQUISITE REQUIRED: Scanner Upgrade\n\n"+
+			"The installed '%s' does not support %s.\n\n"+
+			"%s\n"+
+			"ACTION REQUIRED: Upgrade the binary to the latest release\n"+
+			"%s\n\n"+
+			"Installation commands:\n\n"+
+			"%s\n\n"+
+			"This is a RECOVERABLE error. Upgrade the binary and retry",
+		bm.config.BinaryName,
+		capability,
+		separator,
+		separator,
+		bm.generateInstallInstructions(),
+	)
 }
 
 // Execute runs the binary with the given arguments

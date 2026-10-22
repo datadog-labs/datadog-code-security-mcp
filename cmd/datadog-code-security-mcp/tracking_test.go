@@ -4,9 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -821,6 +824,43 @@ func TestRunDirectScan_InvalidScanTypeUsesSentinel(t *testing.T) {
 	}
 	if strings.Contains(string(raw), rawArg) {
 		t.Errorf("telemetry event leaked raw scan-type argument %q: %s", rawArg, raw)
+	}
+}
+
+func TestScanErrorForTelemetryKeepsTheCause(t *testing.T) {
+	cause := errors.New("scanner execution failed: exit status 7")
+	got := scanErrorForTelemetry(&types.ScanError{Error: cause.Error(), Cause: cause})
+	if !errors.Is(got, cause) {
+		t.Fatalf("telemetry error = %v, want the original cause", got)
+	}
+
+	fallback := scanErrorForTelemetry(&types.ScanError{Error: "datadog-sbom-generator not found in PATH"})
+	if fallback == nil || fallback.Error() != "datadog-sbom-generator not found in PATH" || errors.Unwrap(fallback) != nil {
+		t.Fatalf("message-only error = %v", fallback)
+	}
+	if scanErrorForTelemetry(nil) != nil {
+		t.Fatal("nil scan error must stay nil")
+	}
+}
+
+func TestSBOMFailureTelemetryKeepsTheProcessExitCode(t *testing.T) {
+	cmd := exec.Command(os.Args[0], "-test.run=^TestSBOMExitHelperProcess$")
+	cmd.Env = append(os.Environ(), "SBOM_EXIT_HELPER=1")
+	exitErr := cmd.Run()
+	scanErr := &types.ScanError{
+		Error: "scanner execution failed: exit status 3",
+		Cause: fmt.Errorf("scanner execution failed: %w", exitErr),
+	}
+
+	info := telemetry.ErrorInfoFromError(scanErrorForTelemetry(scanErr))
+	if info == nil || !strings.HasSuffix(info.Message, "(exit status 3)") {
+		t.Fatalf("telemetry error = %+v, want the exit status 3 suffix", info)
+	}
+}
+
+func TestSBOMExitHelperProcess(t *testing.T) {
+	if os.Getenv("SBOM_EXIT_HELPER") == "1" {
+		os.Exit(3)
 	}
 }
 

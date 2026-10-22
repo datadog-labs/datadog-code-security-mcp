@@ -95,6 +95,7 @@ func (g *Generator) Generate(ctx context.Context, args types.SBOMArgs) (*types.S
 				DetectionType: types.DetectionTypeSBOM,
 				Error:         err.Error(),
 				Hint:          retryHintFromError(err),
+				Cause:         err,
 			},
 		}, nil
 	}

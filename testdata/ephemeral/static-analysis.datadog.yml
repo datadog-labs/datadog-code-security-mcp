@@ -1,0 +1,5 @@
+schema-version: v1
+rulesets:
+  - go-security
+ignore-paths:
+  - "generated/**"

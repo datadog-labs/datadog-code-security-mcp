@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -134,11 +133,12 @@ func handleGenerateSBOM(ctx context.Context, request mcp.CallToolRequest) (*mcp.
 	}
 	// A non-nil result.Error means generation failed even though Generate
 	// returned a nil Go error. Record it as a telemetry failure so these runs
-	// aren't counted as successful. The raw text is only used by the telemetry
-	// layer to pick a categorized kind; it never reaches the wire. The tool
-	// response is unchanged — formatSBOMResult still surfaces the error.
+	// aren't counted as successful. The cause, when set, keeps the process
+	// exit on the chain. The raw text is only used to pick a categorized kind
+	// and never reaches the wire. The tool response is unchanged —
+	// formatSBOMResult still surfaces the error.
 	if result.Error != nil {
-		event.Failure = errors.New(result.Error.Error)
+		event.Failure = scanErrorForTelemetry(result.Error)
 	}
 	return formatSBOMResult(result), nil
 }

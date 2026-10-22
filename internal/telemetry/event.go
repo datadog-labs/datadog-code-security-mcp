@@ -5,10 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"regexp"
+	"net/http"
+	"os/exec"
 	"strings"
 
 	"github.com/datadog-labs/datadog-code-security-mcp/internal/constants"
+	"github.com/datadog-labs/datadog-code-security-mcp/internal/ephemeral"
+	"github.com/datadog-labs/datadog-code-security-mcp/internal/promote"
 )
 
 // Status represents the severity level of a telemetry log event.
@@ -131,6 +134,7 @@ var errorRules = []errorRule{
 	{kind: ErrKindBinaryNotFound, contains: []string{"not found in PATH"}},
 	{kind: ErrKindBinaryNotFound, contains: []string{"executable file not found"}},
 	{kind: ErrKindBinaryNotFound, contains: []string{"binary validation failed"}},
+	{kind: ErrKindBinaryNotFound, contains: []string{"PREREQUISITE REQUIRED: Scanner Upgrade"}, message: "scanner upgrade required"},
 
 	{kind: ErrKindSetupError, contains: []string{"setup failed for:"}},
 	{kind: ErrKindSetupError, contains: []string{"resolve user home directory"}, message: "user home directory unavailable"},
@@ -157,9 +161,9 @@ var errorRules = []errorRule{
 	// Tier 2: residual foreign scanner failure text (last resort before Unknown).
 	{kind: ErrKindScanError, contains: []string{"scanner execution failed"}},
 	{kind: ErrKindScanError, contains: []string{"detection failed"}},
+	{kind: ErrKindScanError, contains: []string{"scanner failed:"}},
+	{kind: ErrKindScanError, contains: []string{"failed to run", "--help"}, message: "scanner probe failed"},
 }
-
-var exitStatusRe = regexp.MustCompile(`exit status (\d+)`)
 
 // errorClassification is the privacy-preserving projection of an error:
 // a categorized kind and, for known errors, a curated safe message.
@@ -173,49 +177,95 @@ func classifyError(err error) errorClassification {
 		return errorClassification{}
 	}
 
-	kind, override := matchErrorRule(err)
-	message := override
+	rule := matchErrorRule(err)
+	message := rule.message
 	if message == "" {
-		message = kindDescriptions[kind]
+		message = kindDescriptions[rule.kind]
 	}
-	return errorClassification{kind: kind, message: decorateMessage(message, err.Error())}
+	return errorClassification{kind: rule.kind, message: decorateMessage(message, err)}
 }
 
 // matchErrorRule resolves the error kind and any rule-specific message override.
-func matchErrorRule(err error) (kind, message string) {
+func matchErrorRule(err error) errorRule {
 	// Typed / sentinel checks (prefer these).
 	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-		return ErrKindTimeout, ""
+		return errorRule{kind: ErrKindTimeout}
 	}
 	var netErr interface{ Timeout() bool }
 	if errors.As(err, &netErr) && netErr.Timeout() {
-		return ErrKindTimeout, ""
+		return errorRule{kind: ErrKindTimeout}
+	}
+	if rule, ok := matchCallerInputError(err); ok {
+		return rule
 	}
 	// A wrapped os/fs "not found" (e.g. a failed os.Stat on a missing scan
 	// target) is categorized by chain, not phrasing, so a new human-readable
 	// message can never silently regress it into Unknown.
 	if errors.Is(err, fs.ErrNotExist) {
-		return ErrKindPathNotFound, ""
+		return errorRule{kind: ErrKindPathNotFound}
 	}
 
 	msg := err.Error()
 	for _, rule := range errorRules {
 		if rule.matches(msg) {
-			return rule.kind, rule.message
+			return rule
 		}
 	}
-	return ErrKindUnknown, ""
+	return errorRule{kind: ErrKindUnknown}
 }
 
-// decorateMessage appends the process exit code to a curated message when the
-// raw error carries one. It only ever combines constants we control with a
-// numeric exit code, so no raw error text leaks into telemetry.
-func decorateMessage(message, raw string) string {
+// matchCallerInputError classifies the ephemeral and custom rule errors by
+// type. Their text can quote caller input (paths, rule names, rule source, or
+// API responses), so it must not pick a substring rule.
+func matchCallerInputError(err error) (errorRule, bool) {
+	var (
+		scannerErr  *ephemeral.ScannerError
+		failureErr  *ephemeral.RuleFailureError
+		mismatchErr *ephemeral.ExampleMismatchError
+		inputErr    *ephemeral.InputError
+		nameErr     *promote.InvalidNameError
+		existsErr   *promote.RuleExistsError
+		apiErr      *promote.APIError
+	)
+	switch {
+	case errors.As(err, &failureErr):
+		return errorRule{kind: ErrKindScanError, message: "rule failed"}, true
+	case errors.As(err, &mismatchErr):
+		return errorRule{kind: ErrKindScanError, message: "rule does not match its examples"}, true
+	case errors.As(err, &scannerErr):
+		return errorRule{kind: ErrKindScanError, message: "ephemeral scanner failed"}, true
+	case errors.As(err, &nameErr):
+		return errorRule{kind: ErrKindInvalidArguments, message: "invalid rule or ruleset name"}, true
+	case errors.As(err, &inputErr):
+		if errors.Is(err, fs.ErrNotExist) {
+			return errorRule{kind: ErrKindPathNotFound, message: inputErr.Reason}, true
+		}
+		return errorRule{kind: ErrKindInvalidArguments, message: inputErr.Reason}, true
+	case errors.As(err, &existsErr):
+		return errorRule{kind: ErrKindInvalidArguments, message: "custom rule already exists"}, true
+	case errors.As(err, &apiErr):
+		switch apiErr.Status {
+		case 0:
+			return errorRule{kind: ErrKindNetwork, message: "custom rule API request failed"}, true
+		case http.StatusUnauthorized, http.StatusForbidden:
+			return errorRule{kind: ErrKindAuthRequired, message: fmt.Sprintf("custom rule API returned status %d", apiErr.Status)}, true
+		default:
+			return errorRule{kind: ErrKindScanError, message: fmt.Sprintf("custom rule API returned status %d", apiErr.Status)}, true
+		}
+	}
+	return errorRule{}, false
+}
+
+// decorateMessage appends the process exit code to a curated message when err
+// wraps a process exit. The code comes from the *exec.ExitError, never from the
+// error text, which can quote paths, rule names, or rule source.
+func decorateMessage(message string, err error) string {
 	if message == "" {
 		return ""
 	}
-	if m := exitStatusRe.FindStringSubmatch(raw); m != nil {
-		return fmt.Sprintf("%s (exit status %s)", message, m[1])
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) && exitErr.ExitCode() >= 0 {
+		return fmt.Sprintf("%s (exit status %d)", message, exitErr.ExitCode())
 	}
 	return message
 }

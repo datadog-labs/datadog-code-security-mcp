@@ -20,6 +20,7 @@ func TestFSContainsShippedSkills(t *testing.T) {
 		"dd-codesec-scan-and-fix",
 		"dd-codesec-verify-findings",
 		"dd-codesec-setup-toolchain",
+		"dd-codesec-find-security-variants",
 	}
 	for _, skillID := range skillIDs {
 		if _, err := fs.Stat(FS, skillID+"/SKILL.md"); err != nil {
@@ -102,6 +103,7 @@ func TestShippedSkillsAttributeMCPToolCalls(t *testing.T) {
 		"dd-codesec-scan-and-fix",
 		"dd-codesec-verify-findings",
 		"dd-codesec-setup-toolchain",
+		"dd-codesec-find-security-variants",
 	} {
 		data, err := fs.ReadFile(FS, skillID+"/SKILL.md")
 		if err != nil {

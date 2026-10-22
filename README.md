@@ -15,6 +15,15 @@ Setup for this repository is below. The [Code Security MCP Server documentation]
 5. **`datadog_iac_scan`** - Infrastructure as code scanning
 6. **`datadog_generate_sbom`** - Generate Software Bill of Materials (SBOM)
 7. **`datadog_library_vulnerability_scan`** - Scan specific libraries by package URL
+8. **`datadog_ephemeral_sast_scan`** - Run one caller-supplied SAST rule locally without publishing it (no API keys)
+9. **`datadog_promote_sast_rule`** - Save an approved SAST rule as a Datadog custom rule (requires API keys)
+
+`datadog_ephemeral_sast_scan` needs `datadog-static-analyzer` 0.9.10 or later,
+which adds `--rules-with-config`. It runs only the supplied rule, even when the repository
+has a Static Analysis configuration, but still honors that configuration's
+ignored paths, `only` paths, file size limit, and gitignore setting.
+`datadog_promote_sast_rule` refuses to save over an existing rule unless the
+caller passes `overwrite: true` after the user agrees.
 
 `datadog_code_security_scan` and `datadog_sast_scan` accept optional
 `min_sast_severity` (`LOW`, `MEDIUM`, `HIGH`, or `CRITICAL`). It affects SAST only
@@ -61,7 +70,7 @@ datadog-code-security-mcp version --detailed # Include every required scanner
 
 ### Install AI Client Skills
 
-The binary ships three Agent Skills for compatible AI coding clients:
+The binary ships four Agent Skills for compatible AI coding clients:
 
 - **`dd-codesec-scan-and-fix`** — scans local code, loads a focused SAST,
   Secrets, SCA, or IaC playbook, optionally enriches matches with
@@ -74,6 +83,9 @@ The binary ships three Agent Skills for compatible AI coding clients:
 - **`dd-codesec-setup-toolchain`** — installs, updates, and diagnoses the
   scanner binaries, relaying the CLI's platform-specific installation
   instructions with confirmation guardrails.
+- **`dd-codesec-find-security-variants`** — after an uncommitted security
+  fix, infers the invariant, runs a temporary SAST rule with the local
+  scanner, and reports other places that break the same invariant.
 
 Install them into the shared Agent Skills directory and every detected native
 client directory:
@@ -144,7 +156,8 @@ relevant files it offers one changed-file scan and waits for confirmation.
 ### Claude Code: skills missing or not auto-triggering
 
 After `setup`, Claude Code should list `dd-codesec-scan-and-fix`,
-`dd-codesec-verify-findings`, and `dd-codesec-setup-toolchain`. Restart
+`dd-codesec-verify-findings`, `dd-codesec-setup-toolchain`, and
+`dd-codesec-find-security-variants`. Restart
 Claude Code if they are missing from `/skills`. Confirm the trees exist under
 `~/.claude/skills` or `$CLAUDE_CONFIG_DIR/skills` (native), or
 `~/.agents/skills` (shared). You can still invoke a skill by name, for example
@@ -226,6 +239,11 @@ the tool:
   some scans fail — Secrets in particular cannot fetch security rules.
 
 Optional: `DD_SITE` (your Datadog site, for example `datadoghq.com`).
+
+**Datadog employees:** instead of permanent keys, set
+`DD_AUTH_DOMAIN` (for example `app.datadoghq.com`) so the tool obtains
+short-lived keys from `dd-auth`. Keys already in the environment take
+precedence.
 
 ### Claude Configuration
 
@@ -312,6 +330,11 @@ Once configured, ask your AI assistant to scan your code:
 - "Run a full security scan (SAST + Secrets + SCA + IaC)"
 - "Find all security issues in this project"
 
+**Security Variants (after an uncommitted security fix):**
+
+- "I just fixed this missing authorization check. Is the same mistake anywhere else?"
+- "Save that rule as a custom rule"
+
 **Dependency Analysis:**
 
 - "Scan for vulnerable dependencies"
@@ -346,7 +369,22 @@ datadog-code-security-mcp generate-sbom .           # Generate SBOM
 datadog-code-security-mcp scan all ./src --json
 datadog-code-security-mcp scan sast ./app --json
 datadog-code-security-mcp generate-sbom . --json
+
+# Run one unpublished SAST rule (no API keys; JSON output)
+datadog-code-security-mcp ephemeral-scan --language GO --directory . \
+  --code-file rule.js --query-file query.scm
+
+# Save that rule as a custom rule in the security-variants ruleset
+datadog-code-security-mcp promote-sast-rule --user-confirmed \
+  --language GO --rule-name missing-guard \
+  --code-file rule.js --query-file query.scm --tests-file tests.json
 ```
+
+`--tests-file` is required. It holds exactly two examples: the fixed code with `annotation_count` 0, and the code before the fix with a positive `annotation_count`. The rule runs on both before anything is uploaded, and nothing is saved unless each count matches and the rule ran without errors.
+
+Both commands report a rule that throws, does not compile, or times out as an error, instead of an empty result. They run the analyzer with `--debug yes` to read those failures.
+
+`testdata/ephemeral/` has a working `rule.js`, `query.scm`, and `tests.json`.
 
 #### Manual Installation Instructions for Requirements (Optional)
 

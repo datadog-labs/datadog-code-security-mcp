@@ -68,8 +68,8 @@ func TestSetupCommandJSONOutput(t *testing.T) {
 	if report.Clients[0].Status != setupcmd.ClientStatusApplied {
 		t.Fatalf("JSON status = %q, want %q", report.Clients[0].Status, setupcmd.ClientStatusApplied)
 	}
-	if len(report.Clients[0].Changes) != 3 {
-		t.Fatalf("installed changes = %d, want 3", len(report.Clients[0].Changes))
+	if len(report.Clients[0].Changes) != 4 {
+		t.Fatalf("installed changes = %d, want 4", len(report.Clients[0].Changes))
 	}
 }
 
@@ -372,8 +372,8 @@ func TestSetupCommandRemoveSkillsLeavesUnmarkedDirectories(t *testing.T) {
 	if len(report.Clients) != 1 || report.Clients[0].Status != setupcmd.ClientStatusApplied {
 		t.Fatalf("remove JSON result = %+v", report)
 	}
-	if len(report.Clients[0].Changes) != 3 {
-		t.Fatalf("removed changes = %d, want 3", len(report.Clients[0].Changes))
+	if len(report.Clients[0].Changes) != 4 {
+		t.Fatalf("removed changes = %d, want 4", len(report.Clients[0].Changes))
 	}
 	for _, change := range report.Clients[0].Changes {
 		if change.Action != setupcmd.SkillActionRemoved {

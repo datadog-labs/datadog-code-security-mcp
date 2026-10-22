@@ -396,4 +396,150 @@ Authentication: Requires DD_API_KEY and DD_APP_KEY.`,
 		},
 		handleLibraryVulnerabilityScan,
 	)
+
+	// Tool 8: one-off SAST rule. The caller supplies the JavaScript and the
+	// tree-sitter query. This tool only packs the envelope and runs the scanner.
+	s.AddTool(
+		mcp.Tool{
+			Name: "datadog_ephemeral_sast_scan",
+			Description: `Run one local, unpublished SAST rule. The caller supplies the rule JavaScript and the tree-sitter query. This tool base64-encodes them, builds the ruleset JSON, and runs datadog-static-analyzer with -r, --rules-with-config, and -b, so the repository's SAST configuration still applies: ignored and only paths, the file size limit, and .gitignore. It does not infer a security invariant and it does not require Datadog API keys.
+
+Parameters:
+• rule_code (string, required) - DDSA JavaScript source. visit(captures) reports with buildError and addError.
+• tree_sitter_query (string, required) - tree-sitter query source.
+• language (string, required) - scanner language enum, for example TYPESCRIPT.
+• directory (string, optional) - repository directory passed to -i. Defaults to the current directory.
+• rule_name (string, optional) - rule name inside the ephemeral ruleset.
+• paths (array, optional) - files or subdirectories to scan, inside directory. Omit to scan the whole directory.
+
+Output: the scanner's JSON findings. When the rule JavaScript throws, has a syntax error, or times out on any file, the tool returns an error that lists those files instead of incomplete findings. An invalid tree-sitter query makes the scan fail with the analyzer's output.`,
+			InputSchema: mcp.ToolInputSchema{
+				Type: "object",
+				Properties: map[string]any{
+					"rule_code": map[string]any{
+						"type":        "string",
+						"description": "DDSA JavaScript rule source, not base64",
+					},
+					"tree_sitter_query": map[string]any{
+						"type":        "string",
+						"description": "Tree-sitter query source, not base64",
+					},
+					"language": map[string]any{
+						"type":        "string",
+						"description": "Scanner language enum, for example TYPESCRIPT",
+					},
+					"directory": map[string]any{
+						"type":        "string",
+						"description": "Directory to scan (datadog-static-analyzer -i)",
+					},
+					"rule_name": map[string]any{
+						"type":        "string",
+						"description": "Rule name inside the ephemeral ruleset",
+					},
+					"paths": map[string]any{
+						"type":        "array",
+						"items":       map[string]string{"type": "string"},
+						"description": "Optional files or subdirectories to scan, inside directory",
+					},
+					constants.ArgCalledBySkill: calledBySkillProperty(),
+				},
+				Required: []string{"rule_code", "tree_sitter_query", "language"},
+			},
+		},
+		handleEphemeralScan,
+	)
+
+	// Tool 9: save a rule the caller already approved. This tool only uploads
+	// the source it is given. It does not choose which findings belong.
+	s.AddTool(
+		mcp.Tool{
+			Name: "datadog_promote_sast_rule",
+			Description: `Save one SAST rule the user has already approved as a Datadog custom rule. Upload the exact JavaScript and tree-sitter query you are given. Do not infer an invariant, drop a match, or add a match. Refuse to call this until the user has agreed to that exact source.
+
+Authentication: DD_API_KEY and DD_APP_KEY, or DD_AUTH_DOMAIN so dd-auth can supply a short-lived token. The rule is published at severity ERROR.
+
+Parameters:
+• user_confirmed (boolean, required) - true only after the user agrees to save this exact source.
+• overwrite (boolean, optional) - true only after the user agrees to replace a rule that already exists. Without it, the tool refuses to save over an existing rule and says so.
+• rule_code (string, required) - DDSA JavaScript source, not base64.
+• tree_sitter_query (string, required) - tree-sitter query source, not base64.
+• language (string, required) - scanner language enum, for example TYPESCRIPT.
+• rule_name (string, required) - lowercase slug, 5 to 32 characters.
+• ruleset_name (string, optional) - lowercase slug. Defaults to security-variants.
+• short_description (string, optional) - one line stored on the rule, at most 60 characters. Names the guard and the operation. The ruleset keeps its own generic label.
+• description (string, optional) - plain text stored on the rule. State the guard, where it must run, and every operation the rule flags. The ruleset description stays generic and is not updated.
+• tests (array, required) - exactly two examples from the fix. The function after the fix has annotation_count 0. The same function before the fix has a positive annotation_count, usually 1. The tool runs the rule on them first and saves nothing when a count differs or the rule fails.
+
+Output: the ruleset name, rule name, revision id, and a warning when the revision id is missing.`,
+			InputSchema: mcp.ToolInputSchema{
+				Type: "object",
+				Properties: map[string]any{
+					"user_confirmed": map[string]any{
+						"type":        "boolean",
+						"description": "True only after the user agrees to save this exact rule source",
+					},
+					"overwrite": map[string]any{
+						"type":        "boolean",
+						"description": "True only after the user agrees to replace a rule that already exists",
+					},
+					"rule_code": map[string]any{
+						"type":        "string",
+						"description": "DDSA JavaScript rule source, not base64",
+					},
+					"tree_sitter_query": map[string]any{
+						"type":        "string",
+						"description": "Tree-sitter query source, not base64",
+					},
+					"language": map[string]any{
+						"type":        "string",
+						"description": "Scanner language enum, for example TYPESCRIPT",
+					},
+					"rule_name": map[string]any{
+						"type":        "string",
+						"description": "Lowercase rule slug, 5 to 32 characters",
+					},
+					"ruleset_name": map[string]any{
+						"type":        "string",
+						"description": "Lowercase ruleset slug. Defaults to security-variants",
+					},
+					"short_description": map[string]any{
+						"type":        "string",
+						"description": "One line stored on the rule, at most 60 characters. The ruleset label stays generic.",
+					},
+					"description": map[string]any{
+						"type":        "string",
+						"description": "Detailed plain text stored on the rule. The ruleset description is not updated.",
+					},
+					"tests": map[string]any{
+						"type":        "array",
+						"description": "Exactly two examples: the function after the fix (annotation_count 0) and the same function before the fix (positive annotation_count).",
+						"minItems":    2,
+						"maxItems":    2,
+						"items": map[string]any{
+							"type": "object",
+							"properties": map[string]any{
+								"filename": map[string]any{
+									"type":        "string",
+									"description": "Example file name, without directories or surrounding spaces. Its extension must match the rule's language, or the example is not scanned and the rule is not saved.",
+								},
+								"code": map[string]any{
+									"type":        "string",
+									"description": "Example source, not base64",
+								},
+								"annotation_count": map[string]any{
+									"type":        "integer",
+									"description": "0 for the function after the fix. The number of findings, usually 1, for the same function before the fix.",
+									"minimum":     0,
+								},
+							},
+							"required": []string{"filename", "code", "annotation_count"},
+						},
+					},
+					constants.ArgCalledBySkill: calledBySkillProperty(),
+				},
+				Required: []string{"user_confirmed", "rule_code", "tree_sitter_query", "language", "rule_name", "tests"},
+			},
+		},
+		handlePromoteSASTRule,
+	)
 }
