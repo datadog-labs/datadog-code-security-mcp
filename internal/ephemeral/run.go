@@ -23,6 +23,10 @@ const DefaultScanTimeout = 10 * time.Minute
 // size, gitignore, and ruleset-configs settings still apply.
 const rulesWithConfigFlag = "--rules-with-config"
 
+// minAnalyzerVersion is the first datadog-static-analyzer release with
+// rulesWithConfigFlag. Support is detected from --help, not from this value.
+const minAnalyzerVersion = "0.9.10"
+
 // ScanRequest is a local ephemeral scan. Directory is the repository root
 // passed to datadog-static-analyzer -i. Paths, when set, are -u subdirectories
 // and must resolve inside Directory.
@@ -61,7 +65,7 @@ func Scan(ctx context.Context, req ScanRequest) (ScanResult, error) {
 		return ScanResult{}, err
 	}
 	if !supported {
-		return ScanResult{}, manager.UpgradeRequiredError(rulesWithConfigFlag + " (required for ephemeral SAST scans)")
+		return ScanResult{}, manager.UpgradeRequiredError(rulesWithConfigFlag + " (added in " + minAnalyzerVersion + ", required for ephemeral SAST scans)")
 	}
 
 	tempDir, err := os.MkdirTemp("", "ephemeral-sast-")

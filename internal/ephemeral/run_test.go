@@ -121,8 +121,8 @@ func TestScanRequiresRulesWithConfigSupport(t *testing.T) {
 	fake := installFakeAnalyzer(t, "  -r, --rules FILE", "[]", "0")
 
 	_, err := Scan(context.Background(), ScanRequest{Input: validInput(), Directory: t.TempDir()})
-	if err == nil || !strings.Contains(err.Error(), "--rules-with-config") {
-		t.Fatalf("error = %v, want upgrade error naming --rules-with-config", err)
+	if err == nil || !strings.Contains(err.Error(), "--rules-with-config") || !strings.Contains(err.Error(), "0.9.10") {
+		t.Fatalf("error = %v, want upgrade error naming --rules-with-config and 0.9.10", err)
 	}
 	if _, statErr := os.Stat(fake.argsFile); statErr == nil {
 		t.Error("analyzer scan ran on a binary without --rules-with-config")

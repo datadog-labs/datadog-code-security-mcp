@@ -18,8 +18,8 @@ Setup for this repository is below. The [Code Security MCP Server documentation]
 8. **`datadog_ephemeral_sast_scan`** - Run one caller-supplied SAST rule locally without publishing it (no API keys)
 9. **`datadog_promote_sast_rule`** - Save an approved SAST rule as a Datadog custom rule (requires API keys)
 
-`datadog_ephemeral_sast_scan` needs a `datadog-static-analyzer` that supports
-`--rules-with-config`. It runs only the supplied rule, even when the repository
+`datadog_ephemeral_sast_scan` needs `datadog-static-analyzer` 0.9.10 or later,
+which adds `--rules-with-config`. It runs only the supplied rule, even when the repository
 has a Static Analysis configuration, but still honors that configuration's
 ignored paths, `only` paths, file size limit, and gitignore setting.
 `datadog_promote_sast_rule` refuses to save over an existing rule unless the

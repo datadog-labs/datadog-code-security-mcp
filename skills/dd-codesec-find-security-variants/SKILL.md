@@ -128,7 +128,7 @@ datadog-code-security-mcp ephemeral-scan --called-by-skill \
 
 The scan runs only this rule, but it keeps the repository's Static Analysis config settings: ignored paths, `only` paths, file size limit, and gitignore. The scanner pass never reports code under a path that config ignores. No hit there does not mean no variant there. When the config ignores paths, say so in the pause below, and if they reply yes, the search in step 5 covers those paths too.
 
-If the scan fails because the analyzer does not support `--rules-with-config`, stop and follow the `dd-codesec-setup-toolchain` skill to upgrade `datadog-static-analyzer`. Then scan again.
+If the scan fails because the analyzer does not support `--rules-with-config`, stop and follow the `dd-codesec-setup-toolchain` skill to upgrade `datadog-static-analyzer` to 0.9.10 or later. Then scan again.
 
 As soon as the scan returns, pause at the end of the turn with this message. It is not the final report. Drop the function the diff itself changed.
 

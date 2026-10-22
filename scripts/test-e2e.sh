@@ -701,7 +701,7 @@ env -u DD_API_KEY -u DD_APP_KEY -u DD_AUTH_DOMAIN \
 
 if ! datadog-static-analyzer --help 2>/dev/null | grep -q -- "--rules-with-config"; then
   if [[ $EPHEMERAL_EXIT_CODE -ne 0 ]] && grep -q -- "--rules-with-config" "${TEST_OUTPUT_DIR}/ephemeral-error.txt"; then
-    echo -e "${YELLOW}⚠ Installed datadog-static-analyzer lacks --rules-with-config; the MCP returned the upgrade error as expected${NC}"
+    echo -e "${YELLOW}⚠ Installed datadog-static-analyzer lacks --rules-with-config (added in 0.9.10); the MCP returned the upgrade error as expected${NC}"
   else
     echo -e "${RED}❌ Installed analyzer lacks --rules-with-config but the MCP did not return the upgrade error${NC}"
     cat "${TEST_OUTPUT_DIR}/ephemeral-error.txt"
