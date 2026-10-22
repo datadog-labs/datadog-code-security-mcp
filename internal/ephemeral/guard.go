@@ -23,15 +23,22 @@ const maxReportedExceptions = 3
 // const in its temporal dead zone.
 // The rule's functions are held in plain variables and called without a
 // receiver, as the analyzer calls them, so this is undefined inside the rule.
+// When the rule's top-level code throws, visit reports that exception once
+// instead, and the rule's own callbacks are never installed.
 // It cannot catch a syntax error: that stops the whole script before it runs.
 func guardRuleCode(code string) string {
 	return `const [__ddsaVisit, __ddsaBeforeAll, __ddsaAfterAll] = (() => {
+try {
 ` + code + `
 ;return [
   typeof visit === "function" ? visit : undefined,
   typeof beforeAll === "function" ? beforeAll : undefined,
   typeof afterAll === "function" ? afterAll : undefined,
 ];
+} catch (e) {
+  let reported = false;
+  return [function () { if (!reported) { reported = true; __ddsaReport(e); } }, undefined, undefined];
+}
 })();
 function __ddsaReport(e) {
   addError(buildError(1, 1, 1, 2, "` + exceptionMarker + `" + String(e)));

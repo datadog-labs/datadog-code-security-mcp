@@ -61,6 +61,8 @@ func TestRealAnalyzerReportsThrowingVisitor(t *testing.T) {
 		// The analyzer calls the rule without a receiver, so this is undefined.
 		"state on this": `function beforeAll() { this.calls = 0; }
 function visit(captures) { this.calls++; }`,
+		"throwing initializer": `const settings = undefined.limits;
+function visit(captures) {}`,
 	}
 	for name, code := range rules {
 		t.Run(name, func(t *testing.T) {

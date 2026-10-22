@@ -740,7 +740,8 @@ fi
 
 # A rule that matches and then throws must fail the scan, not look clean.
 # rule-this.js throws only because the analyzer calls it without a receiver.
-for THROWING_RULE in rule-throws.js rule-this.js; do
+# rule-init-throws.js throws in its top-level code, before visit runs.
+for THROWING_RULE in rule-throws.js rule-this.js rule-init-throws.js; do
   THROWS_EXIT_CODE=0
   env -u DD_API_KEY -u DD_APP_KEY -u DD_AUTH_DOMAIN \
     ./bin/datadog-code-security-mcp ephemeral-scan \
