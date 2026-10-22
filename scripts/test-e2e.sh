@@ -700,14 +700,9 @@ env -u DD_API_KEY -u DD_APP_KEY -u DD_AUTH_DOMAIN \
   > "${TEST_OUTPUT_DIR}/ephemeral-output.json" 2> "${TEST_OUTPUT_DIR}/ephemeral-error.txt" || EPHEMERAL_EXIT_CODE=$?
 
 if ! datadog-static-analyzer --help 2>/dev/null | grep -q -- "--rules-with-config"; then
-  if [[ $EPHEMERAL_EXIT_CODE -ne 0 ]] && grep -q -- "--rules-with-config" "${TEST_OUTPUT_DIR}/ephemeral-error.txt"; then
-    echo -e "${YELLOW}⚠ Installed datadog-static-analyzer lacks --rules-with-config (added in 0.9.10); the MCP returned the upgrade error as expected${NC}"
-  else
-    echo -e "${RED}❌ Installed analyzer lacks --rules-with-config but the MCP did not return the upgrade error${NC}"
-    cat "${TEST_OUTPUT_DIR}/ephemeral-error.txt"
-    TESTS_FAILED=$((TESTS_FAILED + 1))
-  fi
-  TESTS_WARNED=$((TESTS_WARNED + 1))
+  echo -e "${RED}❌ Installed datadog-static-analyzer lacks --rules-with-config; upgrade to 0.9.10 or later${NC}"
+  cat "${TEST_OUTPUT_DIR}/ephemeral-error.txt"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
 elif [[ $EPHEMERAL_EXIT_CODE -ne 0 ]]; then
   echo -e "${RED}❌ Ephemeral scan failed (exit ${EPHEMERAL_EXIT_CODE})${NC}"
   cat "${TEST_OUTPUT_DIR}/ephemeral-error.txt"

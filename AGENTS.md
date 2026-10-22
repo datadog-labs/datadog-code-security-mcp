@@ -276,7 +276,7 @@ export DD_SITE=datadoghq.com
 7. ✅ **SBOM generation** - Generates and validates a component inventory
 8. ✅ **Setup command** - Verifies dry-run, installation, and `--remove-skills` in an isolated home
 9. ✅ **IaC scanner** - Detects infrastructure misconfigurations
-10. ✅ **Ephemeral SAST rule** - Runs `testdata/ephemeral/` without API keys; only that rule reports, and the config's ignored paths stay ignored (warns if the analyzer lacks `--rules-with-config`)
+10. ✅ **Ephemeral SAST rule** - Runs `testdata/ephemeral/` without API keys; only that rule reports, and the config's ignored paths stay ignored (requires datadog-static-analyzer 0.9.10 or later)
 11. ✅ **Claude Desktop** - Configures local build (full mode only)
 
 **Option 2: Manual Step-by-Step Testing**
