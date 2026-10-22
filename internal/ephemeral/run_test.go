@@ -114,8 +114,8 @@ func TestScanPassesRulesWithConfig(t *testing.T) {
 			subdirs = append(subdirs, args[i+1])
 		}
 	}
-	if !slices.Equal(subdirs, []string{"src", "src"}) {
-		t.Errorf("-u paths = %v, want relative src twice", subdirs)
+	if !slices.Equal(subdirs, []string{"src"}) {
+		t.Errorf("-u paths = %v, want src once", subdirs)
 	}
 }
 
@@ -202,12 +202,12 @@ func TestResolveTargetsFollowsSymlinks(t *testing.T) {
 	if _, _, err := resolveTargets(repo, []string{"escape"}); err == nil || !strings.Contains(err.Error(), "outside directory") {
 		t.Fatalf("link to outside: error = %v, want outside directory", err)
 	}
-	// The analyzer does not follow symlinks, so it gets the link's target.
+	// The analyzer gets the link's resolved target.
 	if _, got, err := resolveTargets(repo, []string{"inside"}); err != nil || !slices.Equal(got, []string{"src"}) {
 		t.Fatalf("link inside: paths = %v, error = %v", got, err)
 	}
 	symlinkedRoot := filepath.Join(outside, "repolink")
-	if _, got, err := resolveTargets(symlinkedRoot, []string{"src", "inside"}); err != nil || !slices.Equal(got, []string{"src", "src"}) {
+	if _, got, err := resolveTargets(symlinkedRoot, []string{"src", "inside"}); err != nil || !slices.Equal(got, []string{"src"}) {
 		t.Fatalf("symlinked root: paths = %v, error = %v", got, err)
 	}
 	// The same directory spelled through its resolved path, like /private/var for /var.
@@ -221,8 +221,10 @@ func TestResolveTargetsFollowsSymlinks(t *testing.T) {
 
 func TestResolveTargets(t *testing.T) {
 	repo := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(repo, "a", "b"), 0o755); err != nil {
-		t.Fatal(err)
+	for _, dir := range []string{filepath.Join("a", "b"), "ab"} {
+		if err := os.MkdirAll(filepath.Join(repo, dir), 0o755); err != nil {
+			t.Fatal(err)
+		}
 	}
 	file := filepath.Join(repo, "file.go")
 	if err := os.WriteFile(file, nil, 0o600); err != nil {
@@ -238,7 +240,12 @@ func TestResolveTargets(t *testing.T) {
 		wantErr   string
 	}{
 		{name: "no paths", directory: repo},
-		{name: "relative and cleaned", directory: repo, paths: []string{"a/./b", " ", "a/b/.."}, want: []string{filepath.Join("a", "b"), "a"}},
+		{name: "relative and cleaned", directory: repo, paths: []string{"a/./b/", " ", "ab/../ab"}, want: []string{filepath.Join("a", "b"), "ab"}},
+		{name: "same target twice", directory: repo, paths: []string{"a", "./a", filepath.Join(repo, "a")}, want: []string{"a"}},
+		{name: "descendant after ancestor", directory: repo, paths: []string{"a", "a/b"}, want: []string{"a"}},
+		{name: "descendant before ancestor", directory: repo, paths: []string{"a/b", "a"}, want: []string{"a"}},
+		{name: "whole directory covers all", directory: repo, paths: []string{"a/b", ".", "ab"}, want: []string{"."}},
+		{name: "sibling with a shared prefix", directory: repo, paths: []string{"ab", "a"}, want: []string{"a", "ab"}},
 		{name: "absolute inside", directory: repo, paths: []string{filepath.Join(repo, "a")}, want: []string{"a"}},
 		{name: "parent escape", directory: repo, paths: []string{"../x"}, wantErr: "outside directory"},
 		{name: "nested escape", directory: repo, paths: []string{"a/../../x"}, wantErr: "outside directory"},

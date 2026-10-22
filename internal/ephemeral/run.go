@@ -2,6 +2,7 @@ package ephemeral
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -9,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -220,7 +222,26 @@ func resolveTargets(directory string, paths []string) (string, []string, error) 
 		}
 		relative = append(relative, rel)
 	}
-	return root, relative, nil
+	return root, collapseTargets(relative), nil
+}
+
+// collapseTargets drops targets that repeat or sit inside another target. The
+// analyzer walks each -u target separately, so an overlap reports the same
+// findings twice.
+func collapseTargets(targets []string) []string {
+	sorted := slices.Clone(targets)
+	slices.SortFunc(sorted, func(a, b string) int { return cmp.Compare(len(a), len(b)) })
+	var kept []string
+	for _, target := range sorted {
+		covered := slices.ContainsFunc(kept, func(k string) bool {
+			return k == "." || target == k || strings.HasPrefix(target, k+string(filepath.Separator))
+		})
+		if !covered {
+			kept = append(kept, target)
+		}
+	}
+	slices.Sort(kept)
+	return kept
 }
 
 // within returns target relative to root, and false when it is outside root.

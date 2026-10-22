@@ -11,7 +11,9 @@ Write them outside the repository:
 - `$scratch/examples/compliant/compliant.<ext>` is the whole function after the fix. Its `annotation_count` is 0.
 - `$scratch/examples/noncompliant/noncompliant.<ext>` is that same function as it was before the fix, from the committed file. Its `annotation_count` is 1.
 
-`<ext>` is the extension for the language (`ts` for TYPESCRIPT, `js` for JAVASCRIPT, otherwise the normal extension). Use the whole function. Always pass both. Do not scan them to decide whether to keep them, and do not save the rule without them.
+Keep the context the rule needs around the function: the enclosing class, the variable an arrow function is assigned to, and the imports the query or the fix refer to. Both examples must be valid code and differ only in the security fix.
+
+`<ext>` is the extension for the language (`ts` for TYPESCRIPT, `js` for JAVASCRIPT, otherwise the normal extension). Use the whole function with that context. Always pass both. Do not scan them to decide whether to keep them, and do not save the rule without them.
 
 ## Description
 
