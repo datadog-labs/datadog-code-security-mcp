@@ -377,10 +377,12 @@ datadog-code-security-mcp ephemeral-scan --language GO --directory . \
 # Save that rule as a custom rule in the security-variants ruleset
 datadog-code-security-mcp promote-sast-rule --user-confirmed \
   --language GO --rule-name missing-guard \
-  --code-file rule.js --query-file query.scm
+  --code-file rule.js --query-file query.scm --tests-file tests.json
 ```
 
-`testdata/ephemeral/` has a working `rule.js` and `query.scm` pair.
+`--tests-file` is required. It holds exactly two examples: the fixed code with `annotation_count` 0, and the code before the fix with a positive `annotation_count`. The rule runs on both before anything is uploaded, and nothing is saved unless each count matches. That also stops a rule with a syntax error, or one that times out, since it reports 0 findings.
+
+`testdata/ephemeral/` has a working `rule.js`, `query.scm`, and `tests.json`.
 
 #### Manual Installation Instructions for Requirements (Optional)
 

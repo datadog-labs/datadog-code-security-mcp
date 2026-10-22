@@ -468,7 +468,7 @@ Parameters:
 • ruleset_name (string, optional) - lowercase slug. Defaults to security-variants.
 • short_description (string, optional) - one line stored on the rule, at most 60 characters. Names the guard and the operation. The ruleset keeps its own generic label.
 • description (string, optional) - plain text stored on the rule. State the guard, where it must run, and every operation the rule flags. The ruleset description stays generic and is not updated.
-• tests (array) - the two examples from the fix. The function after the fix has annotation_count 0. The same function before the fix has annotation_count 1. Always send both. The tool runs the rule on them first and saves nothing when a count differs or the rule raises an exception.
+• tests (array, required) - exactly two examples from the fix. The function after the fix has annotation_count 0. The same function before the fix has a positive annotation_count, usually 1. The tool runs the rule on them first and saves nothing when a count differs or the rule raises an exception.
 
 Output: the ruleset name, rule name, revision id, and a warning when the revision id is missing.`,
 			InputSchema: mcp.ToolInputSchema{
@@ -512,7 +512,9 @@ Output: the ruleset name, rule name, revision id, and a warning when the revisio
 					},
 					"tests": map[string]any{
 						"type":        "array",
-						"description": "The function after the fix (annotation_count 0) and the same function before the fix (annotation_count 1).",
+						"description": "Exactly two examples: the function after the fix (annotation_count 0) and the same function before the fix (positive annotation_count).",
+						"minItems":    2,
+						"maxItems":    2,
 						"items": map[string]any{
 							"type": "object",
 							"properties": map[string]any{
@@ -526,7 +528,8 @@ Output: the ruleset name, rule name, revision id, and a warning when the revisio
 								},
 								"annotation_count": map[string]any{
 									"type":        "integer",
-									"description": "0 for the function after the fix. 1 for the same function before the fix.",
+									"description": "0 for the function after the fix. The number of findings, usually 1, for the same function before the fix.",
+									"minimum":     0,
 								},
 							},
 							"required": []string{"filename", "code", "annotation_count"},
@@ -534,7 +537,7 @@ Output: the ruleset name, rule name, revision id, and a warning when the revisio
 					},
 					constants.ArgCalledBySkill: calledBySkillProperty(),
 				},
-				Required: []string{"user_confirmed", "rule_code", "tree_sitter_query", "language", "rule_name"},
+				Required: []string{"user_confirmed", "rule_code", "tree_sitter_query", "language", "rule_name", "tests"},
 			},
 		},
 		handlePromoteSASTRule,

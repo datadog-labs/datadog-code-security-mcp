@@ -60,7 +60,7 @@ type Request struct {
 	ShortDescription string
 	// Description is plain text stored on the revision.
 	Description string
-	// Tests are measured examples. Empty leaves the rule page without a sample.
+	// Tests are the two examples ValidateTests requires.
 	Tests []Test
 	// Overwrite must be true to publish a new revision of a rule that already
 	// exists. The existing rule may belong to someone else.
@@ -259,9 +259,29 @@ func prepare(req Request) (preparedRequest, error) {
 	}, nil
 }
 
+// ValidateTests requires the two examples the pre-save check runs: one with
+// annotation_count 0 and one with a positive count. Without a positive count,
+// a rule that never reports, for example after a syntax error or a timeout,
+// would pass that check.
+func ValidateTests(tests []Test) error {
+	zero, positive := 0, 0
+	for _, test := range tests {
+		switch {
+		case test.AnnotationCount == 0:
+			zero++
+		case test.AnnotationCount > 0:
+			positive++
+		}
+	}
+	if len(tests) != maxTests || zero != 1 || positive != 1 {
+		return fmt.Errorf("tests must be exactly %d examples: the fixed code with annotation_count 0, and the code before the fix with a positive annotation_count", maxTests)
+	}
+	return nil
+}
+
 func encodeTests(tests []Test) ([]any, error) {
-	if len(tests) > maxTests {
-		return nil, fmt.Errorf("at most %d tests", maxTests)
+	if err := ValidateTests(tests); err != nil {
+		return nil, err
 	}
 	encoded := make([]any, 0, len(tests))
 	for _, test := range tests {

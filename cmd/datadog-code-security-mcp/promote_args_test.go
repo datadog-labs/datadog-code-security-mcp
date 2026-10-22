@@ -87,6 +87,24 @@ func TestParsePromoteArgs(t *testing.T) {
 	})
 }
 
+func TestCheckPromoteExamplesRejectsMissingAndAllZeroExamples(t *testing.T) {
+	// With no analyzer on PATH, reaching the scan would fail with a different error.
+	t.Setenv("PATH", t.TempDir())
+	zero := promote.Test{Filename: "compliant.go", Code: "package a\n", AnnotationCount: 0}
+	for name, tests := range map[string][]promote.Test{
+		"missing":  nil,
+		"all zero": {zero, zero},
+	} {
+		t.Run(name, func(t *testing.T) {
+			req := promote.Request{UserConfirmed: true, RuleCode: "function visit() {}", TreeSitterQuery: "(identifier) @id", Language: "GO", RuleName: "missing-guard", Tests: tests}
+			err := checkPromoteExamples(t.Context(), req)
+			if err == nil || !strings.Contains(err.Error(), "exactly 2 examples") {
+				t.Fatalf("error = %v, want exactly 2 examples", err)
+			}
+		})
+	}
+}
+
 func TestParseTestArgs(t *testing.T) {
 	tests := []struct {
 		name    string

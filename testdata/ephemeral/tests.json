@@ -1,0 +1,12 @@
+[
+  {
+    "filename": "compliant.go",
+    "code": "package main\n\nfunc handler(command string) error {\n\tif err := validateCommand(command); err != nil {\n\t\treturn err\n\t}\n\treturn runChecked(command)\n}\n",
+    "annotation_count": 0
+  },
+  {
+    "filename": "noncompliant.go",
+    "code": "package main\n\nfunc handler(command string) error {\n\treturn runUnchecked(command)\n}\n",
+    "annotation_count": 1
+  }
+]

@@ -434,5 +434,54 @@ func sampleRequest(confirmed bool) Request {
 		Language:        "TYPESCRIPT",
 		RuleName:        "missing-admin",
 		RulesetName:     "security-variants",
+		Tests: []Test{
+			{Filename: "compliant.ts", Code: "function ok() { requireAdmin(user); }", AnnotationCount: 0},
+			{Filename: "noncompliant.ts", Code: "function bad() { database.deleteUser(id); }", AnnotationCount: 1},
+		},
+	}
+}
+
+func TestValidateTestsRequiresAZeroAndAPositiveExample(t *testing.T) {
+	zero := Test{Filename: "compliant.ts", Code: "a", AnnotationCount: 0}
+	one := Test{Filename: "noncompliant.ts", Code: "b", AnnotationCount: 1}
+	three := Test{Filename: "noncompliant.ts", Code: "b", AnnotationCount: 3}
+	cases := []struct {
+		name  string
+		tests []Test
+		ok    bool
+	}{
+		{"missing", nil, false},
+		{"only compliant", []Test{zero}, false},
+		{"all zero", []Test{zero, zero}, false},
+		{"all positive", []Test{one, one}, false},
+		{"three", []Test{zero, one, one}, false},
+		{"negative", []Test{zero, {Filename: "x.ts", Code: "c", AnnotationCount: -1}}, false},
+		{"zero and one", []Test{zero, one}, true},
+		{"positive first, count 3", []Test{three, zero}, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := ValidateTests(tc.tests); (err == nil) != tc.ok {
+				t.Errorf("ValidateTests = %v, want ok=%v", err, tc.ok)
+			}
+		})
+	}
+}
+
+func TestSaveRejectsMissingExamplesBeforeCalling(t *testing.T) {
+	called := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+	}))
+	defer server.Close()
+
+	req := sampleRequest(true)
+	req.Tests = nil
+	client := newClientWithBaseURL("api", "app", server.URL)
+	if _, err := client.Save(context.Background(), req); err == nil || !strings.Contains(err.Error(), "exactly 2 examples") {
+		t.Fatalf("error = %v, want exactly 2 examples", err)
+	}
+	if called {
+		t.Fatal("the API was called")
 	}
 }

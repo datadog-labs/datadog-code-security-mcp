@@ -38,10 +38,14 @@ func newPromoteSASTRuleCmd() *cobra.Command {
 The command does not infer an invariant and does not edit the rule.
 It requires --user-confirmed. Credentials are DD_API_KEY and DD_APP_KEY, or DD_AUTH_DOMAIN so dd-auth can supply a short-lived token.
 
+--tests-file holds exactly two examples: the fixed code with annotation_count 0,
+and the code before the fix with a positive annotation_count. The rule runs on
+both first, and nothing is saved unless each count matches.
+
 Example:
   datadog-code-security-mcp promote-sast-rule --called-by-skill --user-confirmed \
     --language TYPESCRIPT --rule-name missing-admin \
-    --code-file rule.js --query-file rule.scm`,
+    --code-file rule.js --query-file rule.scm --tests-file tests.json`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			code, err := os.ReadFile(codeFile)
 			if err != nil {
@@ -88,7 +92,7 @@ Example:
 	cmd.Flags().StringVar(&language, "language", "", "Scanner language enum, for example TYPESCRIPT")
 	cmd.Flags().StringVar(&ruleName, "rule-name", "", "Rule slug")
 	cmd.Flags().StringVar(&rulesetName, "ruleset-name", "", "Ruleset slug (default: security-variants)")
-	cmd.Flags().StringVar(&testsFile, "tests-file", "", "Optional JSON array of examples: filename, code, annotation_count. The rule must report exactly that count in each, or nothing is saved")
+	cmd.Flags().StringVar(&testsFile, "tests-file", "", "JSON array of two examples: filename, code, annotation_count (0 for the fixed code, positive for the code before the fix)")
 	cmd.Flags().StringVar(&descriptionFile, "description-file", "", "Plain-text file. States the guard, where it must run, and every operation the rule flags")
 	cmd.Flags().StringVar(&shortDescription, "short-description", "", "One line, at most 60 characters, naming the guard and the operation")
 	cmd.Flags().BoolVar(&confirmed, "user-confirmed", false, "Required. The user has agreed to save this exact rule")
@@ -97,6 +101,7 @@ Example:
 	_ = cmd.MarkFlagRequired("query-file")
 	_ = cmd.MarkFlagRequired("language")
 	_ = cmd.MarkFlagRequired("rule-name")
+	_ = cmd.MarkFlagRequired("tests-file")
 	return cmd
 }
 
@@ -282,6 +287,9 @@ func runPromote(ctx context.Context, req promote.Request, iface telemetry.Interf
 func checkPromoteExamples(ctx context.Context, req promote.Request) error {
 	if !req.UserConfirmed {
 		return nil
+	}
+	if err := promote.ValidateTests(req.Tests); err != nil {
+		return err
 	}
 	examples := make([]ephemeral.Example, len(req.Tests))
 	for i, test := range req.Tests {
