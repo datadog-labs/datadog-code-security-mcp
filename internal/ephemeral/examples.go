@@ -43,8 +43,8 @@ func CheckExamples(ctx context.Context, in Input, examples []Example) error {
 	paths := make([]string, len(examples))
 	for i, example := range examples {
 		name := filepath.Base(example.Filename)
-		if name != example.Filename || name == "." || name == ".." {
-			return fmt.Errorf("example filename %q must be a single path segment", example.Filename)
+		if name != example.Filename || name != strings.TrimSpace(name) || name == "." || name == ".." {
+			return fmt.Errorf("example filename %q must be a file name without directories or surrounding spaces", example.Filename)
 		}
 		// Each example gets its own directory, so two examples may share a name.
 		sub := fmt.Sprintf("example-%d", i+1)
@@ -57,7 +57,7 @@ func CheckExamples(ctx context.Context, in Input, examples []Example) error {
 		}
 	}
 
-	result, err := Scan(ctx, ScanRequest{Input: in, Directory: dir})
+	result, scanned, err := scan(ctx, ScanRequest{Input: in, Directory: dir}, true)
 	var failure *RuleFailureError
 	if errors.As(err, &failure) {
 		for i, entry := range failure.Examples {
@@ -77,6 +77,14 @@ func CheckExamples(ctx context.Context, in Input, examples []Example) error {
 
 	report := &ExampleMismatchError{}
 	for i, example := range examples {
+		// The analyzer skips files whose extension is not the rule's language,
+		// and generated or minified files. Those would otherwise count as 0.
+		if !scanned[paths[i]] {
+			report.Mismatches = append(report.Mismatches,
+				fmt.Sprintf("%s: not scanned; use a file extension for %s and code that is not generated or minified",
+					example.Filename, strings.ToUpper(strings.TrimSpace(in.Language))))
+			continue
+		}
 		if got := counts[paths[i]]; got != example.AnnotationCount {
 			report.Mismatches = append(report.Mismatches,
 				fmt.Sprintf("%s: expected %d, got %d", example.Filename, example.AnnotationCount, got))

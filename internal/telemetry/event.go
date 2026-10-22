@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/datadog-labs/datadog-code-security-mcp/internal/constants"
+	"github.com/datadog-labs/datadog-code-security-mcp/internal/ephemeral"
 )
 
 // Status represents the severity level of a telemetry log event.
@@ -198,7 +199,12 @@ func classifyError(err error) errorClassification {
 	if rule.verbatim {
 		return errorClassification{kind: rule.kind, message: message}
 	}
-	return errorClassification{kind: rule.kind, message: decorateMessage(message, err.Error())}
+	raw := err.Error()
+	var scannerErr *ephemeral.ScannerError
+	if errors.As(err, &scannerErr) {
+		raw = scannerErr.Err.Error()
+	}
+	return errorClassification{kind: rule.kind, message: decorateMessage(message, raw)}
 }
 
 // matchErrorRule resolves the error kind and any rule-specific message override.
@@ -210,6 +216,12 @@ func matchErrorRule(err error) errorRule {
 	var netErr interface{ Timeout() bool }
 	if errors.As(err, &netErr) && netErr.Timeout() {
 		return errorRule{kind: ErrKindTimeout}
+	}
+	// The analyzer log in this error can quote the caller's rule or query, so
+	// its text must not pick the rule below.
+	var scannerErr *ephemeral.ScannerError
+	if errors.As(err, &scannerErr) {
+		return errorRule{kind: ErrKindScanError, message: "ephemeral scanner failed"}
 	}
 	// A wrapped os/fs "not found" (e.g. a failed os.Stat on a missing scan
 	// target) is categorized by chain, not phrasing, so a new human-readable

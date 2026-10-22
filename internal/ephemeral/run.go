@@ -45,38 +45,45 @@ type ScanResult struct {
 // with -r, --rules-with-config, and -b. It does not fetch Datadog rules and
 // does not require API keys.
 func Scan(ctx context.Context, req ScanRequest) (ScanResult, error) {
+	result, _, err := scan(ctx, req, false)
+	return result, err
+}
+
+// scan runs the analyzer. With trackScanned it also returns the files the rule
+// ran on, relative to the directory.
+func scan(ctx context.Context, req ScanRequest, trackScanned bool) (ScanResult, map[string]bool, error) {
 	rules, err := BuildRulesJSON(req.Input)
 	if err != nil {
-		return ScanResult{}, err
+		return ScanResult{}, nil, err
 	}
 
 	directory, paths, err := resolveTargets(req.Directory, req.Paths)
 	if err != nil {
-		return ScanResult{}, err
+		return ScanResult{}, nil, err
 	}
 
 	manager := binary.NewBinaryManager()
 	analyzer, err := manager.GetBinaryPath(ctx)
 	if err != nil {
-		return ScanResult{}, err
+		return ScanResult{}, nil, err
 	}
 	supported, err := manager.SupportsFlag(ctx, analyzer, rulesWithConfigFlag)
 	if err != nil {
-		return ScanResult{}, err
+		return ScanResult{}, nil, err
 	}
 	if !supported {
-		return ScanResult{}, manager.UpgradeRequiredError(rulesWithConfigFlag + " (added in " + minAnalyzerVersion + ", required for ephemeral SAST scans)")
+		return ScanResult{}, nil, manager.UpgradeRequiredError(rulesWithConfigFlag + " (added in " + minAnalyzerVersion + ", required for ephemeral SAST scans)")
 	}
 
 	tempDir, err := os.MkdirTemp("", "ephemeral-sast-")
 	if err != nil {
-		return ScanResult{}, fmt.Errorf("temp directory: %w", err)
+		return ScanResult{}, nil, fmt.Errorf("temp directory: %w", err)
 	}
 	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	rulesPath := filepath.Join(tempDir, "rules.json")
 	if err := os.WriteFile(rulesPath, append(rules, '\n'), 0o600); err != nil {
-		return ScanResult{}, fmt.Errorf("write rules: %w", err)
+		return ScanResult{}, nil, fmt.Errorf("write rules: %w", err)
 	}
 	outputPath := filepath.Join(tempDir, "findings.json")
 
@@ -87,36 +94,52 @@ func Scan(ctx context.Context, req ScanRequest) (ScanResult, error) {
 	cmd := exec.CommandContext(ctx, analyzer, analyzerArgs(rulesPath, directory, outputPath, paths)...)
 	cmd.Dir = directory
 	log := newAnalyzerLog(ruleID(req.Input))
+	if trackScanned {
+		log.scanned = map[string]bool{}
+	}
 	cmd.Stdout = log
 	cmd.Stderr = log
 	runErr := cmd.Run()
 	log.flush()
 	if err := ctx.Err(); err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
-			return ScanResult{}, fmt.Errorf("ephemeral scan timed out: %w", err)
+			return ScanResult{}, nil, fmt.Errorf("ephemeral scan timed out: %w", err)
 		}
-		return ScanResult{}, fmt.Errorf("ephemeral scan canceled: %w", err)
+		return ScanResult{}, nil, fmt.Errorf("ephemeral scan canceled: %w", err)
 	}
 
 	data, readErr := os.ReadFile(outputPath)
 	hasFindings := readErr == nil && len(bytes.TrimSpace(data)) > 0
 	if hasFindings && !json.Valid(data) {
-		return ScanResult{}, fmt.Errorf("scanner wrote invalid JSON: %s", log)
+		return ScanResult{}, nil, fmt.Errorf("scanner wrote invalid JSON: %s", log)
 	}
 	if err := log.failure(); err != nil {
-		return ScanResult{}, err
+		return ScanResult{}, nil, err
 	}
 	if hasFindings {
-		return ScanResult{Findings: json.RawMessage(data)}, nil
+		return ScanResult{Findings: json.RawMessage(data)}, log.scanned, nil
 	}
 	if runErr != nil {
-		return ScanResult{}, fmt.Errorf("scanner failed: %w\n%s", runErr, log)
+		return ScanResult{}, nil, &ScannerError{Err: runErr, Log: log.String()}
 	}
 	if readErr != nil {
-		return ScanResult{}, fmt.Errorf("read scanner output: %w", readErr)
+		return ScanResult{}, nil, fmt.Errorf("read scanner output: %w", readErr)
 	}
-	return ScanResult{Findings: json.RawMessage("[]")}, nil
+	return ScanResult{Findings: json.RawMessage("[]")}, log.scanned, nil
 }
+
+// ScannerError means the analyzer exited with an error and wrote no findings.
+// Log is the end of its output, which can quote the rule or the query.
+type ScannerError struct {
+	Err error
+	Log string
+}
+
+func (e *ScannerError) Error() string {
+	return fmt.Sprintf("scanner failed: %v\n%s", e.Err, e.Log)
+}
+
+func (e *ScannerError) Unwrap() error { return e.Err }
 
 func analyzerArgs(rulesPath, directory, outputPath string, paths []string) []string {
 	args := []string{
@@ -173,8 +196,9 @@ func resolveTargets(directory string, paths []string) (string, []string, error) 
 		if !filepath.IsAbs(target) {
 			target = filepath.Join(root, target)
 		}
-		// Compare resolved forms: the analyzer follows symlinks, and the same
-		// directory can be spelled two ways, such as /var and /private/var.
+		// Check and pass the resolved target, so a symlink cannot point the
+		// scan outside the directory. The same directory can also be spelled
+		// two ways, such as /var and /private/var.
 		target = filepath.Clean(target)
 		resolved, err := filepath.EvalSymlinks(target)
 		if err != nil {

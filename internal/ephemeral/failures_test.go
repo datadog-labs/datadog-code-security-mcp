@@ -142,3 +142,37 @@ function visit(captures) {}`, "TypeError"},
 		})
 	}
 }
+
+func TestRealAnalyzerChecksOnlyScannedExamples(t *testing.T) {
+	analyzer, err := exec.LookPath("datadog-static-analyzer")
+	if err != nil {
+		t.Skip("datadog-static-analyzer is not installed")
+	}
+	help, _ := exec.Command(analyzer, "--help").CombinedOutput()
+	if !strings.Contains(string(help), rulesWithConfigFlag) {
+		t.Skip("datadog-static-analyzer lacks " + rulesWithConfigFlag)
+	}
+	input := Input{
+		RuleCode: `function visit(captures) {
+  const call = captures.get("call");
+  addError(buildError(call.start.line, call.start.col, call.end.line, call.end.col, "unchecked"));
+}`,
+		TreeSitterQuery: `(call_expression function: (identifier) @callee (#eq? @callee "runUnchecked")) @call`,
+		Language:        "GO",
+	}
+	examples := func(compliantName string) []Example {
+		return []Example{
+			{Filename: compliantName, Code: "package a\n\nfunc f() { runUnchecked(\"x\") }\n", AnnotationCount: 0},
+			{Filename: "noncompliant.go", Code: "package a\n\nfunc f() { runUnchecked(\"x\") }\n", AnnotationCount: 1},
+		}
+	}
+
+	err = CheckExamples(context.Background(), input, examples("compliant.go"))
+	if err == nil || !strings.Contains(err.Error(), "compliant.go: expected 0, got 1") {
+		t.Fatalf("scanned example: error = %v, want a count mismatch", err)
+	}
+	err = CheckExamples(context.Background(), input, examples("compliant.ts"))
+	if err == nil || !strings.Contains(err.Error(), "compliant.ts: not scanned") {
+		t.Fatalf("skipped example: error = %v, want not scanned", err)
+	}
+}

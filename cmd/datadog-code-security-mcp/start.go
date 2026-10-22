@@ -402,7 +402,7 @@ Authentication: Requires DD_API_KEY and DD_APP_KEY.`,
 	s.AddTool(
 		mcp.Tool{
 			Name: "datadog_ephemeral_sast_scan",
-			Description: `Run one local, unpublished SAST rule. The caller supplies the rule JavaScript and the tree-sitter query. This tool base64-encodes them, builds the ruleset JSON, and runs datadog-static-analyzer with -r and -b. It does not infer a security invariant and it does not require Datadog API keys.
+			Description: `Run one local, unpublished SAST rule. The caller supplies the rule JavaScript and the tree-sitter query. This tool base64-encodes them, builds the ruleset JSON, and runs datadog-static-analyzer with -r, --rules-with-config, and -b, so the repository's SAST configuration still applies: ignored and only paths, the file size limit, and .gitignore. It does not infer a security invariant and it does not require Datadog API keys.
 
 Parameters:
 • rule_code (string, required) - DDSA JavaScript source. visit(captures) reports with buildError and addError.
@@ -410,9 +410,9 @@ Parameters:
 • language (string, required) - scanner language enum, for example TYPESCRIPT.
 • directory (string, optional) - repository directory passed to -i. Defaults to the current directory.
 • rule_name (string, optional) - rule name inside the ephemeral ruleset.
-• paths (array, optional) - subdirectories to scan. Omit to scan the whole directory.
+• paths (array, optional) - files or subdirectories to scan, inside directory. Omit to scan the whole directory.
 
-Output: the scanner's JSON findings. When the rule throws, does not compile, or times out on any file, the tool returns an error that lists those files instead of incomplete findings.`,
+Output: the scanner's JSON findings. When the rule JavaScript throws, has a syntax error, or times out on any file, the tool returns an error that lists those files instead of incomplete findings. An invalid tree-sitter query makes the scan fail with the analyzer's output.`,
 			InputSchema: mcp.ToolInputSchema{
 				Type: "object",
 				Properties: map[string]any{
@@ -439,7 +439,7 @@ Output: the scanner's JSON findings. When the rule throws, does not compile, or 
 					"paths": map[string]any{
 						"type":        "array",
 						"items":       map[string]string{"type": "string"},
-						"description": "Optional subdirectories to scan",
+						"description": "Optional files or subdirectories to scan, inside directory",
 					},
 					constants.ArgCalledBySkill: calledBySkillProperty(),
 				},
@@ -520,7 +520,7 @@ Output: the ruleset name, rule name, revision id, and a warning when the revisio
 							"properties": map[string]any{
 								"filename": map[string]any{
 									"type":        "string",
-									"description": "Example filename, a single path segment",
+									"description": "Example file name, without directories or surrounding spaces. Its extension must match the rule's language, or the example is not scanned and the rule is not saved.",
 								},
 								"code": map[string]any{
 									"type":        "string",

@@ -300,9 +300,10 @@ func encodeTests(tests []Test) ([]any, error) {
 	}
 	encoded := make([]any, 0, len(tests))
 	for _, test := range tests {
-		filename := strings.TrimSpace(test.Filename)
-		if filename == "" || strings.ContainsAny(filename, `/\`) {
-			return nil, fmt.Errorf("test filename must be a single path segment")
+		filename := test.Filename
+		if strings.TrimSpace(filename) != filename || filename == "" || filename == "." || filename == ".." ||
+			strings.ContainsAny(filename, `/\`) {
+			return nil, fmt.Errorf("test filename must be a file name without directories or surrounding spaces")
 		}
 		code := test.Code
 		if strings.TrimSpace(code) == "" {

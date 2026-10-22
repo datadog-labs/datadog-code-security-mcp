@@ -4,9 +4,12 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/datadog-labs/datadog-code-security-mcp/internal/ephemeral"
 )
 
 func TestErrorInfoFromErrorHasCuratedMessage(t *testing.T) {
@@ -209,5 +212,18 @@ func TestErrorInfoFromErrorRulesAPIReadFailure(t *testing.T) {
 	wantMessage := "failed to read security rules from API (exit status 1)"
 	if info.Message != wantMessage {
 		t.Errorf("message = %q, want %q", info.Message, wantMessage)
+	}
+}
+
+func TestClassifyErrorIgnoresTheEphemeralScannerLog(t *testing.T) {
+	exitErr := exec.Command("sh", "-c", "exit 3").Run()
+	err := fmt.Errorf("the rule was not saved: %w", &ephemeral.ScannerError{
+		Err: exitErr,
+		Log: "query: the rule failed in executable file not found exit status 9",
+	})
+
+	got := classifyError(err)
+	if got.kind != ErrKindScanError || got.message != "ephemeral scanner failed (exit status 3)" {
+		t.Errorf("classifyError = %+v", got)
 	}
 }

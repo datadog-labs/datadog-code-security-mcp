@@ -29,7 +29,8 @@ func newEphemeralScanCmd() *cobra.Command {
 		Use:   "ephemeral-scan",
 		Short: "Run one local SAST rule without publishing it",
 		Long: `Pack a JavaScript rule and a tree-sitter query into the scanner envelope
-and run datadog-static-analyzer -r rules.json -b. No Datadog API key is required.
+and run datadog-static-analyzer -r rules.json --rules-with-config -b. The
+repository's SAST configuration still applies. No Datadog API key is required.
 The caller supplies the rule source. This command does not infer it.
 
 Example:
@@ -69,7 +70,7 @@ Example:
 	cmd.Flags().StringVar(&language, "language", "", "Scanner language enum, for example TYPESCRIPT")
 	cmd.Flags().StringVar(&directory, "directory", "", "Directory passed to the scanner -i flag (default: cwd)")
 	cmd.Flags().StringVar(&ruleName, "rule-name", "", "Rule name inside the ephemeral ruleset")
-	cmd.Flags().StringArrayVar(&paths, "path", nil, "Subdirectory to scan (repeatable). Omit to scan the whole directory")
+	cmd.Flags().StringArrayVar(&paths, "path", nil, "File or subdirectory to scan (repeatable). Omit to scan the whole directory")
 	_ = cmd.MarkFlagRequired("code-file")
 	_ = cmd.MarkFlagRequired("query-file")
 	_ = cmd.MarkFlagRequired("language")

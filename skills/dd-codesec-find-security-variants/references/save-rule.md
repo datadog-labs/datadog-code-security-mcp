@@ -35,6 +35,7 @@ Call `datadog_promote_sast_rule` with `user_confirmed: true`, the exact `rule_co
 Before it saves, the tool runs the rule on both examples. When a count differs, or the rule fails, it saves nothing and says so:
 
 - `noncompliant.<ext>: expected 1, got N` with N of 2 or more means the function before the fix has N flagged operations. Call the tool again with that example's `annotation_count` set to N.
+- `<file>: not scanned` means the analyzer skipped that example. Give it the extension of the rule's language and call the tool again.
 - Any other mismatch, `got 0` on the function before the fix, a finding in the fixed function, or "the rule failed" means the rule is wrong. Do not change the counts to make it pass. Fix the rule, scan the repository again, and show the user the new rule before you save it.
 
 After the upload, name the rule, the ruleset, and the `revision_id` from the tool reply. It is the revision number the rule page shows. When it is empty, the reply has a `warning`. Show that warning instead of the number.

@@ -3,6 +3,7 @@ package ephemeral
 import (
 	"bytes"
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
 	"unicode/utf8"
@@ -14,11 +15,14 @@ import (
 // adds logs.
 var debugFlag = []string{"--debug", "yes"}
 
-// The analyzer's --debug lines for a failed rule, from analyze.rs:
+// The analyzer's --debug lines for a scanned file and a failed rule, from
+// analyze.rs:
 //
+//	Apply rule <ruleset>/<rule> file <file>
 //	rule:file <ruleset>/<rule>:<file> execution error, message: <reason>
 //	rule:file <ruleset>/<rule>:<file> TIMED OUT (<n> ms)
 const (
+	applyPrefix     = "Apply rule "
 	failurePrefix   = "rule:file "
 	executionMarker = " execution error, message: "
 	timeoutMarker   = " TIMED OUT ("
@@ -49,17 +53,24 @@ func (e *RuleFailureError) Error() string {
 
 // analyzerLog receives the analyzer's stdout and stderr. --debug prints a line
 // per scanned file, so it keeps only the failures of one rule and the end of
-// the output instead of the whole log.
+// the output instead of the whole log. When scanned is non-nil it also records
+// the files the rule ran on.
 type analyzerLog struct {
-	prefix    string
-	line      []byte
-	tail      []byte
-	truncated bool
-	reasons   map[string]string
+	prefix      string
+	applyPrefix string
+	line        []byte
+	tail        []byte
+	truncated   bool
+	reasons     map[string]string
+	scanned     map[string]bool
 }
 
 func newAnalyzerLog(ruleID string) *analyzerLog {
-	return &analyzerLog{prefix: failurePrefix + ruleID + ":", reasons: map[string]string{}}
+	return &analyzerLog{
+		prefix:      failurePrefix + ruleID + ":",
+		applyPrefix: applyPrefix + ruleID + " file ",
+		reasons:     map[string]string{},
+	}
 }
 
 func (l *analyzerLog) Write(p []byte) (int, error) {
@@ -95,6 +106,12 @@ func (l *analyzerLog) appendLine(p []byte) {
 func (l *analyzerLog) flush() {
 	line := strings.TrimRight(string(l.line), "\r")
 	l.line = l.line[:0]
+	if l.scanned != nil {
+		if file, ok := strings.CutPrefix(line, l.applyPrefix); ok {
+			l.scanned[filepath.ToSlash(file)] = true
+			return
+		}
+	}
 	rest, ok := strings.CutPrefix(line, l.prefix)
 	if !ok {
 		return
