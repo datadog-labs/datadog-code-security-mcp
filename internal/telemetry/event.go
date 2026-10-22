@@ -79,11 +79,14 @@ var kindDescriptions = map[string]string{
 // errorRule maps required substrings in the raw error text to a safe
 // classification. A rule matches when every substring in contains is present.
 // message, when set, overrides the per-kind default with a curated constant
-// safe to emit as error.message.
+// safe to emit as error.message. verbatim keeps that message as is: the raw
+// error carries rule-controlled text, so an "exit status N" in it is not a
+// process exit code.
 type errorRule struct {
 	kind     string
 	contains []string
 	message  string
+	verbatim bool
 }
 
 func (r errorRule) matches(msg string) bool {
@@ -119,8 +122,8 @@ var errorRules = []errorRule{
 	// Tier 1: owned/known anchored signals.
 	// These two carry the rule's own JavaScript error text, which may contain
 	// any phrase below, so they match first.
-	{kind: ErrKindScanError, contains: []string{"the rule raised an exception in"}, message: "rule raised an exception"},
-	{kind: ErrKindScanError, contains: []string{"the rule does not match its examples"}, message: "rule does not match its examples"},
+	{kind: ErrKindScanError, contains: []string{"the rule raised an exception in"}, message: "rule raised an exception", verbatim: true},
+	{kind: ErrKindScanError, contains: []string{"the rule does not match its examples"}, message: "rule does not match its examples", verbatim: true},
 	{kind: ErrKindGitError, contains: []string{"remote not found"}, message: "remote not found"},
 	{kind: ErrKindGitError, contains: []string{"Unable to parse git ignores"}, message: "unable to parse .git"},
 
@@ -181,38 +184,41 @@ func classifyError(err error) errorClassification {
 		return errorClassification{}
 	}
 
-	kind, override := matchErrorRule(err)
-	message := override
+	rule := matchErrorRule(err)
+	message := rule.message
 	if message == "" {
-		message = kindDescriptions[kind]
+		message = kindDescriptions[rule.kind]
 	}
-	return errorClassification{kind: kind, message: decorateMessage(message, err.Error())}
+	if rule.verbatim {
+		return errorClassification{kind: rule.kind, message: message}
+	}
+	return errorClassification{kind: rule.kind, message: decorateMessage(message, err.Error())}
 }
 
 // matchErrorRule resolves the error kind and any rule-specific message override.
-func matchErrorRule(err error) (kind, message string) {
+func matchErrorRule(err error) errorRule {
 	// Typed / sentinel checks (prefer these).
 	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-		return ErrKindTimeout, ""
+		return errorRule{kind: ErrKindTimeout}
 	}
 	var netErr interface{ Timeout() bool }
 	if errors.As(err, &netErr) && netErr.Timeout() {
-		return ErrKindTimeout, ""
+		return errorRule{kind: ErrKindTimeout}
 	}
 	// A wrapped os/fs "not found" (e.g. a failed os.Stat on a missing scan
 	// target) is categorized by chain, not phrasing, so a new human-readable
 	// message can never silently regress it into Unknown.
 	if errors.Is(err, fs.ErrNotExist) {
-		return ErrKindPathNotFound, ""
+		return errorRule{kind: ErrKindPathNotFound}
 	}
 
 	msg := err.Error()
 	for _, rule := range errorRules {
 		if rule.matches(msg) {
-			return rule.kind, rule.message
+			return rule
 		}
 	}
-	return ErrKindUnknown, ""
+	return errorRule{kind: ErrKindUnknown}
 }
 
 // decorateMessage appends the process exit code to a curated message when the

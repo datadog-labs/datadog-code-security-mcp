@@ -85,6 +85,34 @@ func TestErrorInfoFromErrorKnownGitErrors(t *testing.T) {
 	}
 }
 
+// The rule writes these diagnostics, so digits in them are not an exit code
+// and must not reach telemetry.
+func TestErrorInfoFromErrorDropsRuleControlledNumbers(t *testing.T) {
+	cases := []struct {
+		raw         string
+		wantMessage string
+	}{
+		{
+			raw:         "the rule raised an exception in 1 file(s), so the results are incomplete. Fix the rule and scan again:\nsrc/a.go: Error: exit status 4111111111111111",
+			wantMessage: "rule raised an exception",
+		},
+		{
+			raw:         "the rule was not saved: the rule raised an exception in 1 file(s), so the results are incomplete. Fix the rule and scan again:\nnoncompliant.go: Error: exit status 4111111111111111",
+			wantMessage: "rule raised an exception",
+		},
+		{
+			raw:         "the rule does not match its examples, so it was not saved:\nexit status 4111111111111111.go: expected 1, got 0",
+			wantMessage: "rule does not match its examples",
+		},
+	}
+	for _, tc := range cases {
+		info := ErrorInfoFromError(fmt.Errorf("%s", tc.raw))
+		if info == nil || info.Kind != ErrKindScanError || info.Message != tc.wantMessage {
+			t.Errorf("ErrorInfoFromError(%q) = %+v, want %s %q", tc.raw, info, ErrKindScanError, tc.wantMessage)
+		}
+	}
+}
+
 func TestErrorInfoFromErrorNilReturnsNil(t *testing.T) {
 	if ErrorInfoFromError(nil) != nil {
 		t.Error("expected nil ErrorInfo for nil error")
