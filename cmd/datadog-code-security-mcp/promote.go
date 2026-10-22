@@ -12,6 +12,7 @@ import (
 
 	"github.com/datadog-labs/datadog-code-security-mcp/internal/auth"
 	"github.com/datadog-labs/datadog-code-security-mcp/internal/constants"
+	"github.com/datadog-labs/datadog-code-security-mcp/internal/ephemeral"
 	"github.com/datadog-labs/datadog-code-security-mcp/internal/promote"
 	"github.com/datadog-labs/datadog-code-security-mcp/internal/telemetry"
 )
@@ -87,7 +88,7 @@ Example:
 	cmd.Flags().StringVar(&language, "language", "", "Scanner language enum, for example TYPESCRIPT")
 	cmd.Flags().StringVar(&ruleName, "rule-name", "", "Rule slug")
 	cmd.Flags().StringVar(&rulesetName, "ruleset-name", "", "Ruleset slug (default: security-variants)")
-	cmd.Flags().StringVar(&testsFile, "tests-file", "", "Optional JSON array of measured examples: filename, code, annotation_count")
+	cmd.Flags().StringVar(&testsFile, "tests-file", "", "Optional JSON array of examples: filename, code, annotation_count. The rule must report exactly that count in each, or nothing is saved")
 	cmd.Flags().StringVar(&descriptionFile, "description-file", "", "Plain-text file. States the guard, where it must run, and every operation the rule flags")
 	cmd.Flags().StringVar(&shortDescription, "short-description", "", "One line, at most 60 characters, naming the guard and the operation")
 	cmd.Flags().BoolVar(&confirmed, "user-confirmed", false, "Required. The user has agreed to save this exact rule")
@@ -255,6 +256,11 @@ func runPromote(ctx context.Context, req promote.Request, iface telemetry.Interf
 	}
 	defer func() { trackOperation(ctx, event) }()
 
+	if err := checkPromoteExamples(ctx, req); err != nil {
+		event.Failure = err
+		return promote.Result{}, err
+	}
+
 	method, err := preparePromoteAuth(ctx, iface)
 	event.AuthMethod = method
 	if err != nil {
@@ -269,6 +275,25 @@ func runPromote(ctx context.Context, req promote.Request, iface telemetry.Interf
 		return promote.Result{}, err
 	}
 	return result, nil
+}
+
+// checkPromoteExamples scans the examples with the rule before it is saved, so
+// a rule that throws, has a syntax error, or times out is not published.
+func checkPromoteExamples(ctx context.Context, req promote.Request) error {
+	if !req.UserConfirmed {
+		return nil
+	}
+	examples := make([]ephemeral.Example, len(req.Tests))
+	for i, test := range req.Tests {
+		examples[i] = ephemeral.Example{Filename: test.Filename, Code: test.Code, AnnotationCount: test.AnnotationCount}
+	}
+	return ephemeral.CheckExamples(ctx, ephemeral.Input{
+		RuleCode:        req.RuleCode,
+		TreeSitterQuery: req.TreeSitterQuery,
+		Language:        req.Language,
+		RuleName:        req.RuleName,
+		RulesetName:     req.RulesetName,
+	}, examples)
 }
 
 // preparePromoteAuth resolves Datadog credentials the same way the other API

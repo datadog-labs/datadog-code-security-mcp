@@ -468,7 +468,7 @@ Parameters:
 • ruleset_name (string, optional) - lowercase slug. Defaults to security-variants.
 • short_description (string, optional) - one line stored on the rule, at most 60 characters. Names the guard and the operation. The ruleset keeps its own generic label.
 • description (string, optional) - plain text stored on the rule. State the guard, where it must run, and every operation the rule flags. The ruleset description stays generic and is not updated.
-• tests (array) - the two examples from the fix. The function after the fix has annotation_count 0. The same function before the fix has annotation_count 1. Always send both.
+• tests (array) - the two examples from the fix. The function after the fix has annotation_count 0. The same function before the fix has annotation_count 1. Always send both. The tool runs the rule on them first and saves nothing when a count differs or the rule raises an exception.
 
 Output: the ruleset name, rule name, revision id, and a warning when the revision id is missing.`,
 			InputSchema: mcp.ToolInputSchema{

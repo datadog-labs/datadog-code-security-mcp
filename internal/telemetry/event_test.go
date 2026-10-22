@@ -111,6 +111,8 @@ func TestCategorizeErrorKnownKinds(t *testing.T) {
 		{"path ../x is outside directory /repo", ErrKindInvalidArguments},
 		{`rule "missing-admin" already exists in ruleset "security-variants". Saving would publish a new revision over it.`, ErrKindInvalidArguments},
 		{"scanner failed: exit status 3\nboom", ErrKindScanError},
+		{"the rule raised an exception in 1 file(s), so the results are incomplete. Fix the rule and scan again:\nsrc/a.go: Error: DD_API_KEY is required", ErrKindScanError},
+		{"the rule does not match its examples, so it was not saved:\nnoncompliant.go: expected 1, got 0", ErrKindScanError},
 	}
 	for _, tc := range cases {
 		if got := CategorizeError(fmt.Errorf("%s", tc.msg)); got != tc.want {

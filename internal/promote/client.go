@@ -33,7 +33,8 @@ const (
 
 // Test is one example the Datadog rule page shows.
 // AnnotationCount 0 is the compliant example. Any other count is non-compliant.
-// The caller measures the count. This package does not scan the example.
+// This package does not scan the example. The promote command does, before it
+// calls Save, and refuses when a count differs.
 type Test struct {
 	Filename        string
 	Code            string

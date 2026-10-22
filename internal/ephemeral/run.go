@@ -45,7 +45,12 @@ type ScanResult struct {
 // with -r, --rules-with-config, and -b. It does not fetch Datadog rules and
 // does not require API keys.
 func Scan(ctx context.Context, req ScanRequest) (ScanResult, error) {
-	rules, err := BuildRulesJSON(req.Input)
+	if _, err := BuildRulesJSON(req.Input); err != nil {
+		return ScanResult{}, err
+	}
+	guarded := req.Input
+	guarded.RuleCode = guardRuleCode(req.RuleCode)
+	rules, err := BuildRulesJSON(guarded)
 	if err != nil {
 		return ScanResult{}, err
 	}
@@ -95,6 +100,9 @@ func Scan(ctx context.Context, req ScanRequest) (ScanResult, error) {
 	if readErr == nil && len(bytes.TrimSpace(data)) > 0 {
 		if !json.Valid(data) {
 			return ScanResult{}, fmt.Errorf("scanner wrote invalid JSON: %s", truncate(output))
+		}
+		if err := ruleExceptions(data); err != nil {
+			return ScanResult{}, err
 		}
 		return ScanResult{Findings: json.RawMessage(data)}, nil
 	}

@@ -117,6 +117,10 @@ func (r errorRule) matches(msg string) bool {
 // rule now falls through to ErrKindUnknown rather than being guessed.
 var errorRules = []errorRule{
 	// Tier 1: owned/known anchored signals.
+	// These two carry the rule's own JavaScript error text, which may contain
+	// any phrase below, so they match first.
+	{kind: ErrKindScanError, contains: []string{"the rule raised an exception in"}, message: "rule raised an exception"},
+	{kind: ErrKindScanError, contains: []string{"the rule does not match its examples"}, message: "rule does not match its examples"},
 	{kind: ErrKindGitError, contains: []string{"remote not found"}, message: "remote not found"},
 	{kind: ErrKindGitError, contains: []string{"Unable to parse git ignores"}, message: "unable to parse .git"},
 
