@@ -41,7 +41,7 @@ func TestParseEphemeralArgs(t *testing.T) {
 		args := base()
 		args["directory"] = "/repo"
 		args["rule_name"] = "missing-guard"
-		args["paths"] = []any{"src", 3, "lib"}
+		args["paths"] = []any{"src", "lib"}
 
 		req, err := parseEphemeralArgs(args)
 		if err != nil {
@@ -54,7 +54,17 @@ func TestParseEphemeralArgs(t *testing.T) {
 			t.Errorf("directory = %q, rule name = %q", req.Directory, req.RuleName)
 		}
 		if !slices.Equal(req.Paths, []string{"src", "lib"}) {
-			t.Errorf("paths = %v, want non-string entries dropped", req.Paths)
+			t.Errorf("paths = %v", req.Paths)
+		}
+	})
+
+	t.Run("paths that are not an array of strings", func(t *testing.T) {
+		for _, paths := range []any{"src", []any{"src", 3}} {
+			args := base()
+			args["paths"] = paths
+			if _, err := parseEphemeralArgs(args); err == nil || !strings.Contains(err.Error(), "paths must be an array of strings") {
+				t.Errorf("paths %#v: error = %v", paths, err)
+			}
 		}
 	})
 

@@ -259,6 +259,7 @@ jobs:
             /tmp/iac-output.json
             /tmp/ephemeral-output.json
             /tmp/ephemeral-error.txt
+            /tmp/ephemeral-rule-*
           retention-days: 7
           if-no-files-found: warn
 

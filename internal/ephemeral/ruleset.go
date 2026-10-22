@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"strings"
+	"unicode"
 )
 
 // Input is the rule source an agent hands to the local scanner.
@@ -65,6 +66,11 @@ func BuildRulesJSON(in Input) ([]byte, error) {
 	}
 
 	rulesetName, ruleName := ruleNames(in)
+	// The analyzer prints the names in its one-line debug messages, which is
+	// how a failing rule is detected.
+	if strings.ContainsFunc(rulesetName+ruleName, unicode.IsControl) {
+		return nil, InvalidInput("invalid rule or ruleset name", "rule and ruleset names cannot contain control characters such as newlines")
+	}
 	code := base64.StdEncoding.EncodeToString([]byte(in.RuleCode))
 	query := base64.StdEncoding.EncodeToString([]byte(in.TreeSitterQuery))
 	sum := sha256.Sum256([]byte(code))
@@ -99,9 +105,13 @@ func ruleNames(in Input) (rulesetName, ruleName string) {
 	return rulesetName, ruleName
 }
 
-// ruleID is the name the analyzer reports for the rule: ruleset/rule.
+// ruleID is the name the analyzer reports for the rule. Like the analyzer's
+// RuleSet::new, it prepends "ruleset/" unless the rule name already has it.
 func ruleID(in Input) string {
 	rulesetName, ruleName := ruleNames(in)
+	if strings.HasPrefix(ruleName, rulesetName+"/") {
+		return ruleName
+	}
 	return rulesetName + "/" + ruleName
 }
 

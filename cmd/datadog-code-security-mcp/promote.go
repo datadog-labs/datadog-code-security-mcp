@@ -273,7 +273,12 @@ func runPromote(ctx context.Context, req promote.Request, iface telemetry.Interf
 		return promote.Result{}, err
 	}
 
-	client := promote.NewClient(os.Getenv(constants.EnvAPIKey), os.Getenv(constants.EnvAPPKey), os.Getenv(constants.EnvSite))
+	cfg, err := auth.LoadConfig()
+	if err != nil {
+		event.Failure = err
+		return promote.Result{}, err
+	}
+	client := promote.NewClient(cfg.APIKey, cfg.APPKey, cfg.Site)
 	result, err := client.Save(ctx, req)
 	if err != nil {
 		event.Failure = err

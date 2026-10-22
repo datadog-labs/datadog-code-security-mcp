@@ -18,6 +18,10 @@ import (
 // DefaultScanTimeout bounds one ephemeral analyzer run.
 const DefaultScanTimeout = 10 * time.Minute
 
+// analyzerWaitDelay bounds the wait for the analyzer's output after it exits
+// or is canceled.
+const analyzerWaitDelay = 5 * time.Second
+
 // rulesWithConfigFlag makes -r run only the supplied rules when the repository
 // has a local or remote SAST configuration. The configuration's paths, file
 // size, gitignore, and ruleset-configs settings still apply.
@@ -93,6 +97,9 @@ func scan(ctx context.Context, req ScanRequest, trackScanned bool) (ScanResult, 
 	// no-dd-sa:go-security/command-injection - analyzer comes from exec.LookPath and every path argument is resolved above
 	cmd := exec.CommandContext(ctx, analyzer, analyzerArgs(rulesPath, directory, outputPath, paths)...)
 	cmd.Dir = directory
+	// Output goes to a Go writer, so Wait also waits for the pipes to close.
+	// Bound that wait in case a child of the analyzer keeps them open.
+	cmd.WaitDelay = analyzerWaitDelay
 	log := newAnalyzerLog(ruleID(req.Input))
 	if trackScanned {
 		log.scanned = map[string]bool{}
@@ -100,7 +107,7 @@ func scan(ctx context.Context, req ScanRequest, trackScanned bool) (ScanResult, 
 	cmd.Stdout = log
 	cmd.Stderr = log
 	runErr := cmd.Run()
-	log.flush()
+	log.finish()
 	if err := ctx.Err(); err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
 			return ScanResult{}, nil, fmt.Errorf("ephemeral scan timed out: %w", err)

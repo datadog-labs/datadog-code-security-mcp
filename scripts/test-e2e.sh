@@ -707,7 +707,14 @@ elif [[ $EPHEMERAL_EXIT_CODE -ne 0 ]]; then
   echo -e "${RED}❌ Ephemeral scan failed (exit ${EPHEMERAL_EXIT_CODE})${NC}"
   cat "${TEST_OUTPUT_DIR}/ephemeral-error.txt"
   TESTS_FAILED=$((TESTS_FAILED + 1))
-elif command -v jq &> /dev/null; then
+elif ! command -v jq &> /dev/null; then
+  echo -e "${YELLOW}⚠ jq not found, skipping ephemeral finding validation${NC}"
+  TESTS_WARNED=$((TESTS_WARNED + 1))
+elif ! jq empty "${TEST_OUTPUT_DIR}/ephemeral-output.json" 2> /dev/null; then
+  echo -e "${RED}❌ Ephemeral scan wrote invalid JSON${NC}"
+  cat "${TEST_OUTPUT_DIR}/ephemeral-output.json"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+else
   EPHEMERAL_OK=true
   FOREIGN_RULES=$(jq -r '[.[] | select((.violations | length) > 0) | .rule_name | select(. != "security-variants/ephemeral")] | unique | join(", ")' "${TEST_OUTPUT_DIR}/ephemeral-output.json")
   HANDLER_HITS=$(jq '[.[] | select(.filename == "src/handler.go") | .violations[]] | length' "${TEST_OUTPUT_DIR}/ephemeral-output.json")
@@ -733,34 +740,38 @@ elif command -v jq &> /dev/null; then
     cat "${TEST_OUTPUT_DIR}/ephemeral-output.json"
     TESTS_FAILED=$((TESTS_FAILED + 1))
   fi
-else
-  echo -e "${YELLOW}⚠ jq not found, skipping ephemeral finding validation${NC}"
-  TESTS_WARNED=$((TESTS_WARNED + 1))
 fi
 
 # A rule that matches and then fails must fail the scan, not look clean. The
 # analyzer drops those results, so the scan reads its --debug diagnostics.
 # rule-this.js throws only because the analyzer calls it without a receiver.
 # rule-init-throws.js throws in its top-level code, before visit runs.
+FAILING_RULES_OK=true
 for THROWING_RULE in rule-throws.js rule-this.js rule-init-throws.js rule-syntax-error.js rule-timeout.js; do
   THROWS_EXIT_CODE=0
+  THROWS_OUTPUT="${TEST_OUTPUT_DIR}/ephemeral-${THROWING_RULE%.js}-output.json"
+  THROWS_ERROR="${TEST_OUTPUT_DIR}/ephemeral-${THROWING_RULE%.js}-error.txt"
   env -u DD_API_KEY -u DD_APP_KEY -u DD_AUTH_DOMAIN \
     ./bin/datadog-code-security-mcp ephemeral-scan \
     --language GO \
     --directory "${EPHEMERAL_FIXTURE}" \
     --code-file "${EPHEMERAL_FIXTURE}/${THROWING_RULE}" \
     --query-file "${EPHEMERAL_FIXTURE}/query.scm" \
-    > "${TEST_OUTPUT_DIR}/ephemeral-throws-output.json" 2> "${TEST_OUTPUT_DIR}/ephemeral-throws-error.txt" || THROWS_EXIT_CODE=$?
+    > "${THROWS_OUTPUT}" 2> "${THROWS_ERROR}" || THROWS_EXIT_CODE=$?
 
-  if [[ $THROWS_EXIT_CODE -ne 0 ]] && grep -q "the rule failed in 1 file(s)" "${TEST_OUTPUT_DIR}/ephemeral-throws-error.txt"; then
+  if [[ $THROWS_EXIT_CODE -ne 0 ]] && grep -q "the rule failed in 1 file(s)" "${THROWS_ERROR}"; then
     echo -e "${GREEN}✓ Ephemeral scan reported ${THROWING_RULE} as an error${NC}"
-    TESTS_PASSED=$((TESTS_PASSED + 1))
   else
     echo -e "${RED}❌ Ephemeral scan did not report ${THROWING_RULE} (exit ${THROWS_EXIT_CODE})${NC}"
-    cat "${TEST_OUTPUT_DIR}/ephemeral-throws-output.json" "${TEST_OUTPUT_DIR}/ephemeral-throws-error.txt"
-    TESTS_FAILED=$((TESTS_FAILED + 1))
+    cat "${THROWS_OUTPUT}" "${THROWS_ERROR}"
+    FAILING_RULES_OK=false
   fi
 done
+if [[ "$FAILING_RULES_OK" == "true" ]]; then
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
 echo ""
 
 # =============================================================================
@@ -848,6 +859,7 @@ echo "  ${TEST_OUTPUT_DIR}/clean-output.json"
 echo "  ${TEST_OUTPUT_DIR}/sbom-output.json"
 echo "  ${TEST_OUTPUT_DIR}/iac-output.json"
 echo "  ${TEST_OUTPUT_DIR}/ephemeral-output.json"
+echo "  ${TEST_OUTPUT_DIR}/ephemeral-rule-*-output.json"
 echo "  ${TEST_OUTPUT_DIR}/ephemeral-error.txt"
 echo "  ${TEST_OUTPUT_DIR}/setup-output.json"
 echo "  ${TEST_OUTPUT_DIR}/setup-error.txt"

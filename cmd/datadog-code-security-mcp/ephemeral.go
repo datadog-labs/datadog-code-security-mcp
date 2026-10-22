@@ -120,11 +120,17 @@ func parseEphemeralArgs(arguments map[string]any) (ephemeral.ScanRequest, error)
 	if name, ok := arguments["rule_name"].(string); ok {
 		req.RuleName = name
 	}
-	if paths, ok := arguments["paths"].([]any); ok {
+	if raw, present := arguments["paths"]; present && raw != nil {
+		paths, ok := raw.([]any)
+		if !ok {
+			return ephemeral.ScanRequest{}, ephemeral.InvalidInput("paths is not an array of strings", "paths must be an array of strings")
+		}
 		for _, path := range paths {
-			if s, ok := path.(string); ok {
-				req.Paths = append(req.Paths, s)
+			s, ok := path.(string)
+			if !ok {
+				return ephemeral.ScanRequest{}, ephemeral.InvalidInput("paths is not an array of strings", "paths must be an array of strings")
 			}
+			req.Paths = append(req.Paths, s)
 		}
 	}
 	return req, nil

@@ -4,22 +4,28 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 // fakeAnalyzerScript stands in for datadog-static-analyzer. --help prints the
 // configured usage. A scan records its arguments, prints DEBUG_LINES to stderr,
-// and writes FINDINGS to --output.
+// and writes FINDINGS to --output. With SLEEP_BIN set it runs that sleep for
+// SLEEP seconds instead.
 const fakeAnalyzerScript = `#!/bin/sh
 if [ "$1" = "--help" ]; then
   printf '%s\n' "$HELP_TEXT"
   exit 0
 fi
 printf '%s\n' "$@" > "$ARGS_FILE"
+if [ -n "$SLEEP_BIN" ]; then
+  exec "$SLEEP_BIN" "$SLEEP"
+fi
 if [ -n "$DEBUG_LINES" ]; then
   printf '%s\n' "$DEBUG_LINES" >&2
 fi
@@ -113,14 +119,33 @@ func TestScanPassesRulesWithConfig(t *testing.T) {
 	}
 }
 
-func TestScanReportsCancellation(t *testing.T) {
-	installFakeAnalyzer(t, "--rules-with-config", `[]`, "0")
+func TestScanReportsCancellationDuringTheScan(t *testing.T) {
+	sleepBin, err := exec.LookPath("sleep")
+	if err != nil {
+		t.Skip("sleep is not installed")
+	}
+	fake := installFakeAnalyzer(t, "--rules-with-config", `[]`, "0")
+	t.Setenv("SLEEP_BIN", sleepBin)
+	t.Setenv("SLEEP", "30")
 	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
+	defer cancel()
+	go func() {
+		for {
+			if _, err := os.Stat(fake.argsFile); err == nil {
+				cancel()
+				return
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}()
 
-	_, err := Scan(ctx, ScanRequest{Input: validInput(), Directory: t.TempDir()})
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("error = %v, want context.Canceled", err)
+	start := time.Now()
+	_, err = Scan(ctx, ScanRequest{Input: validInput(), Directory: t.TempDir()})
+	if !errors.Is(err, context.Canceled) || !strings.HasPrefix(err.Error(), "ephemeral scan canceled") {
+		t.Fatalf("error = %v, want ephemeral scan canceled", err)
+	}
+	if elapsed := time.Since(start); elapsed > 10*time.Second {
+		t.Errorf("cancel took %s", elapsed)
 	}
 }
 

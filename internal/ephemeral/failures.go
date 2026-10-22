@@ -35,6 +35,9 @@ const (
 	maxLogLine = 64 * 1024
 	// maxLogTail bounds the output kept for error messages.
 	maxLogTail = 2000
+	// maxJoinedLines bounds how many lines a failure line may span. A newline
+	// in a filename splits one analyzer message into several lines.
+	maxJoinedLines = 8
 )
 
 // RuleFailureError means the rule threw, did not compile, or timed out on at
@@ -63,6 +66,9 @@ type analyzerLog struct {
 	truncated   bool
 	reasons     map[string]string
 	scanned     map[string]bool
+	// pending is a failure line still waiting for its marker.
+	pending      string
+	pendingLines int
 }
 
 func newAnalyzerLog(ruleID string) *analyzerLog {
@@ -102,25 +108,72 @@ func (l *analyzerLog) appendLine(p []byte) {
 	}
 }
 
-// flush parses the buffered line. Call it once more after the process exits.
+// flush parses the buffered line.
 func (l *analyzerLog) flush() {
 	line := strings.TrimRight(string(l.line), "\r")
 	l.line = l.line[:0]
+	if l.pending != "" {
+		if strings.HasPrefix(line, failurePrefix) || strings.HasPrefix(line, applyPrefix) {
+			l.recordUnreadable(l.pending)
+			l.pending = ""
+		} else {
+			joined := l.pending + "\n" + line
+			l.pending = ""
+			if l.parseFailure(joined) {
+				return
+			}
+			if l.pendingLines < maxJoinedLines && len(joined) < maxLogLine {
+				l.pending = joined
+				l.pendingLines++
+			} else {
+				l.recordUnreadable(joined)
+			}
+			return
+		}
+	}
 	if l.scanned != nil {
 		if file, ok := strings.CutPrefix(line, l.applyPrefix); ok {
 			l.scanned[filepath.ToSlash(file)] = true
 			return
 		}
 	}
+	if !strings.HasPrefix(line, l.prefix) || l.parseFailure(line) {
+		return
+	}
+	l.pending = line
+	l.pendingLines = 1
+}
+
+// finish parses what is left after the process exits. A failure line that
+// never got its marker still counts as a failure.
+func (l *analyzerLog) finish() {
+	l.flush()
+	if l.pending != "" {
+		l.recordUnreadable(l.pending)
+		l.pending = ""
+	}
+}
+
+// parseFailure records line when it is a complete failure message.
+func (l *analyzerLog) parseFailure(line string) bool {
 	rest, ok := strings.CutPrefix(line, l.prefix)
 	if !ok {
-		return
+		return false
 	}
 	if file, reason, ok := strings.Cut(rest, executionMarker); ok {
 		l.reasons[file] = strings.TrimPrefix(reason, "Uncaught ")
-	} else if file, duration, ok := strings.Cut(rest, timeoutMarker); ok {
-		l.reasons[file] = "timed out (" + duration
+		return true
 	}
+	if file, duration, ok := strings.Cut(rest, timeoutMarker); ok {
+		l.reasons[file] = "timed out (" + duration
+		return true
+	}
+	return false
+}
+
+func (l *analyzerLog) recordUnreadable(line string) {
+	file, _, _ := strings.Cut(strings.TrimPrefix(line, l.prefix), "\n")
+	l.reasons[file] = "failed (the analyzer message could not be read)"
 }
 
 // String returns the end of the output.

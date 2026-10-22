@@ -4,9 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -837,6 +840,27 @@ func TestScanErrorForTelemetryKeepsTheCause(t *testing.T) {
 	}
 	if scanErrorForTelemetry(nil) != nil {
 		t.Fatal("nil scan error must stay nil")
+	}
+}
+
+func TestSBOMFailureTelemetryKeepsTheProcessExitCode(t *testing.T) {
+	cmd := exec.Command(os.Args[0], "-test.run=^TestSBOMExitHelperProcess$")
+	cmd.Env = append(os.Environ(), "SBOM_EXIT_HELPER=1")
+	exitErr := cmd.Run()
+	scanErr := &types.ScanError{
+		Error: "scanner execution failed: exit status 3",
+		Cause: fmt.Errorf("scanner execution failed: %w", exitErr),
+	}
+
+	info := telemetry.ErrorInfoFromError(scanErrorForTelemetry(scanErr))
+	if info == nil || !strings.HasSuffix(info.Message, "(exit status 3)") {
+		t.Fatalf("telemetry error = %+v, want the exit status 3 suffix", info)
+	}
+}
+
+func TestSBOMExitHelperProcess(t *testing.T) {
+	if os.Getenv("SBOM_EXIT_HELPER") == "1" {
+		os.Exit(3)
 	}
 }
 

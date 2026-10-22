@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -175,4 +176,95 @@ func TestRealAnalyzerChecksOnlyScannedExamples(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "compliant.ts: not scanned") {
 		t.Fatalf("skipped example: error = %v, want not scanned", err)
 	}
+}
+
+func TestScanMatchesARuleNameThatAlreadyHasTheRuleset(t *testing.T) {
+	installFakeAnalyzer(t, "--rules-with-config", `[]`, "0")
+	t.Setenv("DEBUG_LINES", "rule:file security-variants/missing-guard:src/a.go execution error, message: Uncaught TypeError: boom")
+
+	input := validInput()
+	input.RuleName = "security-variants/missing-guard"
+	_, err := Scan(context.Background(), ScanRequest{Input: input, Directory: t.TempDir()})
+	var failure *RuleFailureError
+	if !errors.As(err, &failure) {
+		t.Fatalf("error = %v, want the failure of security-variants/missing-guard", err)
+	}
+}
+
+func TestBuildRulesJSONRejectsControlCharactersInNames(t *testing.T) {
+	for _, in := range []Input{
+		{RuleCode: "x", TreeSitterQuery: "x", Language: "GO", RuleName: "a\nb"},
+		{RuleCode: "x", TreeSitterQuery: "x", Language: "GO", RulesetName: "a\tb"},
+	} {
+		var inputErr *InputError
+		if _, err := BuildRulesJSON(in); !errors.As(err, &inputErr) {
+			t.Errorf("BuildRulesJSON(%q, %q) error = %v, want InputError", in.RulesetName, in.RuleName, err)
+		}
+	}
+}
+
+func TestAnalyzerLogJoinsAFilenameSplitByANewline(t *testing.T) {
+	log := newAnalyzerLog("security-variants/ephemeral")
+	_, _ = log.Write([]byte("rule:file security-variants/ephemeral:src/new\nline.go execution error, message: Uncaught TypeError: boom\n" +
+		"rule:file security-variants/ephemeral:src/cut\n" +
+		"Apply rule security-variants/ephemeral file src/c.go\n" +
+		"rule:file security-variants/ephemeral:src/end\n"))
+	log.finish()
+
+	var failure *RuleFailureError
+	if !errors.As(log.failure(), &failure) || failure.Files != 3 {
+		t.Fatalf("failure = %+v, want 3 files", log.failure())
+	}
+	want := "src/cut: failed (the analyzer message could not be read)|" +
+		"src/end: failed (the analyzer message could not be read)|" +
+		"src/new\nline.go: TypeError: boom"
+	if got := strings.Join(failure.Examples, "|"); got != want {
+		t.Errorf("examples = %q, want %q", got, want)
+	}
+}
+
+func TestRealAnalyzerReportsFailuresForQualifiedNamesAndSplitFilenames(t *testing.T) {
+	analyzer, err := exec.LookPath("datadog-static-analyzer")
+	if err != nil {
+		t.Skip("datadog-static-analyzer is not installed")
+	}
+	help, _ := exec.Command(analyzer, "--help").CombinedOutput()
+	if !strings.Contains(string(help), rulesWithConfigFlag) {
+		t.Skip("datadog-static-analyzer lacks " + rulesWithConfigFlag)
+	}
+	code := "package main\n\nfunc main() { runUnchecked(\"x\") }\n"
+	input := Input{
+		RuleCode:        `function visit(captures) { captures.get("call").missing.boom(); }`,
+		TreeSitterQuery: `(call_expression function: (identifier) @callee (#eq? @callee "runUnchecked")) @call`,
+		Language:        "GO",
+	}
+
+	t.Run("qualified rule name", func(t *testing.T) {
+		repo := t.TempDir()
+		if err := os.WriteFile(filepath.Join(repo, "main.go"), []byte(code), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		qualified := input
+		qualified.RuleName = "security-variants/missing-guard"
+		_, err := Scan(context.Background(), ScanRequest{Input: qualified, Directory: repo})
+		var failure *RuleFailureError
+		if !errors.As(err, &failure) {
+			t.Fatalf("error = %v, want RuleFailureError", err)
+		}
+	})
+
+	t.Run("filename with a newline", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("Windows filenames cannot contain newlines")
+		}
+		repo := t.TempDir()
+		if err := os.WriteFile(filepath.Join(repo, "new\nline.go"), []byte(code), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		_, err := Scan(context.Background(), ScanRequest{Input: input, Directory: repo})
+		var failure *RuleFailureError
+		if !errors.As(err, &failure) {
+			t.Fatalf("error = %v, want RuleFailureError", err)
+		}
+	})
 }
