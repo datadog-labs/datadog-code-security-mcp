@@ -56,18 +56,27 @@ func TestRealAnalyzerReportsThrowingVisitor(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(repo, "main.go"), []byte("package main\n\nfunc main() { runUnchecked(\"x\") }\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	input := Input{
-		RuleCode:        `function visit(captures) { captures.get("call").missing.boom(); }`,
-		TreeSitterQuery: `(call_expression function: (identifier) @callee (#eq? @callee "runUnchecked")) @call`,
-		Language:        "GO",
+	rules := map[string]string{
+		"throwing visitor": `function visit(captures) { captures.get("call").missing.boom(); }`,
+		// The analyzer calls the rule without a receiver, so this is undefined.
+		"state on this": `function beforeAll() { this.calls = 0; }
+function visit(captures) { this.calls++; }`,
 	}
-
-	_, err = Scan(context.Background(), ScanRequest{Input: input, Directory: repo})
-	var exception *RuleExceptionError
-	if !errors.As(err, &exception) {
-		t.Fatalf("error = %v, want RuleExceptionError", err)
-	}
-	if exception.Files != 1 || !strings.Contains(exception.Examples[0], "main.go: TypeError") {
-		t.Errorf("exception = %+v", exception)
+	for name, code := range rules {
+		t.Run(name, func(t *testing.T) {
+			input := Input{
+				RuleCode:        code,
+				TreeSitterQuery: `(call_expression function: (identifier) @callee (#eq? @callee "runUnchecked")) @call`,
+				Language:        "GO",
+			}
+			_, err := Scan(context.Background(), ScanRequest{Input: input, Directory: repo})
+			var exception *RuleExceptionError
+			if !errors.As(err, &exception) {
+				t.Fatalf("error = %v, want RuleExceptionError", err)
+			}
+			if exception.Files != 1 || !strings.Contains(exception.Examples[0], "main.go: TypeError") {
+				t.Errorf("exception = %+v", exception)
+			}
+		})
 	}
 }

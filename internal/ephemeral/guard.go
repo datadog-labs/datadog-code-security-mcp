@@ -21,33 +21,35 @@ const maxReportedExceptions = 3
 // The wrappers are var so that, while the rule's own scope is evaluated, a name
 // the rule does not declare reads as undefined rather than the wrapper or a
 // const in its temporal dead zone.
+// The rule's functions are held in plain variables and called without a
+// receiver, as the analyzer calls them, so this is undefined inside the rule.
 // It cannot catch a syntax error: that stops the whole script before it runs.
 func guardRuleCode(code string) string {
-	return `const __ddsaRule = (() => {
+	return `const [__ddsaVisit, __ddsaBeforeAll, __ddsaAfterAll] = (() => {
 ` + code + `
-;return {
-  visit: typeof visit === "function" ? visit : undefined,
-  beforeAll: typeof beforeAll === "function" ? beforeAll : undefined,
-  afterAll: typeof afterAll === "function" ? afterAll : undefined,
-};
+;return [
+  typeof visit === "function" ? visit : undefined,
+  typeof beforeAll === "function" ? beforeAll : undefined,
+  typeof afterAll === "function" ? afterAll : undefined,
+];
 })();
 function __ddsaReport(e) {
   addError(buildError(1, 1, 1, 2, "` + exceptionMarker + `" + String(e)));
 }
-var visit = __ddsaRule.visit === undefined ? undefined
+var visit = __ddsaVisit === undefined ? undefined
   : function (queryMatch, filename, fileContents) {
     try {
-      return __ddsaRule.visit(queryMatch, filename, fileContents);
+      return __ddsaVisit(queryMatch, filename, fileContents);
     } catch (e) {
       __ddsaReport(e);
     }
   };
-var beforeAll = __ddsaRule.beforeAll === undefined ? undefined
-  : __ddsaRule.beforeAll.length === 0
-    ? function () { try { __ddsaRule.beforeAll(); } catch (e) { __ddsaReport(e); } }
-    : function (matches) { try { __ddsaRule.beforeAll(matches); } catch (e) { __ddsaReport(e); } };
-var afterAll = __ddsaRule.afterAll === undefined ? undefined
-  : function () { try { __ddsaRule.afterAll(); } catch (e) { __ddsaReport(e); } };
+var beforeAll = __ddsaBeforeAll === undefined ? undefined
+  : __ddsaBeforeAll.length === 0
+    ? function () { try { __ddsaBeforeAll(); } catch (e) { __ddsaReport(e); } }
+    : function (matches) { try { __ddsaBeforeAll(matches); } catch (e) { __ddsaReport(e); } };
+var afterAll = __ddsaAfterAll === undefined ? undefined
+  : function () { try { __ddsaAfterAll(); } catch (e) { __ddsaReport(e); } };
 `
 }
 
