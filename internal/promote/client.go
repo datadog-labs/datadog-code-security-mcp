@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -100,7 +101,32 @@ func (e *APIError) Error() string {
 	if e.Status == 0 {
 		return fmt.Sprintf("%s failed: %v", e.Op, e.Err)
 	}
-	return fmt.Sprintf("%s returned status %d: %s", e.Op, e.Status, e.Body)
+	summary := fmt.Sprintf("%s returned status %d", e.Op, e.Status)
+	if detail := apiErrorDetails(e.Body); detail != "" {
+		return summary + ": " + detail + "\n" + e.Body
+	}
+	return summary + ": " + e.Body
+}
+
+// apiErrorDetails returns the human-readable sentences from a JSON:API error
+// body. The raw body stays in the error either way, because it names the field.
+func apiErrorDetails(body string) string {
+	var payload struct {
+		Errors []struct {
+			Detail string `json:"detail"`
+		} `json:"errors"`
+	}
+	if json.Unmarshal([]byte(body), &payload) != nil {
+		return ""
+	}
+	var details []string
+	for _, item := range payload.Errors {
+		detail := strings.TrimSpace(item.Detail)
+		if detail != "" {
+			details = append(details, detail)
+		}
+	}
+	return strings.Join(details, "; ")
 }
 
 func (e *APIError) Unwrap() error { return e.Err }
@@ -192,8 +218,7 @@ func (c *Client) Save(ctx context.Context, req Request) (Result, error) {
 	revisionID, err := c.createRevision(ctx, prepared)
 	if err != nil {
 		if !ruleExisted {
-			return Result{}, fmt.Errorf("%w\nThis call created the rule %s in the ruleset %s, but it has no revision, so it is empty. To retry, save again with overwrite (--overwrite in the CLI)",
-				err, prepared.ruleName, prepared.rulesetName)
+			return Result{}, fmt.Errorf("%w\n%s", err, emptyRuleHint(prepared, err))
 		}
 		return Result{}, err
 	}
@@ -208,6 +233,33 @@ func (c *Client) Save(ctx context.Context, req Request) (Result, error) {
 		result.Warning = missingRevisionWarning
 	}
 	return result, nil
+}
+
+// emptyRuleHint explains the rule shell left behind when creating its first
+// revision fails. A rejected request fails again with the same body, so the
+// hint says to fix it before replacing the shell. Other failures can succeed
+// on a retry with overwrite.
+func emptyRuleHint(req preparedRequest, err error) string {
+	created := fmt.Sprintf("This call created the rule %s in the ruleset %s, but it has no revision, so it is empty.", req.ruleName, req.rulesetName)
+	if revisionRejected(err) {
+		return created + " Saving the same request again will fail the same way. Fix the request, then save with overwrite to replace this empty rule (--overwrite in the CLI)."
+	}
+	return created + " To retry, save again with overwrite (--overwrite in the CLI)."
+}
+
+// revisionRejected reports a response that refuses this request. Auth, conflict,
+// and rate-limit responses are left out: those can succeed on a later try.
+func revisionRejected(err error) bool {
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) || apiErr.Status < 400 || apiErr.Status >= 500 {
+		return false
+	}
+	switch apiErr.Status {
+	case http.StatusUnauthorized, http.StatusForbidden, http.StatusConflict, http.StatusTooManyRequests:
+		return false
+	default:
+		return true
+	}
 }
 
 // ruleExists reports whether the rule is already saved. A missing ruleset

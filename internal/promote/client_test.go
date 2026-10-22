@@ -348,8 +348,61 @@ func TestSaveExplainsAnEmptyRuleWhenTheRevisionFails(t *testing.T) {
 
 	client := newClientWithBaseURL("api", "app", server.URL)
 	_, err := client.Save(context.Background(), sampleRequest(true))
-	if err == nil || !strings.Contains(err.Error(), "This call created the rule missing-admin") || !strings.Contains(err.Error(), "overwrite") {
+	if err == nil || !strings.Contains(err.Error(), "This call created the rule missing-admin") || !strings.Contains(err.Error(), "To retry, save again with overwrite") {
 		t.Fatalf("error = %v, want the empty rule explanation", err)
+	}
+}
+
+func TestSaveNamesTheServerReasonWhenTheRevisionIsRejected(t *testing.T) {
+	const body = `{"errors":[{"detail":"language must be one of PYTHON, GO","source":{"pointer":"/data/attributes/language"}}]}`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet:
+			w.WriteHeader(http.StatusNotFound)
+		case strings.HasSuffix(r.URL.Path, "/revisions"):
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = io.WriteString(w, body)
+		default:
+			w.WriteHeader(http.StatusOK)
+		}
+	}))
+	defer server.Close()
+
+	client := newClientWithBaseURL("api", "app", server.URL)
+	_, err := client.Save(context.Background(), sampleRequest(true))
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+	message := err.Error()
+	for _, want := range []string{
+		"language must be one of PYTHON, GO",
+		"/data/attributes/language",
+		"This call created the rule missing-admin",
+		"Saving the same request again will fail the same way",
+	} {
+		if !strings.Contains(message, want) {
+			t.Errorf("error = %v, want %q", err, want)
+		}
+	}
+	if strings.Contains(message, "To retry, save again with overwrite") {
+		t.Fatalf("error = %v, want the rejection to say the same request will fail", err)
+	}
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) || apiErr.Status != http.StatusBadRequest {
+		t.Fatalf("error = %v, want the API status", err)
+	}
+}
+
+func TestAPIErrorLeadsWithTheServerDetail(t *testing.T) {
+	err := apiStatusError("create rule revision", http.StatusBadRequest,
+		`{"errors":[{"detail":"language must be one of PYTHON, GO"},{"detail":"code is invalid"}]}`)
+	message := err.Error()
+	if !strings.HasPrefix(message, "create rule revision returned status 400: language must be one of PYTHON, GO; code is invalid\n") {
+		t.Fatalf("error = %q, want the details before the body", message)
+	}
+	plain := apiStatusError("create rule revision", http.StatusBadRequest, "not json")
+	if plain.Error() != "create rule revision returned status 400: not json" {
+		t.Fatalf("error = %q, want the raw body when it has no details", plain.Error())
 	}
 }
 
