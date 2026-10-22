@@ -351,6 +351,18 @@ func TestSaveRejectsABadSlugBeforeCalling(t *testing.T) {
 	}
 }
 
+func TestShortDescriptionLimitCountsCharacters(t *testing.T) {
+	req := sampleRequest(true)
+	req.ShortDescription = strings.Repeat("é", maxShortDescription)
+	if _, err := prepare(req); err != nil {
+		t.Fatalf("60 two-byte characters rejected: %v", err)
+	}
+	req.ShortDescription += "é"
+	if _, err := prepare(req); err == nil {
+		t.Fatal("61 characters accepted")
+	}
+}
+
 func TestSaveStoresMeasuredTests(t *testing.T) {
 	var revisionBody map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

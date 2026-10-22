@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/datadog-labs/datadog-code-security-mcp/internal/ephemeral"
 )
@@ -234,7 +235,7 @@ func prepare(req Request) (preparedRequest, error) {
 	if short == "" {
 		short = defaultShort
 	}
-	if len(short) > maxShortDescription {
+	if utf8.RuneCountInString(short) > maxShortDescription {
 		return preparedRequest{}, fmt.Errorf("short description is longer than %d characters", maxShortDescription)
 	}
 	description := strings.TrimSpace(req.Description)
