@@ -91,8 +91,11 @@ func Scan(ctx context.Context, req ScanRequest) (ScanResult, error) {
 	cmd.Stderr = log
 	runErr := cmd.Run()
 	log.flush()
-	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-		return ScanResult{}, fmt.Errorf("ephemeral scan timed out after %s: %w", DefaultScanTimeout, ctx.Err())
+	if err := ctx.Err(); err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			return ScanResult{}, fmt.Errorf("ephemeral scan timed out: %w", err)
+		}
+		return ScanResult{}, fmt.Errorf("ephemeral scan canceled: %w", err)
 	}
 
 	data, readErr := os.ReadFile(outputPath)
@@ -170,17 +173,18 @@ func resolveTargets(directory string, paths []string) (string, []string, error) 
 		if !filepath.IsAbs(target) {
 			target = filepath.Join(root, target)
 		}
+		// Compare resolved forms: the analyzer follows symlinks, and the same
+		// directory can be spelled two ways, such as /var and /private/var.
 		target = filepath.Clean(target)
-		rel, ok := within(root, target)
-		if !ok {
-			return "", nil, fmt.Errorf("path %s is outside directory %s", path, root)
-		}
-		// The analyzer follows symlinks, so the link target must stay inside too.
 		resolved, err := filepath.EvalSymlinks(target)
 		if err != nil {
+			if _, ok := within(root, target); !ok {
+				return "", nil, fmt.Errorf("path %s is outside directory %s", path, root)
+			}
 			return "", nil, fmt.Errorf("path %s: %w", path, err)
 		}
-		if _, ok := within(resolvedRoot, resolved); !ok {
+		rel, ok := within(resolvedRoot, resolved)
+		if !ok {
 			return "", nil, fmt.Errorf("path %s is outside directory %s", path, root)
 		}
 		relative = append(relative, rel)

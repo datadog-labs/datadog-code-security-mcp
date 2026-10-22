@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -15,7 +16,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode"
 	"unicode/utf8"
 
 	"github.com/datadog-labs/datadog-code-security-mcp/internal/ephemeral"
@@ -127,7 +127,7 @@ func newClientWithBaseURL(apiKey, appKey, baseURL string) *Client {
 // new revision of the exact source it was given.
 func (c *Client) Save(ctx context.Context, req Request) (Result, error) {
 	if !req.UserConfirmed {
-		return Result{}, fmt.Errorf("user_confirmed must be true before saving a custom rule")
+		return Result{}, errNotConfirmed
 	}
 	if c.apiKey == "" || c.appKey == "" {
 		return Result{}, fmt.Errorf("DD_API_KEY and DD_APP_KEY are required to save a custom rule")
@@ -160,6 +160,10 @@ func (c *Client) Save(ctx context.Context, req Request) (Result, error) {
 	}
 	revisionID, err := c.createRevision(ctx, prepared)
 	if err != nil {
+		if !ruleExisted {
+			return Result{}, fmt.Errorf("%w\nThis call created the rule %s in the ruleset %s, but it has no revision, so it is empty. To retry, save again with overwrite (--overwrite in the CLI)",
+				err, prepared.ruleName, prepared.rulesetName)
+		}
 		return Result{}, err
 	}
 	result := Result{
@@ -257,6 +261,18 @@ func prepare(req Request) (preparedRequest, error) {
 		description:      base64.StdEncoding.EncodeToString([]byte(description)),
 		tests:            tests,
 	}, nil
+}
+
+var errNotConfirmed = errors.New("user_confirmed must be true before saving a custom rule")
+
+// Validate checks everything Save checks before it calls the API, except the
+// credentials: confirmation, names, descriptions, and tests.
+func Validate(req Request) error {
+	if !req.UserConfirmed {
+		return errNotConfirmed
+	}
+	_, err := prepare(req)
+	return err
 }
 
 // ValidateTests requires the two examples the pre-save check runs: one with
@@ -496,11 +512,12 @@ func validateSlug(name string) error {
 			continue
 		}
 		previousDash = false
-		if !unicode.IsLetter(r) && !unicode.IsDigit(r) {
-			return fmt.Errorf("%q contains %q", name, string(r))
-		}
-		if unicode.IsLetter(r) && unicode.IsUpper(r) {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+		case r >= 'A' && r <= 'Z':
 			return fmt.Errorf("%q must be lowercase", name)
+		default:
+			return fmt.Errorf("%q contains %q; use only a-z, 0-9, and hyphens", name, string(r))
 		}
 	}
 	return nil

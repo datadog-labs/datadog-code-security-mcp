@@ -141,7 +141,12 @@ func TestCategorizeErrorKnownKinds(t *testing.T) {
 		{"scanner failed: exit status 3\nboom", ErrKindScanError},
 		{"the rule failed in 1 file(s), so the results are incomplete. Fix the rule and scan again:\nsrc/a.go: Error: DD_API_KEY is required", ErrKindScanError},
 		{"the rule does not match its examples, so it was not saved:\nnoncompliant.go: expected 1, got 0", ErrKindScanError},
-	}
+		{`unsupported language "COBOL"`, ErrKindInvalidArguments},
+		{"rule code is empty", ErrKindInvalidArguments},
+		{"tree-sitter query is empty", ErrKindInvalidArguments},
+		{"language is empty", ErrKindInvalidArguments},
+		{"scanner wrote invalid JSON: …garbage", ErrKindScanError},
+		{"failed to run datadog-static-analyzer --help: signal: killed", ErrKindScanError}}
 	for _, tc := range cases {
 		if got := CategorizeError(fmt.Errorf("%s", tc.msg)); got != tc.want {
 			t.Errorf("CategorizeError(%q) = %q, want %q", tc.msg, got, tc.want)

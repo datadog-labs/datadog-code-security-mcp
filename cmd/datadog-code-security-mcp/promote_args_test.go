@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/datadog-labs/datadog-code-security-mcp/internal/promote"
+	"github.com/datadog-labs/datadog-code-security-mcp/internal/telemetry"
 )
 
 func promoteArgs() map[string]any {
@@ -100,6 +101,51 @@ func TestCheckPromoteExamplesRejectsMissingAndAllZeroExamples(t *testing.T) {
 			err := checkPromoteExamples(t.Context(), req)
 			if err == nil || !strings.Contains(err.Error(), "exactly 2 examples") {
 				t.Fatalf("error = %v, want exactly 2 examples", err)
+			}
+		})
+	}
+}
+
+func TestRunPromoteRejectsBeforeAuthAndScan(t *testing.T) {
+	// dd-auth would leave a marker if credentials were resolved, and with no
+	// analyzer on PATH the example scan would fail with a different error.
+	bin := t.TempDir()
+	marker := filepath.Join(t.TempDir(), "dd-auth-ran")
+	script := "#!/bin/sh\n: > " + marker + "\n"
+	if err := os.WriteFile(filepath.Join(bin, "dd-auth"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+	t.Setenv("DD_API_KEY", "")
+	t.Setenv("DD_APP_KEY", "")
+	t.Setenv("DD_AUTH_DOMAIN", "app.datadoghq.com")
+	t.Setenv("DD_CODE_SECURITY_TELEMETRY_DISABLED", "1")
+
+	valid := promote.Request{
+		UserConfirmed: true, RuleCode: "function visit() {}", TreeSitterQuery: "(identifier) @id", Language: "GO", RuleName: "missing-guard",
+		Tests: []promote.Test{
+			{Filename: "compliant.go", Code: "package a\n", AnnotationCount: 0},
+			{Filename: "noncompliant.go", Code: "package a\n", AnnotationCount: 1},
+		},
+	}
+	unconfirmed := valid
+	unconfirmed.UserConfirmed = false
+	badName := valid
+	badName.RuleName = "Bad_Name"
+	for name, tc := range map[string]struct {
+		req  promote.Request
+		want string
+	}{
+		"unconfirmed": {unconfirmed, "user_confirmed must be true"},
+		"bad name":    {badName, "must be lowercase"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := runPromote(t.Context(), tc.req, telemetry.InterfaceCLI, cliCaller())
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("error = %v, want %q", err, tc.want)
+			}
+			if _, statErr := os.Stat(marker); statErr == nil {
+				t.Fatal("dd-auth ran")
 			}
 		})
 	}

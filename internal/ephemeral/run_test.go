@@ -2,6 +2,7 @@ package ephemeral
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -112,6 +113,17 @@ func TestScanPassesRulesWithConfig(t *testing.T) {
 	}
 }
 
+func TestScanReportsCancellation(t *testing.T) {
+	installFakeAnalyzer(t, "--rules-with-config", `[]`, "0")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := Scan(ctx, ScanRequest{Input: validInput(), Directory: t.TempDir()})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("error = %v, want context.Canceled", err)
+	}
+}
+
 func TestScanKeepsFindingsOnNonZeroExit(t *testing.T) {
 	installFakeAnalyzer(t, "--rules-with-config", `[{"rule":"ephemeral"}]`, "1")
 
@@ -165,12 +177,17 @@ func TestResolveTargetsFollowsSymlinks(t *testing.T) {
 	if _, _, err := resolveTargets(repo, []string{"escape"}); err == nil || !strings.Contains(err.Error(), "outside directory") {
 		t.Fatalf("link to outside: error = %v, want outside directory", err)
 	}
-	if _, got, err := resolveTargets(repo, []string{"inside"}); err != nil || !slices.Equal(got, []string{"inside"}) {
+	// The analyzer does not follow symlinks, so it gets the link's target.
+	if _, got, err := resolveTargets(repo, []string{"inside"}); err != nil || !slices.Equal(got, []string{"src"}) {
 		t.Fatalf("link inside: paths = %v, error = %v", got, err)
 	}
 	symlinkedRoot := filepath.Join(outside, "repolink")
-	if _, got, err := resolveTargets(symlinkedRoot, []string{"src", "inside"}); err != nil || !slices.Equal(got, []string{"src", "inside"}) {
+	if _, got, err := resolveTargets(symlinkedRoot, []string{"src", "inside"}); err != nil || !slices.Equal(got, []string{"src", "src"}) {
 		t.Fatalf("symlinked root: paths = %v, error = %v", got, err)
+	}
+	// The same directory spelled through its resolved path, like /private/var for /var.
+	if _, got, err := resolveTargets(symlinkedRoot, []string{filepath.Join(repo, "src")}); err != nil || !slices.Equal(got, []string{"src"}) {
+		t.Fatalf("resolved spelling: paths = %v, error = %v", got, err)
 	}
 	if _, _, err := resolveTargets(symlinkedRoot, []string{"escape"}); err == nil || !strings.Contains(err.Error(), "outside directory") {
 		t.Fatalf("symlinked root, link to outside: error = %v, want outside directory", err)

@@ -126,7 +126,7 @@ datadog-code-security-mcp ephemeral-scan --called-by-skill \
 
 `<LANGUAGE>` is the scanner enum for the code under the diff (`TYPESCRIPT`, `JAVASCRIPT`, …). Omit `--path` to scan the whole directory. Pass `--path` only for a subdirectory the diff actually touches.
 
-The scan runs only this rule, but it keeps the repository's Static Analysis config settings: ignored paths, `only` paths, file size limit, and gitignore. The scanner pass never reports code under a path that config ignores. No hit there does not mean no variant there. When the config ignores paths, say so in the pause below, and if they reply yes, the search in step 5 covers those paths too.
+The scan runs only this rule, but it keeps the repository's Static Analysis config settings: ignored paths, `only` paths, file size limit, and gitignore. The scanner pass never reports code under a path that config ignores. The analyzer also skips generated and minified files and dependency folders such as `node_modules`. No hit there does not mean no variant there. When the config ignores paths, say so in the pause below, and if they reply yes, the search in step 5 covers those paths too.
 
 If the scan fails because the analyzer does not support `--rules-with-config`, stop and follow the `dd-codesec-setup-toolchain` skill to upgrade `datadog-static-analyzer` to 0.9.10 or later. Then scan again.
 

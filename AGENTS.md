@@ -42,6 +42,8 @@ cmd/datadog-code-security-mcp/  # CLI entry point (Cobra)
   ├── scan.go         # Direct scan command
   ├── start.go        # MCP server (STDIO transport)
   ├── generate-sbom.go # SBOM generation command
+  ├── ephemeral.go    # ephemeral-scan: run one unpublished SAST rule
+  ├── promote.go      # promote-sast-rule: save an approved rule as a custom rule
   └── version.go      # Version info
 
 internal/
@@ -63,6 +65,13 @@ internal/
   ├── sbom/           # SBOM generation
   │   ├── generator.go      # Wraps datadog-sbom-generator
   │   └── generator_test.go
+  ├── ephemeral/      # Local run of one caller-supplied SAST rule
+  │   ├── ruleset.go  # Builds the ruleset JSON the analyzer reads with -r
+  │   ├── run.go      # Runs the analyzer with --rules-with-config and validates paths
+  │   ├── failures.go # Reads rule failures from the analyzer's --debug output
+  │   └── examples.go # Checks a rule against its examples before it is saved
+  ├── promote/        # Custom rule API client (ruleset, rule, revision)
+  │   └── client.go
   ├── binary/         # Binary discovery & execution
   │   ├── manager.go      # Binary naming conventions, PATH lookup
   │   ├── executor.go     # Command execution with timeout

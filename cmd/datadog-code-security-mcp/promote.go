@@ -282,13 +282,11 @@ func runPromote(ctx context.Context, req promote.Request, iface telemetry.Interf
 	return result, nil
 }
 
-// checkPromoteExamples scans the examples with the rule before it is saved, so
-// a rule that throws, has a syntax error, or times out is not published.
+// checkPromoteExamples validates the request and scans the examples with the
+// rule before credentials are resolved or the API is called, so an unconfirmed
+// or invalid request fails fast and a failing rule is not published.
 func checkPromoteExamples(ctx context.Context, req promote.Request) error {
-	if !req.UserConfirmed {
-		return nil
-	}
-	if err := promote.ValidateTests(req.Tests); err != nil {
+	if err := promote.Validate(req); err != nil {
 		return err
 	}
 	examples := make([]ephemeral.Example, len(req.Tests))

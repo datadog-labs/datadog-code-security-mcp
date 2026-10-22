@@ -161,6 +161,10 @@ var errorRules = []errorRule{
 	{kind: ErrKindInvalidArguments, contains: []string{"invalid min_sast_severity"}, message: "invalid min_sast_severity"},
 	{kind: ErrKindInvalidArguments, contains: []string{"is outside directory"}, message: "path outside scan directory"},
 	{kind: ErrKindInvalidArguments, contains: []string{"already exists in ruleset"}, message: "custom rule already exists"},
+	{kind: ErrKindInvalidArguments, contains: []string{"unsupported language"}, message: "unsupported rule language"},
+	{kind: ErrKindInvalidArguments, contains: []string{"rule code is empty"}, message: "rule code is empty"},
+	{kind: ErrKindInvalidArguments, contains: []string{"tree-sitter query is empty"}, message: "tree-sitter query is empty"},
+	{kind: ErrKindInvalidArguments, contains: []string{"language is empty"}, message: "rule language is empty"},
 	{kind: ErrKindInvalidArguments, contains: []string{"is required"}},
 	{kind: ErrKindInvalidArguments, contains: []string{"must be"}},
 
@@ -168,6 +172,8 @@ var errorRules = []errorRule{
 	{kind: ErrKindScanError, contains: []string{"scanner execution failed"}},
 	{kind: ErrKindScanError, contains: []string{"detection failed"}},
 	{kind: ErrKindScanError, contains: []string{"scanner failed:"}},
+	{kind: ErrKindScanError, contains: []string{"scanner wrote invalid JSON"}, message: "scanner wrote invalid JSON"},
+	{kind: ErrKindScanError, contains: []string{"failed to run", "--help"}, message: "scanner probe failed"},
 }
 
 var exitStatusRe = regexp.MustCompile(`exit status (\d+)`)

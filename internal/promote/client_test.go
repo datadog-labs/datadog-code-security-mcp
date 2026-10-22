@@ -333,6 +333,51 @@ func decodeField(t *testing.T, raw string) string {
 	return string(decoded)
 }
 
+func TestSaveExplainsAnEmptyRuleWhenTheRevisionFails(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet:
+			w.WriteHeader(http.StatusNotFound)
+		case strings.HasSuffix(r.URL.Path, "/revisions"):
+			w.WriteHeader(http.StatusInternalServerError)
+		default:
+			w.WriteHeader(http.StatusOK)
+		}
+	}))
+	defer server.Close()
+
+	client := newClientWithBaseURL("api", "app", server.URL)
+	_, err := client.Save(context.Background(), sampleRequest(true))
+	if err == nil || !strings.Contains(err.Error(), "This call created the rule missing-admin") || !strings.Contains(err.Error(), "overwrite") {
+		t.Fatalf("error = %v, want the empty rule explanation", err)
+	}
+}
+
+func TestValidateSlugAcceptsOnlyASCII(t *testing.T) {
+	for name, ok := range map[string]bool{
+		"missing-admin": true,
+		"rule-2":        true,
+		"règle-admin":   false,
+		"rulе-admin":    false, // Cyrillic е
+		"rule-٣٣":       false, // Arabic-Indic digits
+		"Missing-admin": false,
+		"rule_admin":    false,
+	} {
+		if err := validateSlug(name); (err == nil) != ok {
+			t.Errorf("validateSlug(%q) = %v, want ok=%v", name, err, ok)
+		}
+	}
+}
+
+func TestValidateRejectsAnUnconfirmedRequest(t *testing.T) {
+	if err := Validate(sampleRequest(false)); err == nil || !strings.Contains(err.Error(), "user_confirmed") {
+		t.Fatalf("Validate = %v, want user_confirmed error", err)
+	}
+	if err := Validate(sampleRequest(true)); err != nil {
+		t.Fatalf("Validate = %v", err)
+	}
+}
+
 func TestSaveRejectsABadSlugBeforeCalling(t *testing.T) {
 	called := false
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
