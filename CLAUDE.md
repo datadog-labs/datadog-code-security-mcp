@@ -53,6 +53,8 @@ and does not replace a local scan.
 - `mcp__datadog-code-security__datadog_sca_scan` - SCA only
 - `mcp__datadog-code-security__datadog_iac_scan` - IaC only
 - `mcp__datadog-code-security__datadog_generate_sbom` - Generate SBOM
+- `mcp__datadog-code-security__datadog_ephemeral_sast_scan` - Run one unpublished SAST rule (no API keys)
+- `mcp__datadog-code-security__datadog_promote_sast_rule` - Save an approved rule as a custom rule
 
 Build the wrapper first when testing local source changes. Configure the
 client MCP server to use that local binary, then exercise the MCP path as the
@@ -252,6 +254,7 @@ Returns component list (name, version, license)
 - `dd-codesec-scan-and-fix/`: Scan/fix/verify workflow and domain playbooks
 - `dd-codesec-verify-findings/`: Datadog platform enrichment workflow
 - `dd-codesec-setup-toolchain/`: Scanner install, update, and diagnosis guidance
+- `dd-codesec-find-security-variants/`: Variant search from an uncommitted security fix
 
 **`internal/types/`** - Centralized type definitions
 

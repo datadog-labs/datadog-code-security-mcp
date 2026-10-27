@@ -16,6 +16,8 @@ Every scan emits **one telemetry event per scan type** plus, when multiple types
 | Multi-type (`scan all`, `datadog_code_security_scan`) | One aggregate event (`operation=code_security_scan`) **plus** one per-scan event per executed type (`standalone=false`) |
 | Initialization failure (binary missing, bad path) | One aggregate event only (`success=false`) — no per-scan events since nothing executed |
 | Other CLI command (`setup`, `version`, `generate-sbom`) | One operation event for the command |
+| Ephemeral SAST rule (`ephemeral-scan`, `datadog_ephemeral_sast_scan`) | One operation event (`operation=ephemeral_sast_scan`, `auth_method=none`) with `findings_count` |
+| Custom rule save (`promote-sast-rule`, `datadog_promote_sast_rule`) | One operation event (`operation=promote_sast_rule`) with `auth_method` |
 
 ### Fields
 
@@ -23,7 +25,7 @@ Every scan emits **one telemetry event per scan type** plus, when multiple types
 
 | Field | Description |
 | -------------------------- | ------------------------------------------------------------------------------------------------ |
-| `operation`                | Stable operation name (e.g. `sast_scan`, `code_security_scan`, `generate_sbom`, `setup`)         |
+| `operation`                | Stable operation name (e.g. `sast_scan`, `code_security_scan`, `generate_sbom`, `setup`, `ephemeral_sast_scan`, `promote_sast_rule`) |
 | `interface`                | `cli` or `mcp`                                                                                   |
 | `duration_ms`              | Wall-clock time for this event: per-scan time for per-scan events; total elapsed time for aggregate |
 | `success`                  | Whether the invocation succeeded                                                                 |
@@ -92,6 +94,8 @@ filtered result. In-source-suppressed results remain excluded.
 ## What is explicitly NOT collected
 
 - Source code, file contents, or scan findings
+- Custom rule source, rule or ruleset names, descriptions, or examples sent by
+  `ephemeral_sast_scan` and `promote_sast_rule`
 - Detected secrets or vulnerability details
 - Raw error messages (`error.message` is a hardcoded, curated description per
   error kind for Error Tracking — never the raw error text)

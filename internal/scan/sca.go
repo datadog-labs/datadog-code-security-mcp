@@ -132,7 +132,10 @@ func (s *SCAScanner) generateSBOM(ctx context.Context, filePaths []string, worki
 // real datadog-sbom-generator binary.
 func classifySBOMResult(path string, result *types.SBOMResult) (*types.ScanNotice, error) {
 	if result.Error != nil {
-		return nil, fmt.Errorf("SBOM generation error for path %q: %s", path, result.Error.Error)
+		return nil, &causedError{
+			msg:   fmt.Sprintf("SBOM generation error for path %q: %s", path, result.Error.Error),
+			cause: result.Error.Cause,
+		}
 	}
 	if result.Notice != nil {
 		// Re-tag as "sca": the generator reports "sbom" since that's its own
@@ -288,3 +291,14 @@ func (s *SCAScanner) convertToViolations(vulnerabilities []types.Vulnerability) 
 
 	return violations
 }
+
+// causedError keeps a cause that its message already describes, so callers can
+// still match the cause with errors.As.
+type causedError struct {
+	msg   string
+	cause error
+}
+
+func (e *causedError) Error() string { return e.msg }
+
+func (e *causedError) Unwrap() error { return e.cause }

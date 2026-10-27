@@ -50,6 +50,8 @@ const (
 	ErrInvalidArguments = "invalid arguments format"
 	ErrAuthRequired     = "Authentication required but failed"
 	ErrAPIKeyRequired   = "DD_API_KEY is required to fetch security rules"
+
+	ErrPromoteCredentialsRequired = "DD_API_KEY and DD_APP_KEY are required to save a custom rule"
 )
 
 // Authentication instruction messages
@@ -59,4 +61,10 @@ const (
 
 	AuthInstructionAPIKey = `Or set DD_API_KEY directly:
   claude mcp add datadog-code-security -e DD_API_KEY=<key> -e DD_APP_KEY=<app-key> -e DD_SITE=datadoghq.com -- datadog-code-security-mcp start`
+
+	AuthInstructionDDAuthShell = `For Datadog employees, use dd-auth from this shell:
+  export DD_AUTH_DOMAIN=app.datadoghq.com`
+
+	AuthInstructionAPIKeyShell = `Or export the keys in this shell:
+  export DD_API_KEY=<key> DD_APP_KEY=<app-key> DD_SITE=datadoghq.com`
 )

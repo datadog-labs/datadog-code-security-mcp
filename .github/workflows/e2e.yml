@@ -235,6 +235,10 @@ jobs:
           echo ""
           echo "=== IaC Output ==="
           cat /tmp/iac-output.json || echo "File not found"
+          echo ""
+          echo "=== Ephemeral Scan Output ==="
+          cat /tmp/ephemeral-output.json || echo "File not found"
+          cat /tmp/ephemeral-error.txt || echo "File not found"
 
       - name: Upload test outputs
         if: always()
@@ -253,6 +257,9 @@ jobs:
             /tmp/setup-remove-output.json
             /tmp/setup-remove-error.txt
             /tmp/iac-output.json
+            /tmp/ephemeral-output.json
+            /tmp/ephemeral-error.txt
+            /tmp/ephemeral-rule-*
           retention-days: 7
           if-no-files-found: warn
 

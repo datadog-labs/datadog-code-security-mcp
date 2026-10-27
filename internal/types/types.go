@@ -69,6 +69,8 @@ type ScanError struct {
 	DetectionType DetectionType `json:"detection_type" jsonschema:"description=The detection type that encountered an error"`
 	Error         string        `json:"error" jsonschema:"description=Error message"`
 	Hint          string        `json:"hint,omitempty" jsonschema:"description=Suggestion for how to resolve the error"`
+	// Cause is the original error, kept for telemetry and not serialized.
+	Cause error `json:"-"`
 }
 
 // ScanNotice is a non-fatal, informational note about a scan that completed
