@@ -18,6 +18,14 @@ Setup for this repository is below. The [Code Security MCP Server documentation]
 8. **`datadog_ephemeral_sast_scan`** - Run one caller-supplied SAST rule locally without publishing it (no API keys)
 9. **`datadog_promote_sast_rule`** - Save an approved SAST rule as a Datadog custom rule (requires API keys)
 
+The server tells the agent, through its MCP initialize instructions and each
+tool description, to load the matching Datadog Code Security skill before
+calling a tool: `dd-codesec-find-security-variants` for
+`datadog_ephemeral_sast_scan` and `datadog_promote_sast_rule`, and
+`dd-codesec-scan-and-fix` for the others. The skills carry the rules for when
+to scan, how to read results and how to fix findings. Install them with
+`setup` (see [Install AI Client Skills](#install-ai-client-skills)).
+
 `datadog_ephemeral_sast_scan` needs `datadog-static-analyzer` 0.9.10 or later,
 which adds `--rules-with-config`. It runs only the supplied rule, even when the repository
 has a Static Analysis configuration, but still honors that configuration's
