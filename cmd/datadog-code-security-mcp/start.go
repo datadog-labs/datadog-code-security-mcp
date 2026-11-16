@@ -38,7 +38,7 @@ standard input/output. It's designed to be used with AI coding assistants like:
 - Zed
 - Any MCP-compatible AI assistant
 
-The server provides seven security scanning tools:
+The server provides nine security scanning tools:
 1. datadog_code_security_scan - Run comprehensive security scan (SAST + Secrets + SCA + IaC)
 2. datadog_sast_scan - Run SAST (Static Application Security Testing) only
 3. datadog_secrets_scan - Run Secrets detection only
@@ -46,6 +46,8 @@ The server provides seven security scanning tools:
 5. datadog_sca_scan - Run Software Composition Analysis (dependency vulnerability scanning)
 6. datadog_iac_scan - Run Infrastructure-as-Code security scanning
 7. datadog_library_vulnerability_scan - Scan specific libraries by PURL for known CVEs (cloud API)
+8. datadog_ephemeral_sast_scan - Run one caller-supplied SAST rule locally without publishing it (no API keys)
+9. datadog_promote_sast_rule - Save an approved SAST rule as a Datadog custom rule (requires API keys)
 
 Configuration:
 Add to your Claude Desktop config (~/.claude/config.json):
@@ -94,14 +96,8 @@ func runServer() error {
 		return fmt.Errorf("failed to create auth provider: %w", err)
 	}
 
-	// Create MCP server
-	s := server.NewMCPServer(
-		"datadog-code-security-mcp",
-		version,
-		server.WithLogging(),
-	)
-
-	// Register security scanning tools
+	// Create MCP server and register security scanning tools
+	s := newMCPServer()
 	registerSecurityTools(s)
 
 	// Log startup info
@@ -124,8 +120,66 @@ func runServer() error {
 	return server.ServeStdio(s)
 }
 
+// serverInstructions is sent to the client on initialize. Agents that see the
+// scan tools tend to call them directly and skip the Code Security skills,
+// which carry the scanning and remediation rules; this points them to the
+// skill first.
+const serverInstructions = "This server runs Datadog Code Security scans on local code: SAST, secrets, " +
+	"SCA (vulnerable dependencies) and IaC. Its tools are the scanning step of the Datadog Code Security " +
+	"skills, which say when to scan, which scan to run, how to read the results and how to fix findings. " +
+	"Before calling a tool of this server, load the Datadog Code Security skill that fits the task and " +
+	"follow it: dd-codesec-scan-and-fix to scan or fix code, dd-codesec-verify-findings to check a finding " +
+	"against Datadog, dd-codesec-find-security-variants to look for variants of a security fix. When the " +
+	"Datadog MCP server serves them instead, they are datadog/code-security/scan-and-fix, " +
+	"datadog/code-security/verify-findings and datadog/code-security/find-security-variants. " +
+	"Pass called_by_skill: true when a skill tells you to. " +
+	"If the Datadog Code Security skills are not installed, call the tools directly."
+
+// newMCPServer creates the MCP server with the options shared by the start
+// command and its tests.
+func newMCPServer() *server.MCPServer {
+	return server.NewMCPServer(
+		"datadog-code-security-mcp",
+		version,
+		server.WithLogging(),
+		server.WithInstructions(serverInstructions),
+	)
+}
+
+// toolSkills maps each MCP tool to the skill, without the dd-codesec- prefix,
+// whose workflow the tool is a step of.
+var toolSkills = map[string]string{
+	"datadog_code_security_scan":         "scan-and-fix",
+	"datadog_sast_scan":                  "scan-and-fix",
+	"datadog_secrets_scan":               "scan-and-fix",
+	"datadog_generate_sbom":              "scan-and-fix",
+	"datadog_sca_scan":                   "scan-and-fix",
+	"datadog_iac_scan":                   "scan-and-fix",
+	"datadog_library_vulnerability_scan": "scan-and-fix",
+	"datadog_ephemeral_sast_scan":        "find-security-variants",
+	"datadog_promote_sast_rule":          "find-security-variants",
+}
+
+// skillStepPrefix is prepended to a tool description so every MCP client, not
+// only those that forward server instructions, points the agent to the skill.
+func skillStepPrefix(skill string) string {
+	return fmt.Sprintf("Step of the Datadog Code Security skills: load the dd-codesec-%[1]s skill "+
+		"(datadog/code-security/%[1]s on the Datadog MCP server) before calling this tool, and follow it. "+
+		"If the skill is not installed, call this tool directly.", skill)
+}
+
+// addSkillTool registers a tool with its description prefixed by the owning
+// skill. A tool missing from toolSkills keeps its description unchanged; the
+// start tests fail in that case.
+func addSkillTool(s *server.MCPServer, tool mcp.Tool, handler server.ToolHandlerFunc) {
+	if skill, ok := toolSkills[tool.Name]; ok {
+		tool.Description = skillStepPrefix(skill) + "\n\n" + tool.Description
+	}
+	s.AddTool(tool, handler)
+}
+
 func registerSecurityTools(s *server.MCPServer) {
-	s.AddTool(
+	addSkillTool(s,
 		mcp.Tool{
 			Name:        "datadog_code_security_scan",
 			Description: "Run comprehensive code security scan (SAST + Secrets detection + SCA vulnerability scanning + IaC scanning) - scans in parallel for maximum performance",
@@ -156,7 +210,7 @@ func registerSecurityTools(s *server.MCPServer) {
 	)
 
 	// Tool 2: SAST only
-	s.AddTool(
+	addSkillTool(s,
 		mcp.Tool{
 			Name:        "datadog_sast_scan",
 			Description: "Run SAST (Static Application Security Testing) scan only to detect security vulnerabilities in code",
@@ -187,7 +241,7 @@ func registerSecurityTools(s *server.MCPServer) {
 	)
 
 	// Tool 3: Secrets only
-	s.AddTool(
+	addSkillTool(s,
 		mcp.Tool{
 			Name:        "datadog_secrets_scan",
 			Description: "Run secrets detection scan only to find hardcoded credentials, API keys, passwords, and tokens",
@@ -212,7 +266,7 @@ func registerSecurityTools(s *server.MCPServer) {
 	)
 
 	// Tool 4: SBOM generation
-	s.AddTool(
+	addSkillTool(s,
 		mcp.Tool{
 			Name: "datadog_generate_sbom",
 			Description: fmt.Sprintf(`Generate a comprehensive Software Bill of Materials (SBOM) listing all software components, dependencies, versions, and licenses in a repository. Requires datadog-sbom-generator binary in PATH; if not found, returns step-by-step installation commands.
@@ -266,7 +320,7 @@ Installation process:
 	)
 
 	// Tool 5: SCA (Software Composition Analysis)
-	s.AddTool(
+	addSkillTool(s,
 		mcp.Tool{
 			Name: "datadog_sca_scan",
 			Description: `Run Software Composition Analysis to detect vulnerabilities in dependencies.
@@ -305,7 +359,7 @@ The tool automatically:
 	)
 
 	// Tool 6: IaC (Infrastructure-as-Code) scanning
-	s.AddTool(
+	addSkillTool(s,
 		mcp.Tool{
 			Name: "datadog_iac_scan",
 			Description: `Run Infrastructure-as-Code (IaC) security scan to detect misconfigurations, compliance issues, and security vulnerabilities in IaC files.
@@ -338,7 +392,7 @@ Output: Returns security findings with severity, rule, file location, and remedi
 	)
 
 	// Tool 7: Library vulnerability scan (cloud API, no local codebase needed)
-	s.AddTool(
+	addSkillTool(s,
 		mcp.Tool{
 			Name: "datadog_library_vulnerability_scan",
 			Description: `Scan one or more specific libraries for known vulnerabilities using Datadog's security intelligence.
@@ -399,7 +453,7 @@ Authentication: Requires DD_API_KEY and DD_APP_KEY.`,
 
 	// Tool 8: one-off SAST rule. The caller supplies the JavaScript and the
 	// tree-sitter query. This tool only packs the envelope and runs the scanner.
-	s.AddTool(
+	addSkillTool(s,
 		mcp.Tool{
 			Name: "datadog_ephemeral_sast_scan",
 			Description: `Run one local, unpublished SAST rule. The caller supplies the rule JavaScript and the tree-sitter query. This tool base64-encodes them, builds the ruleset JSON, and runs datadog-static-analyzer with -r, --rules-with-config, and -b, so the repository's SAST configuration still applies: ignored and only paths, the file size limit, and .gitignore. It does not infer a security invariant and it does not require Datadog API keys.
@@ -451,7 +505,7 @@ Output: the scanner's JSON findings. When the rule JavaScript throws, has a synt
 
 	// Tool 9: save a rule the caller already approved. This tool only uploads
 	// the source it is given. It does not choose which findings belong.
-	s.AddTool(
+	addSkillTool(s,
 		mcp.Tool{
 			Name: "datadog_promote_sast_rule",
 			Description: `Save one SAST rule the user has already approved as a Datadog custom rule. Upload the exact JavaScript and tree-sitter query you are given. Do not infer an invariant, drop a match, or add a match. Refuse to call this until the user has agreed to that exact source.
