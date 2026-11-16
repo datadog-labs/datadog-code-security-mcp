@@ -420,6 +420,7 @@ Key fields:
 - `DD_CODE_SECURITY_TELEMETRY_DISABLED=1`: disable telemetry
 - `DO_NOT_TRACK=1`: disable telemetry (standard: https://consoledonottrack.com/)
 - `DD_CODE_SECURITY_TELEMETRY_TOKEN=<token>`: runtime fallback for the client token (dev use; no rebuild needed)
+- `DD_CODE_SECURITY_UPDATE_CHECK_DISABLED=1`: disable the MCP server's daily release check (`internal/update/`, cached in `~/.datadog-code-security-mcp/update-check.json`); the two telemetry opt-outs above also disable it
 
 **Telemetry build-time ldflags:**
 

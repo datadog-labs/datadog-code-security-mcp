@@ -13,6 +13,7 @@ import (
 	"github.com/datadog-labs/datadog-code-security-mcp/internal/constants"
 	"github.com/datadog-labs/datadog-code-security-mcp/internal/scan"
 	"github.com/datadog-labs/datadog-code-security-mcp/internal/telemetry"
+	"github.com/datadog-labs/datadog-code-security-mcp/internal/update"
 )
 
 // calledBySkillProperty is the optional MCP argument Datadog agent skills set
@@ -96,8 +97,14 @@ func runServer() error {
 		return fmt.Errorf("failed to create auth provider: %w", err)
 	}
 
+	// Read the cached update check without touching the network, then refresh
+	// it in the background for the next session.
+	updateChecker := update.NewChecker(version)
+	newerVersion, _ := updateChecker.NewerVersion()
+	go updateChecker.RefreshIfStale(context.Background())
+
 	// Create MCP server and register security scanning tools
-	s := newMCPServer()
+	s := newMCPServer(instructionsFor(newerVersion))
 	registerSecurityTools(s)
 
 	// Log startup info
@@ -135,14 +142,32 @@ const serverInstructions = "This server runs Datadog Code Security scans on loca
 	"Pass called_by_skill: true when a skill tells you to. " +
 	"If the Datadog Code Security skills are not installed, call the tools directly."
 
+// updateNoticeFormat is appended to serverInstructions when a newer release is
+// cached. Its verbs are the newer version and the running version.
+const updateNoticeFormat = " A newer datadog-code-security-mcp release is available (%s; this server runs %s). " +
+	"Tell the user once in this session. To upgrade, load the dd-codesec-setup-toolchain skill and follow it; " +
+	"if it is not installed, suggest `brew upgrade datadog-labs/pack/datadog-code-security-mcp` " +
+	"(or the matching GitHub release asset for a manual install) followed by " +
+	"`datadog-code-security-mcp setup` to refresh the skills."
+
+// instructionsFor returns the server instructions, with the update notice
+// when newerVersion is not empty. Without a newer release the text is exactly
+// serverInstructions.
+func instructionsFor(newerVersion string) string {
+	if newerVersion == "" {
+		return serverInstructions
+	}
+	return serverInstructions + fmt.Sprintf(updateNoticeFormat, newerVersion, version)
+}
+
 // newMCPServer creates the MCP server with the options shared by the start
 // command and its tests.
-func newMCPServer() *server.MCPServer {
+func newMCPServer(instructions string) *server.MCPServer {
 	return server.NewMCPServer(
 		"datadog-code-security-mcp",
 		version,
 		server.WithLogging(),
-		server.WithInstructions(serverInstructions),
+		server.WithInstructions(instructions),
 	)
 }
 

@@ -132,6 +132,36 @@ export DO_NOT_TRACK=1
 
 Telemetry is also automatically disabled if the compiled-in client token is absent (e.g. in local dev builds built without `TELEMETRY_CLIENT_TOKEN`).
 
+## Update check
+
+The MCP server (`start`) checks whether a newer release of
+`datadog-code-security-mcp` is available, so the agent can tell the user how to
+upgrade and refresh the skills. This is separate from telemetry and sends no
+telemetry fields:
+
+- At most once a day, in the background, the server sends an unauthenticated
+  `GET` to the GitHub API
+  (`https://api.github.com/repos/datadog-labs/datadog-code-security-mcp/releases/latest`).
+  The request carries only a `User-Agent` of
+  `datadog-code-security-mcp/<version>`; GitHub sees the request's IP address,
+  as for any download.
+- The result is cached in `~/.datadog-code-security-mcp/update-check.json`
+  (`latest_version` and `checked_at`). Server start reads this cache and never
+  waits on the network, so a new release is announced from the next session.
+- When the cached release is newer than the running one, the server appends one
+  sentence to its MCP initialize instructions naming both versions and the
+  upgrade path. Otherwise the instructions are unchanged.
+- Failures (offline, proxy, rate limit) are silent and retried after a day.
+  Development and prerelease builds never check.
+
+Any of the following disables the update check:
+
+```bash
+export DD_CODE_SECURITY_UPDATE_CHECK_DISABLED=1
+export DD_CODE_SECURITY_TELEMETRY_DISABLED=1
+export DO_NOT_TRACK=1
+```
+
 ## Disclosure (first run)
 
 On the first invocation, a short notice is printed to **stderr** explaining what is collected and how to turn off data collection. It is shown once and then suppressed for subsequent runs (controlled by `first_run_notice_shown` in `~/.datadog-code-security-mcp/config.json`).

@@ -444,6 +444,8 @@ export DO_NOT_TRACK=1
 
 Full details on what is collected, the install ID, and how to turn off data collection: [docs/TELEMETRY.md](docs/TELEMETRY.md).
 
+**Update check.** At most once a day, in the background, the MCP server asks the GitHub API for the latest release (no telemetry fields are sent) and caches the answer in `~/.datadog-code-security-mcp/update-check.json`. When a newer release is cached, the server's MCP instructions tell the agent so it can offer the upgrade. Set `DD_CODE_SECURITY_UPDATE_CHECK_DISABLED=1` (or either opt-out above) to turn it off. See [docs/TELEMETRY.md](docs/TELEMETRY.md#update-check).
+
 Please see the Datadog [Privacy Policy](https://www.datadoghq.com/legal/privacy/) for more information.
 
 ## For Developers

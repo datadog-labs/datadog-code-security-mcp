@@ -44,7 +44,7 @@ func TestSecurityToolsAdvertiseOptionalCalledBySkill(t *testing.T) {
 }
 
 func TestServerAdvertisesInstructionsOnInitialize(t *testing.T) {
-	s := newMCPServer()
+	s := newMCPServer(serverInstructions)
 	registerSecurityTools(s)
 
 	msg := []byte(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":` +
@@ -117,4 +117,30 @@ func TestSkillStepPrefixWording(t *testing.T) {
 	if got := skillStepPrefix("scan-and-fix"); got != want {
 		t.Errorf("skillStepPrefix = %q, want %q", got, want)
 	}
+}
+
+func TestInstructionsForKeepsValidatedTextWithoutUpdate(t *testing.T) {
+	if got := instructionsFor(""); got != serverInstructions {
+		t.Errorf("instructionsFor(\"\") changed the validated instructions: %q", got)
+	}
+}
+
+func TestInstructionsForAppendsUpdateNotice(t *testing.T) {
+	got := instructionsFor("9.9.9")
+	if !strings.HasPrefix(got, serverInstructions+" ") {
+		t.Fatal("update notice must follow the unchanged server instructions")
+	}
+	notice := strings.TrimPrefix(got, serverInstructions)
+	for _, want := range []string{
+		"9.9.9",
+		"this server runs " + version,
+		"dd-codesec-setup-toolchain",
+		"brew upgrade datadog-labs/pack/datadog-code-security-mcp",
+		"datadog-code-security-mcp setup",
+	} {
+		if !strings.Contains(notice, want) {
+			t.Errorf("update notice does not mention %q: %q", want, notice)
+		}
+	}
+	requireEmbeddedSkill(t, "setup-toolchain")
 }
