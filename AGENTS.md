@@ -621,6 +621,7 @@ Anonymous usage telemetry lives in `internal/telemetry/`. Key env vars:
 - `DD_CODE_SECURITY_TELEMETRY_DISABLED=1` — disable telemetry at runtime
 - `DO_NOT_TRACK=1` — standard opt-out (https://consoledonottrack.com/)
 - `DD_CODE_SECURITY_TELEMETRY_TOKEN=<token>` — runtime token fallback for dev (no rebuild)
+- `DD_CODE_SECURITY_UPDATE_CHECK_DISABLED=1` — disable the MCP server's daily release check (`internal/update/`); the two opt-outs above also disable it
 
 Build-time ldflags (set via CI secrets):
 - `-X main.telemetryClientToken=<token>` — RUM client token

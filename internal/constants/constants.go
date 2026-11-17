@@ -18,6 +18,9 @@ const (
 	EnvTelemetryToken = "DD_CODE_SECURITY_TELEMETRY_TOKEN"
 	// EnvCI is the conventional flag CI systems set; its presence tags events as CI-originated.
 	EnvCI = "CI"
+	// EnvUpdateCheckDisabled disables the MCP server's daily check for a newer
+	// release when set to a truthy value (1, true, yes).
+	EnvUpdateCheckDisabled = "DD_CODE_SECURITY_UPDATE_CHECK_DISABLED"
 )
 
 // Telemetry payload constants

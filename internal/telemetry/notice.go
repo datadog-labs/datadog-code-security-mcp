@@ -20,6 +20,8 @@ What is NOT collected: source code, absolute paths or directory structure,
 
 To turn off data collection, set DD_CODE_SECURITY_TELEMETRY_DISABLED=1 or use
   --no-telemetry.
+The MCP server also checks GitHub for a newer release at most once a day; set
+  DD_CODE_SECURITY_UPDATE_CHECK_DISABLED=1 to turn that off.
 More information: https://github.com/datadog-labs/datadog-code-security-mcp/blob/main/docs/TELEMETRY.md
 Datadog Privacy Policy: https://www.datadoghq.com/legal/privacy/
 `
