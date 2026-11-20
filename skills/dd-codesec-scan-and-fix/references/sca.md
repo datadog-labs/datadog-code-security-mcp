@@ -67,7 +67,9 @@ local scan does not include a fix version, so determine it from the advisory
 or a platform candidate before deciding. Findings with no fixed version, and
 `MAL-*` advisories, never join a group. Report them in a separate list of
 findings with no recommended upgrade, with their advisories, and handle them
-with the rules below. Never drop them silently.
+with the rules below. Never drop them silently. When the platform-matching
+contract offers a minimum-risk upgrade as optional risk reduction for one of
+them, show it in that list and say that it leaves the advisory open.
 
 A local rescan cannot confirm advisories the local scan never reported, such
 as transitive findings only the platform sees. After the fix, report them as
