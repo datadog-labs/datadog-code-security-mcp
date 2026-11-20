@@ -153,6 +153,9 @@ func TestPlatformMatchingRemediationGuidance(t *testing.T) {
 		"Ignore a leading `v` when comparing versions",
 		"find the candidate with the same `original_name` and `version`",
 		"If no candidate qualifies, say so rather than picking one",
+		"when no version of that package fixes every advisory",
+		"offer it as optional risk reduction, not as a fix",
+		"apply it only if the user chooses it. Do not offer one that adds advisories",
 		"If the vulnerable package is transitive and a candidate that fixes this advisory without new ones has `is_auto_solvable: true`",
 		"use the entry whose `name` matches the candidate",
 	} {
@@ -186,6 +189,7 @@ func TestPlatformMatchingRemediationGuidance(t *testing.T) {
 		"If the recommended package is not in the local dependency graph, name the group after the package you would change instead",
 		"never treat a package missing from a partial result as having no platform record",
 		"list the advisories the upgrade leaves open",
+		"show it in that list and say that it leaves the advisory open",
 	} {
 		if !strings.Contains(scaText, want) {
 			t.Errorf("sca.md does not state: %s", want)
