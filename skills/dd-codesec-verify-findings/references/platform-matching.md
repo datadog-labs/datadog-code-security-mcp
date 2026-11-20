@@ -89,10 +89,13 @@ upgrade strategy, such as `closest_no_vulnerabilities`, `closest_no_critical`,
 `latest_no_vulnerabilities`, `latest_no_critical`, `base`, and
 `closest_minimum_risk_only_no_fix_vulnerabilities`. Only some strategies are
 populated, each holds a list of candidates, and a candidate may name either
-the vulnerable package or the direct dependency that introduces it. Each
-candidate has its own `name`, `original_name`, `version`, `fixed_advisories`,
-`remaining_advisories`, `new_advisories`, `has_incomplete_data`, and
-`is_auto_solvable`.
+the vulnerable package or the direct dependency that introduces it. The
+platform fills `closest_minimum_risk_only_no_fix_vulnerabilities` when no
+version of that package fixes every advisory: its candidates lower the overall
+risk, and this finding's advisory can be among their `remaining_advisories`.
+Each candidate has its own `name`, `original_name`, `version`,
+`fixed_advisories`, `remaining_advisories`, `new_advisories`,
+`has_incomplete_data`, and `is_auto_solvable`.
 
 Identify a candidate by `original_name`, which uses the same normalized form as
 `@package.name` and `@package.root_parents`. Neither `original_name` nor `name`
@@ -134,7 +137,12 @@ older releases, so check the release history before trusting the order.
    `14.0.1-beta2` or `v3.268.1-0.20261009175711-2255563bcc6b`), and prefer a
    released version when one qualifies, even if that means pinning the
    transitive package instead of upgrading the direct dependency.
-5. If no candidate qualifies, say so rather than picking one.
+5. If no candidate qualifies, say so rather than picking one. If a
+   `closest_minimum_risk_only_no_fix_vulnerabilities` candidate has empty or
+   absent `new_advisories` and a released version newer than the installed
+   one, offer it as optional risk reduction, not as a fix: say that it does
+   not fix this advisory, list what it fixes and what it leaves open, and
+   apply it only if the user chooses it. Do not offer one that adds advisories.
 
 State the consequence of the chosen candidate: the advisories it fixes, from
 `fixed_advisories`, and any it leaves open, from `remaining_advisories`, each
